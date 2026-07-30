@@ -1,0 +1,90 @@
+# =====================================================================
+# Inventory Manager -- three containers, one stack, one VM.
+# =====================================================================
+# Only the reverse proxy is published. `app` and `postgres` talk over an
+# internal network that is not reachable from the host's public interface.
+#
+# Postgres ships here by default with a documented path to externalize later:
+# point DB_HOST at the new instance, restore with the standard runbook, and
+# stop starting this service. Nothing in the application assumes the database
+# is same-host, which is what keeps that a config change rather than a port.
+# =====================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    # Always a real version tag in production, never `latest` -- an admin
+    # updating should be choosing a known version, not drifting onto whatever
+    # happens to be newest (Deployment Design §7.4).
+    image: ${APP_IMAGE:-inventory-manager:0.1.0}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ../.env
+    environment:
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+    networks:
+      - internal
+    # No ports: -- the app is reachable only through the reverse proxy.
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Consumed by the image's envsubst pass over the template below.
+      APP_HOSTNAME: ${APP_HOSTNAME}
+    volumes:
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - certbot-certs:/etc/letsencrypt:ro
+      - certbot-webroot:/var/www/certbot:ro
+    networks:
+      - internal
+    # Periodic reload rather than restart, so picking up a renewed certificate
+    # never drops connections mid-request. The image's entrypoint still runs, so
+    # the template above is rendered before nginx starts.
+    command: >
+      sh -c "while :; do sleep 12h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"
+
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - certbot-certs:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
+    # Renewal is automatic and unattended: there is no command for anyone to
+    # remember to run, which is the whole point of pairing certbot with nginx.
+    entrypoint: >
+      sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+
+volumes:
+  postgres-data:
+  certbot-certs:
+  certbot-webroot:
+
+networks:
+  internal:
+    driver: bridge
