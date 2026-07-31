@@ -69,8 +69,23 @@ class MigrationValidationTest extends AbstractIntegrationTest {
                   AND table_name NOT IN ('flyway_schema_history', 'spring_session', 'spring_session_attributes')
                 """, Integer.class);
         // 31 from the V1-V9 chain, plus branding (V10), location_type (V12),
-        // device_model (V14), category_core_field (V15), asset_subcategory (V16).
-        assertThat(tables).isEqualTo(36);
+        // device_model (V14), category_core_field (V15), asset_subcategory (V16),
+        // import_batch_row (V17).
+        assertThat(tables).isEqualTo(37);
+    }
+
+    @Test
+    @DisplayName("the relationship vocabulary is seeded, so links can actually be drawn")
+    void relationshipTypesSeeded() {
+        // The table existed from V1 but was empty, which made asset_relationship
+        // unusable: every insert needs a relationship_type_id.
+        Integer types = jdbc.queryForObject("SELECT count(*) FROM relationship_type", Integer.class);
+        assertThat(types).isEqualTo(7);
+
+        // The SFP-to-host-switch link named in Phase 8 §12 has to be expressible.
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM relationship_type WHERE name = 'Installed In'", Integer.class))
+                .isEqualTo(1);
     }
 
     @Test
