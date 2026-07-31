@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Chip, Grid, MenuItem, Paper, Stack, TextField } from '@mui/material';
+import { Button, Chip, Grid, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Asset, Category, LifecycleState, Location, Page } from '../api/types';
@@ -64,7 +64,21 @@ export function AssetListPage() {
   const columns: Column<Asset>[] = [
     { key: 'name', header: 'Name', render: (asset) => asset.displayLabel },
     { key: 'assetTag', header: 'Asset Tag', render: (asset) => asset.assetTag ?? '—' },
-    { header: 'Category', render: (asset) => asset.categoryName },
+    {
+      header: 'Category',
+      // The primary reads as the heading and the sub-categories sit under it, so
+      // the column says what the thing is before it says where else it is filed.
+      render: (asset) => (
+        <Stack spacing={0.25}>
+          <span>{asset.categoryName}</span>
+          {asset.subcategories?.length > 0 && (
+            <Typography variant="caption" color="text.secondary">
+              {asset.subcategories.map((entry) => entry.name).join(', ')}
+            </Typography>
+          )}
+        </Stack>
+      ),
+    },
     { header: 'Location', render: (asset) => asset.locationName },
     {
       header: 'Lifecycle',

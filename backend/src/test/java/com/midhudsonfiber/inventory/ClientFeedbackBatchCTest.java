@@ -123,6 +123,52 @@ class ClientFeedbackBatchCTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("filtering by a category finds assets merely filed under it")
+    void categoryFilterMatchesSubcategories() {
+        Session admin = admin();
+        Long primary = categoryId("Vehicle");
+        Long filedUnder = categoryId("Spare Part");
+
+        String name = unique("splice trailer");
+        Long id = post(admin, "/api/assets", """
+                {"categoryId":%d,"locationId":%d,"name":"%s","subcategoryIds":[%d],
+                 "customFields":{"VIN":"%s"}}
+                """.formatted(primary, newLocation(admin), name, filedUnder, unique("VIN")))
+                .getBody().get("id").asLong();
+
+        // Filed under Spare Part, so looking through Spare Part has to find it --
+        // otherwise the sub-category is decoration rather than a way to find things.
+        assertThat(get(admin, "/api/assets?categoryId=" + filedUnder + "&size=200")
+                .getBody().get("content").toString()).contains(name);
+
+        // And it still turns up under the category it actually is.
+        assertThat(get(admin, "/api/assets?categoryId=" + primary + "&size=200")
+                .getBody().get("content").toString()).contains(name);
+
+        // Listed once, not once per sub-category: the join must not multiply rows.
+        JsonNode content = get(admin, "/api/assets?categoryId=" + filedUnder + "&size=200")
+                .getBody().get("content");
+        long occurrences = java.util.stream.StreamSupport.stream(content.spliterator(), false)
+                .filter(a -> a.get("id").asLong() == id).count();
+        assertThat(occurrences).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("an asset in no sub-category is still found by its own category")
+    void categoryFilterStillMatchesPlainAssets() {
+        Session admin = admin();
+        String name = unique("plain router");
+        post(admin, "/api/assets", """
+                {"categoryId":%d,"locationId":%d,"name":"%s","serialNumber":"%s"}
+                """.formatted(categoryId("Router"), newLocation(admin), name, unique("SN")));
+
+        // The sub-category join is a LEFT join for exactly this case; an INNER
+        // one would have silently hidden every asset without a sub-category.
+        assertThat(get(admin, "/api/assets?categoryId=" + categoryId("Router") + "&size=200")
+                .getBody().get("content").toString()).contains(name);
+    }
+
+    @Test
     @DisplayName("the primary category can never also appear as a sub-category")
     void primaryIsNeverAlsoASubcategory() {
         Session admin = admin();

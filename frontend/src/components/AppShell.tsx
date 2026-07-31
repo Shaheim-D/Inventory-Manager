@@ -101,7 +101,11 @@ const NAV: NavSection[] = [
         createPermissions: ['category:manage'],
       },
       {
-        label: 'Categories & Custom Fields',
+        // "Categories & Custom Fields" truncated to "Categories & Custom Fi…".
+        // This is the same length as "Roles & Permissions", which already fits,
+        // and keeps both halves of what the page is for. The page itself still
+        // carries the full name in its heading.
+        label: 'Categories & Fields',
         to: '/admin/categories',
         icon: <CategoryIcon />,
         permissions: ['category:manage'],
