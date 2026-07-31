@@ -1,0 +1,93 @@
+spring:
+  application:
+    name: inventory-manager
+
+  autoconfigure:
+    # Spring LDAP is on the classpath for the authentication providers, which
+    # brings LdapAutoConfiguration along with it -- and that would create an
+    # LdapTemplate (plus a health indicator) pointed at a default localhost:389,
+    # reporting an installation with no directory configured as unhealthy. The
+    # providers in SecurityConfig build their own context source from
+    # app.ldap.* / app.active-directory.*, and only when those are enabled.
+    exclude:
+      - org.springframework.boot.autoconfigure.ldap.LdapAutoConfiguration
+
+  datasource:
+    # The app only ever reaches Postgres through these variables -- nothing
+    # assumes the database is same-host or in the same Compose stack, which is
+    # what keeps "externalize Postgres later" a config change (Deployment §2).
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:inventory_manager}
+    username: ${DB_USER:inventory_manager}
+    password: ${DB_PASSWORD:inventory_manager}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+
+  flyway:
+    enabled: true          # Automatic-on-startup, confirmed in Deployment Design §5.
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate   # Flyway owns the schema. Hibernate never changes it.
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  session:
+    # Sessions live in the same Postgres instance -- not Redis, not JWT (MOP Part 3).
+    store-type: jdbc
+    jdbc:
+      initialize-schema: always
+      table-name: SPRING_SESSION
+    timeout: ${APP_SESSION_TIMEOUT:8h}
+
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
+server:
+  port: 8080
+  forward-headers-strategy: framework   # Always behind the nginx reverse proxy.
+  error:
+    include-message: always
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+app:
+  # Bootstrap administrator, created only when the user table is empty.
+  bootstrap-admin:
+    username: ${APP_ADMIN_USERNAME:admin}
+    password: ${APP_ADMIN_INITIAL_PASSWORD:}
+  auth:
+    max-failed-attempts: 5
+    lockout-minutes: 15
+  branding:
+    max-logo-bytes: 2097152
+  ldap:
+    enabled: ${LDAP_ENABLED:false}
+    url: ${LDAP_URL:}
+    user-search-base: ${LDAP_USER_SEARCH_BASE:}
+    user-search-filter: ${LDAP_USER_SEARCH_FILTER:(uid={0})}
+    bind-dn: ${LDAP_BIND_DN:}
+    bind-password: ${LDAP_BIND_PASSWORD:}
+  active-directory:
+    enabled: ${AD_ENABLED:false}
+    domain: ${AD_DOMAIN:}
+    url: ${AD_URL:}
+
+logging:
+  level:
+    root: INFO
+    com.midhudsonfiber.inventory: ${APP_LOG_LEVEL:INFO}

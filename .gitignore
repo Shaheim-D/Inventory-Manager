@@ -1,0 +1,18 @@
+# Build output
+target/
+dist/
+node_modules/
+
+# Secrets: never committed. .env.example documents every variable instead.
+.env
+*.pem
+*.key
+
+# Local tooling
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# TypeScript incremental build state
+*.tsbuildinfo

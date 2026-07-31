@@ -1,0 +1,8 @@
+# Keep the build context small and make sure no secret is ever copied into a layer.
+.env
+.git
+**/target
+**/node_modules
+**/dist
+docs
+*.md

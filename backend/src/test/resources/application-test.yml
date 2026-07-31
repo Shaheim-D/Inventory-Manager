@@ -1,0 +1,25 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:inventory_manager_test}
+    username: ${DB_USER:inventory_manager}
+    password: ${DB_PASSWORD:inventory_manager}
+
+  flyway:
+    # Every test run starts from an empty database and replays V1 onward, so the
+    # migrations themselves are exercised on every build -- the project's stated
+    # "validate, don't just write" practice, enforced by CI rather than by memory.
+    clean-disabled: false
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+
+app:
+  bootstrap-admin:
+    username: admin
+    password: BootstrapAdmin123
+
+logging:
+  level:
+    org.springframework.web: WARN
+    org.hibernate: WARN
