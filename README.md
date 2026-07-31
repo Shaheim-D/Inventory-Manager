@@ -38,27 +38,77 @@ automated test on every build.
 
 ## Running it locally
 
-Requires Java 21, Node 22, and a PostgreSQL 15+ instance.
+Requires **Java 21**, **Node 22**, and a **PostgreSQL 15+** instance. Maven is not
+required — `mvnw` / `mvnw.cmd` in `backend/` fetches the right version itself.
 
-```bash
-createdb inventory_manager
+### Database setup (once)
 
-# Backend on :8080 — Flyway migrates on startup
-cd backend
-APP_ADMIN_INITIAL_PASSWORD='choose-a-real-one' mvn spring-boot:run
+The application authenticates as its own role, so create the role as well as the
+database. Creating only the database leaves you with a password-auth failure.
 
-# Frontend on :5173, proxying /api to the backend
-cd frontend
-npm install && npm run dev
+```sql
+CREATE ROLE inventory_manager LOGIN PASSWORD 'inventory_manager';
+CREATE DATABASE inventory_manager OWNER inventory_manager;
 ```
 
-Sign in as `admin` with the password above. If you leave
-`APP_ADMIN_INITIAL_PASSWORD` unset, one is generated and printed to the log once.
+Run that as a superuser — `psql -U postgres -f setup.sql`, or paste it into
+pgAdmin. To point at a different role or database instead, set `DB_USER`,
+`DB_PASSWORD`, `DB_NAME`, `DB_HOST`, and `DB_PORT`; nothing is hardcoded.
 
-To run the whole thing as it ships — one jar with the React build inside:
+Flyway creates the schema itself on first startup. Do not create tables by hand.
+
+### macOS / Linux
 
 ```bash
-cd backend && mvn -Pfrontend package && java -jar target/*.jar
+# Backend on :8080
+cd backend
+APP_ADMIN_INITIAL_PASSWORD='choose-a-real-one' ./mvnw spring-boot:run
+
+# Frontend on :5173, proxying /api to the backend (separate terminal)
+cd frontend
+npm install
+npm run dev
+```
+
+### Windows (PowerShell)
+
+PowerShell takes neither bash's inline `VAR=value cmd` form nor `&&` as a
+statement separator, so the same steps are:
+
+```powershell
+# Backend on :8080
+cd backend
+$env:APP_ADMIN_INITIAL_PASSWORD = 'choose-a-real-one'
+.\mvnw.cmd spring-boot:run
+
+# Frontend on :5173 (separate terminal)
+cd frontend
+npm install
+npm run dev
+```
+
+`npm install` must be run from `frontend/`. There is deliberately no root
+`package.json` — the frontend is its own project, and the repository root is not
+a Node package.
+
+Then open <http://localhost:5173> and sign in as `admin` with the password you
+chose. If you leave `APP_ADMIN_INITIAL_PASSWORD` unset, one is generated and
+printed to the log **once**, at first startup only.
+
+### Running it as it actually ships
+
+One jar, with the React build inside it, served from a single origin on :8080:
+
+```bash
+cd backend
+./mvnw -Pfrontend package
+java -jar target/inventory-manager-0.1.0-SNAPSHOT.jar
+```
+
+```powershell
+cd backend
+.\mvnw.cmd -Pfrontend package
+java -jar target\inventory-manager-0.1.0-SNAPSHOT.jar
 ```
 
 ## Tests
