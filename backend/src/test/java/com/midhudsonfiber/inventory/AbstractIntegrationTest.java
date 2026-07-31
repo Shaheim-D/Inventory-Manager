@@ -73,6 +73,11 @@ public abstract class AbstractIntegrationTest {
                 new HttpEntity<>(json, headers(session.cookies(), session.csrfToken())), JsonNode.class);
     }
 
+    protected ResponseEntity<JsonNode> delete(Session session, String path) {
+        return rest.exchange(path, HttpMethod.DELETE,
+                new HttpEntity<>(headers(session.cookies(), session.csrfToken())), JsonNode.class);
+    }
+
     protected ResponseEntity<JsonNode> put(Session session, String path, String json) {
         return rest.exchange(path, HttpMethod.PUT,
                 new HttpEntity<>(json, headers(session.cookies(), session.csrfToken())), JsonNode.class);

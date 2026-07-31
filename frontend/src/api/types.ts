@@ -215,3 +215,24 @@ export interface AssignableUser {
   username: string;
   email: string;
 }
+
+/** A kind of link that may be drawn between two assets. */
+export interface RelationshipType {
+  id: number;
+  name: string;
+}
+
+/**
+ * A link as seen from one particular asset. The server words `typeName` from
+ * that asset outwards, so this never needs to know which end stored the row.
+ */
+export interface AssetRelationship {
+  id: number;
+  typeId: number;
+  typeName: string;
+  outgoing: boolean;
+  otherAssetId: number;
+  otherAssetLabel: string;
+  otherAssetCategory: string;
+  createdAt: string;
+}
