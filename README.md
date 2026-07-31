@@ -43,17 +43,40 @@ required — `mvnw` / `mvnw.cmd` in `backend/` fetches the right version itself.
 
 ### Database setup (once)
 
-The application authenticates as its own role, so create the role as well as the
-database. Creating only the database leaves you with a password-auth failure.
+The application authenticates as its own role, so the **role** must be created as
+well as the database. Creating only the database is the usual mistake: it
+surfaces at first startup as a password authentication failure that says nothing
+about the missing role.
 
-```sql
-CREATE ROLE inventory_manager LOGIN PASSWORD 'inventory_manager';
-CREATE DATABASE inventory_manager OWNER inventory_manager;
+Run [`scripts/setup-database.sql`](scripts/setup-database.sql) as a superuser.
+This is SQL, so it goes into a Postgres client — not into a shell.
+
+**Option A — pgAdmin** (installed alongside PostgreSQL on Windows by default):
+open it, connect as `postgres`, then Tools → Query Tool, open the file, and run it.
+
+**Option B — psql:**
+
+```bash
+psql -U postgres -f scripts/setup-database.sql
 ```
 
-Run that as a superuser — `psql -U postgres -f setup.sql`, or paste it into
-pgAdmin. To point at a different role or database instead, set `DB_USER`,
-`DB_PASSWORD`, `DB_NAME`, `DB_HOST`, and `DB_PORT`; nothing is hardcoded.
+```powershell
+psql -U postgres -f scripts\setup-database.sql
+```
+
+On Windows `psql` is often not on `PATH`. If PowerShell reports it is not
+recognised, call it by full path — adjust the version number to match your install:
+
+```powershell
+& "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -f scripts\setup-database.sql
+```
+
+The script is safe to re-run; a second run reports that the database already
+exists and changes nothing.
+
+To use a different role or database instead, set `DB_USER`, `DB_PASSWORD`,
+`DB_NAME`, `DB_HOST`, and `DB_PORT` — nothing is hardcoded. The credentials in
+that file are for local development only; a real deployment sets them in `.env`.
 
 Flyway creates the schema itself on first startup. Do not create tables by hand.
 
