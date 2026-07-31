@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Chip, Grid, MenuItem, Paper, TextField } from '@mui/material';
+import { Button, Chip, Grid, MenuItem, Paper, Stack, TextField } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Asset, Category, LifecycleState, Location, Page } from '../api/types';
@@ -21,6 +21,12 @@ export function AssetListPage() {
   const [size, setSize] = useState(25);
   const [sort, setSort] = useState('id');
   const [direction, setDirection] = useState<'asc' | 'desc'>('desc');
+
+  // Enter and the button do the same thing; neither should be the only way in.
+  function runSearch() {
+    setSearchTerm(q);
+    setPage(0);
+  }
 
   const categories = useQuery({ queryKey: ['categories'], queryFn: () => api.get<Category[]>('/api/categories') });
   const locations = useQuery({
@@ -104,19 +110,20 @@ export function AssetListPage() {
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
         <Grid container spacing={2}>
           <Grid item xs={12} md={4}>
-            <TextField
-              label="Search"
-              placeholder="Serial, tag, hostname, notes…"
-              value={q}
-              onChange={(event) => setQ(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  setSearchTerm(q);
-                  setPage(0);
-                }
-              }}
-              helperText="Press Enter to search"
-            />
+            <Stack direction="row" spacing={1}>
+              <TextField
+                label="Search"
+                placeholder="Serial, tag, hostname, notes…"
+                value={q}
+                onChange={(event) => setQ(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') runSearch();
+                }}
+              />
+              <Button variant="outlined" onClick={runSearch} sx={{ flexShrink: 0 }}>
+                Search
+              </Button>
+            </Stack>
           </Grid>
           <Grid item xs={12} sm={4} md={2.5}>
             <TextField

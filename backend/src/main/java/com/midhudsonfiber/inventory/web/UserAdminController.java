@@ -50,7 +50,7 @@ public class UserAdminController {
     }
 
     public record CreateUserRequest(@NotBlank String username, String email, String password,
-                                    AppUser.AuthProvider authProvider, Set<Long> roleIds) {}
+                                    Set<Long> roleIds) {}
 
     public record UpdateUserRequest(String email, Boolean active, Set<Long> roleIds) {}
 
@@ -79,28 +79,30 @@ public class UserAdminController {
         return view;
     }
 
+    /**
+     * Accounts created here are always local. Directory accounts are not created
+     * by hand: an LDAP/AD user appears the first time they sign in, provisioned
+     * into Unassigned, and RADIUS will work the same way. Asking an administrator
+     * to pick an authentication provider offered a choice that only ever had one
+     * correct answer, so the field is gone.
+     */
     @PostMapping
     @PreAuthorize("hasAuthority('" + PermissionKeys.USER_MANAGE + "')")
     @Transactional
     public Map<String, Object> create(@Valid @RequestBody CreateUserRequest request) {
-        AppUser.AuthProvider provider =
-                request.authProvider() == null ? AppUser.AuthProvider.LOCAL : request.authProvider();
-
         AppUser user = new AppUser();
         user.setUsername(request.username().trim());
         user.setEmail(request.email());
-        user.setAuthProvider(provider);
+        user.setAuthProvider(AppUser.AuthProvider.LOCAL);
         user.setActive(true);
 
-        if (provider == AppUser.AuthProvider.LOCAL) {
-            if (request.password() == null || request.password().isBlank()) {
-                throw new ApiExceptions.BadRequestException("A password is required for a local account.");
-            }
-            AuthController.validatePasswordStrength(request.password());
-            user.setPasswordHash(passwordEncoder.encode(request.password()));
-            // Admin-issued credentials are always temporary.
-            user.setMustChangePassword(true);
+        if (request.password() == null || request.password().isBlank()) {
+            throw new ApiExceptions.BadRequestException("A password is required.");
         }
+        AuthController.validatePasswordStrength(request.password());
+        user.setPasswordHash(passwordEncoder.encode(request.password()));
+        // Admin-issued credentials are always temporary.
+        user.setMustChangePassword(true);
         user.setRoles(resolveRoles(request.roleIds()));
 
         AppUser saved = users.save(user);

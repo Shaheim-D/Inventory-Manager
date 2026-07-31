@@ -1,6 +1,7 @@
 package com.midhudsonfiber.inventory.web;
 
 import com.midhudsonfiber.inventory.audit.AuditService;
+import com.midhudsonfiber.inventory.audit.AuditViewAssembler;
 import com.midhudsonfiber.inventory.domain.Asset;
 import com.midhudsonfiber.inventory.domain.AuditEvent;
 import com.midhudsonfiber.inventory.domain.FieldVisibilityRule;
@@ -30,17 +31,20 @@ public class AssetController {
     private final AssetViewAssembler assembler;
     private final FieldVisibilityService fieldVisibility;
     private final AuditEventRepository auditEvents;
+    private final AuditViewAssembler auditAssembler;
     private final CurrentUser currentUser;
 
     public AssetController(AssetService assets,
                            AssetViewAssembler assembler,
                            FieldVisibilityService fieldVisibility,
                            AuditEventRepository auditEvents,
+                           AuditViewAssembler auditAssembler,
                            CurrentUser currentUser) {
         this.assets = assets;
         this.assembler = assembler;
         this.fieldVisibility = fieldVisibility;
         this.auditEvents = auditEvents;
+        this.auditAssembler = auditAssembler;
         this.currentUser = currentUser;
     }
 
@@ -130,7 +134,7 @@ public class AssetController {
                 AuditService.ENTITY_ASSET, id,
                 PageRequest.of(page, Math.min(size, 200), Sort.by(Sort.Direction.DESC, "occurredAt", "id")));
         return Map.of(
-                "content", events.getContent(),
+                "content", auditAssembler.toViews(events.getContent()),
                 "page", events.getNumber(),
                 "totalElements", events.getTotalElements(),
                 "totalPages", events.getTotalPages());

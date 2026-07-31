@@ -20,7 +20,6 @@ import org.springframework.security.web.context.HttpSessionSecurityContextReposi
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -135,17 +134,18 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Length only, deliberately. Composition rules (an upper, a digit, a symbol)
+     * push people toward predictable substitutions and written-down passwords
+     * without adding much real strength, so the client asked for a plain minimum
+     * and that is what this enforces.
+     */
+    static final int MINIMUM_PASSWORD_LENGTH = 8;
+
     static void validatePasswordStrength(String password) {
-        if (password == null || password.length() < 12) {
-            throw new ApiExceptions.BadRequestException("Password must be at least 12 characters.");
-        }
-        List<Boolean> classes = List.of(
-                password.chars().anyMatch(Character::isUpperCase),
-                password.chars().anyMatch(Character::isLowerCase),
-                password.chars().anyMatch(Character::isDigit));
-        if (classes.contains(false)) {
+        if (password == null || password.length() < MINIMUM_PASSWORD_LENGTH) {
             throw new ApiExceptions.BadRequestException(
-                    "Password must contain upper case, lower case, and numeric characters.");
+                    "Password must be at least " + MINIMUM_PASSWORD_LENGTH + " characters.");
         }
     }
 }

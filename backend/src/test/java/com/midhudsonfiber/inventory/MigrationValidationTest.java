@@ -22,9 +22,14 @@ class MigrationValidationTest extends AbstractIntegrationTest {
     @Test
     @DisplayName("the documented per-role permission counts still hold")
     void rolePermissionCounts() {
+        // Network Engineer is 15 rather than the design's original 11: V11 added
+        // user:manage, role:manage, category:manage, and audit:view at the
+        // client's request, because at this organization the network engineers
+        // ARE the IT team. Every other role still matches the design exactly,
+        // which is the point of re-asserting them here.
         Map<String, Integer> expected = Map.of(
                 "Administrator", 24,
-                "Network Engineer", 11,
+                "Network Engineer", 15,
                 "Asset Manager", 18,
                 "Purchaser", 8,
                 "Customer Service", 3,

@@ -220,7 +220,7 @@ export function AssetDetailPage() {
               { header: 'Field', render: (event: AuditEvent) => event.fieldName ?? '—' },
               { header: 'From', render: (event: AuditEvent) => event.previousValue ?? '—' },
               { header: 'To', render: (event: AuditEvent) => event.newValue ?? '—' },
-              { header: 'By', secondary: true, render: (event: AuditEvent) => event.userId ?? 'system' },
+              { header: 'By', render: (event: AuditEvent) => event.username },
             ]}
             rows={audit.data?.content ?? []}
             rowKey={(event) => event.id}

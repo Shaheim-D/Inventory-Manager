@@ -112,6 +112,8 @@ export interface AuditEvent {
   entityType: string;
   entityId: number;
   userId: number | null;
+  /** Resolved server-side. "system" for plugin and scheduled writes. */
+  username: string;
   occurredAt: string;
   action: string;
   fieldName: string | null;
@@ -165,4 +167,10 @@ export interface Branding {
   hasLogo: boolean;
   logoFilename: string | null;
   logoUpdatedAt: string | null;
+}
+
+export interface AssignableUser {
+  id: number;
+  username: string;
+  email: string;
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   CircularProgress,
@@ -15,11 +16,15 @@ import {
 } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
-import type { Asset, Category, CustomFieldDefinition, Location } from '../api/types';
+import type { Asset, AssignableUser, Category, CustomFieldDefinition, Location } from '../api/types';
 import { PageHeader } from '../components/PageHeader';
 import { DynamicFieldForm } from '../components/DynamicFieldForm';
 
 type FormState = Record<string, unknown>;
+
+/** A fixed ladder. Consistent wording beats free text as soon as anyone wants to
+ *  filter or report on condition. */
+const CONDITIONS = ['New', 'Excellent', 'Good', 'Fair', 'Poor', 'Needs Repair', 'Beyond Repair'];
 
 export function AssetFormPage() {
   const { id } = useParams<{ id: string }>();
@@ -84,6 +89,20 @@ export function AssetFormPage() {
     queryFn: () => api.get<CustomFieldDefinition[]>(`/api/categories/${categoryId}/custom-fields`),
     enabled: Boolean(categoryId),
   });
+
+  const assignableUsers = useQuery({
+    queryKey: ['assignable-users'],
+    queryFn: () => api.get<AssignableUser[]>('/api/users/assignable'),
+  });
+
+  // What the combo shows: the matching user when one is recorded, else raw text.
+  const selectedAssignee = useMemo<AssignableUser | string>(() => {
+    if (form.assigneeUserId) {
+      const match = (assignableUsers.data ?? []).find((u) => u.id === Number(form.assigneeUserId));
+      if (match) return match;
+    }
+    return (form.assigneeText as string) ?? '';
+  }, [form.assigneeUserId, form.assigneeText, assignableUsers.data]);
 
   const hiddenCore = useMemo(
     () => new Set(existing.data?.hiddenFields ?? []),
@@ -201,7 +220,23 @@ export function AssetFormPage() {
           <Field label="Firmware version" field="firmwareVersion" form={form} set={set} sm={6} />
           <Field label="Software version" field="softwareVersion" form={form} set={set} sm={6} />
           <Field label="Device role" field="deviceRole" form={form} set={set} sm={6} />
-          <Field label="Condition" field="condition" form={form} set={set} sm={6} />
+          <Grid item xs={12} sm={6}>
+            <TextField
+              select
+              label="Condition"
+              value={form.condition ?? ''}
+              onChange={(event) => set('condition', event.target.value)}
+            >
+              <MenuItem value="">
+                <em>Not recorded</em>
+              </MenuItem>
+              {CONDITIONS.map((condition) => (
+                <MenuItem key={condition} value={condition}>
+                  {condition}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Grid>
 
           {/* Quantity is a bulk-category concept; the form reads is_serialized
               rather than special-casing any category by name. */}
@@ -250,20 +285,61 @@ export function AssetFormPage() {
               <Grid item xs={12} sm={6}>
                 <TextField
                   select
-                  label="Assignee type"
-                  value={form.assigneeType ?? 'NONE'}
-                  onChange={(event) => set('assigneeType', event.target.value)}
+                  label="Assignment"
+                  value={form.assigneeType && form.assigneeType !== 'NONE' ? 'ASSIGNED' : 'NONE'}
+                  onChange={(event) => {
+                    if (event.target.value === 'NONE') {
+                      set('assigneeType', 'NONE');
+                      set('assigneeText', '');
+                      set('assigneeUserId', '');
+                    } else {
+                      // Settles into FREE_TEXT or USER depending on what is picked below.
+                      set('assigneeType', 'FREE_TEXT');
+                    }
+                  }}
                 >
-                  <MenuItem value="NONE">Nobody</MenuItem>
-                  <MenuItem value="FREE_TEXT">A named person</MenuItem>
-                  <MenuItem value="USER">An Inventory Manager user</MenuItem>
+                  <MenuItem value="NONE">Unassigned</MenuItem>
+                  <MenuItem value="ASSIGNED">Assigned to</MenuItem>
                 </TextField>
               </Grid>
-              {form.assigneeType === 'FREE_TEXT' && (
-                <Field label="Assignee name" field="assigneeText" form={form} set={set} sm={6} />
-              )}
-              {form.assigneeType === 'USER' && (
-                <Field label="Assignee user id" field="assigneeUserId" form={form} set={set} sm={6} type="number" />
+              {form.assigneeType && form.assigneeType !== 'NONE' && (
+                <Grid item xs={12} sm={6}>
+                  {/*
+                    One control for both cases. Choosing a known user records the
+                    user id; typing anything else records the text. Whoever is
+                    assigning a laptop should not have to decide up front which
+                    kind of assignee they are dealing with.
+                  */}
+                  <Autocomplete
+                    freeSolo
+                    options={assignableUsers.data ?? []}
+                    getOptionLabel={(option) => (typeof option === 'string' ? option : option.username)}
+                    isOptionEqualToValue={(option, value) =>
+                      typeof option !== 'string' && typeof value !== 'string' && option.id === value.id
+                    }
+                    value={selectedAssignee}
+                    onChange={(_, next) => {
+                      if (next && typeof next !== 'string') {
+                        set('assigneeType', 'USER');
+                        set('assigneeUserId', next.id);
+                        set('assigneeText', '');
+                      } else {
+                        set('assigneeType', 'FREE_TEXT');
+                        set('assigneeUserId', '');
+                        set('assigneeText', next ?? '');
+                      }
+                    }}
+                    onInputChange={(_, text, reason) => {
+                      if (reason !== 'input') return;
+                      set('assigneeType', 'FREE_TEXT');
+                      set('assigneeUserId', '');
+                      set('assigneeText', text);
+                    }}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Assigned to" helperText="Pick a user, or type any name" />
+                    )}
+                  />
+                </Grid>
               )}
             </>
           )}

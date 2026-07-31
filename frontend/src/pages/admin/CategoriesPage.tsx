@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import {
   Alert,
+  Box,
   Button,
   Checkbox,
   Chip,
@@ -9,6 +11,7 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
+  IconButton,
   MenuItem,
   Paper,
   Stack,
@@ -152,6 +155,10 @@ export function CategoriesPage() {
 function CustomFieldsDialog({ category, onClose }: { category: Category; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<Partial<CustomFieldDefinition>>({ fieldType: 'TEXT', sortOrder: 0 });
+  // One entry per option rather than one comma-separated string: an option
+  // containing a comma is perfectly normal, and splitting on one silently
+  // mangles it.
+  const [enumOptions, setEnumOptions] = useState<string[]>(['']);
   const [error, setError] = useState<string | null>(null);
 
   // forAdministration returns every definition, including ones this admin's own
@@ -172,15 +179,11 @@ function CustomFieldsDialog({ category, onClose }: { category: Category; onClose
       api.post(`/api/categories/${category.id}/custom-fields`, {
         ...payload,
         enumOptions:
-          payload.fieldType === 'ENUM'
-            ? String((payload as { enumOptionsText?: string }).enumOptionsText ?? '')
-                .split(',')
-                .map((option) => option.trim())
-                .filter(Boolean)
-            : null,
+          payload.fieldType === 'ENUM' ? enumOptions.map((o) => o.trim()).filter(Boolean) : null,
       }),
     onSuccess: () => {
       setDraft({ fieldType: 'TEXT', sortOrder: 0 });
+      setEnumOptions(['']);
       setError(null);
       invalidate();
     },
@@ -261,11 +264,43 @@ function CustomFieldsDialog({ category, onClose }: { category: Category; onClose
             />
           </Stack>
           {draft.fieldType === 'ENUM' && (
-            <TextField
-              label="Options (comma separated)"
-              value={(draft as { enumOptionsText?: string }).enumOptionsText ?? ''}
-              onChange={(event) => setDraft({ ...draft, enumOptionsText: event.target.value } as typeof draft)}
-            />
+            <Stack spacing={1}>
+              <Typography variant="body2" color="text.secondary">
+                Options — one per line
+              </Typography>
+              {enumOptions.map((option, index) => (
+                <Stack key={index} direction="row" spacing={1} alignItems="center">
+                  <TextField
+                    label={`Option ${index + 1}`}
+                    value={option}
+                    onChange={(event) =>
+                      setEnumOptions((current) =>
+                        current.map((entry, i) => (i === index ? event.target.value : entry)),
+                      )
+                    }
+                    onKeyDown={(event) => {
+                      // Enter adds the next one, so a list can be typed without reaching for the mouse.
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        setEnumOptions((current) => [...current, '']);
+                      }
+                    }}
+                  />
+                  <IconButton
+                    aria-label={`Remove option ${index + 1}`}
+                    disabled={enumOptions.length === 1}
+                    onClick={() => setEnumOptions((current) => current.filter((_, i) => i !== index))}
+                  >
+                    <DeleteOutlineIcon />
+                  </IconButton>
+                </Stack>
+              ))}
+              <Box>
+                <Button size="small" onClick={() => setEnumOptions((current) => [...current, ''])}>
+                  Add option
+                </Button>
+              </Box>
+            </Stack>
           )}
           <FormControlLabel
             control={
