@@ -78,7 +78,16 @@ public class AssetService {
                 predicates.add(cb.isFalse(root.get("deleted")));
             }
             if (filter.categoryId() != null) {
-                predicates.add(cb.equal(root.get("category").get("id"), filter.categoryId()));
+                // A sub-category is a real way of finding something, so filtering by
+                // one has to return the assets merely filed under it as well as the
+                // ones it is primary for. The join is left so an asset with no
+                // sub-categories is still matched on its primary.
+                var filed = root.join("subcategories", jakarta.persistence.criteria.JoinType.LEFT);
+                predicates.add(cb.or(
+                        cb.equal(root.get("category").get("id"), filter.categoryId()),
+                        cb.equal(filed.get("id"), filter.categoryId())));
+                // The join multiplies rows for an asset in several sub-categories.
+                if (query != null) query.distinct(true);
             }
             if (filter.locationId() != null) {
                 predicates.add(cb.equal(root.get("location").get("id"), filter.locationId()));

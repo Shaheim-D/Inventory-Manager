@@ -272,32 +272,6 @@ export function AssetFormPage() {
             </TextField>
           </Grid>
 
-          {(deviceModels.data ?? []).length > 0 && (
-            <Grid item xs={12}>
-              <Autocomplete
-                options={deviceModels.data ?? []}
-                getOptionLabel={(d) => `${d.manufacturer} ${d.model}${d.deviceRole ? ' · ' + d.deviceRole : ''}`}
-                onChange={(_, device) => {
-                  if (!device) return;
-                  // Copies the values onto the asset rather than referencing the
-                  // catalog row, so retiring a device later never rewrites history.
-                  set('manufacturer', device.manufacturer);
-                  set('model', device.model);
-                  if (device.deviceRole) set('deviceRole', device.deviceRole);
-                  // A starting point, not a price list — still editable below.
-                  if (device.defaultPrice != null) set('purchasePrice', device.defaultPrice);
-                }}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Start from a known device"
-                    helperText="Optional — fills in manufacturer, model, and device role. Everything stays editable."
-                  />
-                )}
-              />
-            </Grid>
-          )}
-
           <Grid item xs={12}>
             {/*
               The first category picked is the primary one and the only thing
@@ -330,13 +304,39 @@ export function AssetFormPage() {
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="Also filed under"
+                  label="Sub-category"
                   placeholder={subcategoryIds.length ? '' : 'Optional — extra groupings for searching'}
                   helperText="Organisation only. The primary category above decides which fields you get."
                 />
               )}
             />
           </Grid>
+
+          {(deviceModels.data ?? []).length > 0 && (
+            <Grid item xs={12}>
+              <Autocomplete
+                options={deviceModels.data ?? []}
+                getOptionLabel={(d) => `${d.manufacturer} ${d.model}${d.deviceRole ? ' · ' + d.deviceRole : ''}`}
+                onChange={(_, device) => {
+                  if (!device) return;
+                  // Copies the values onto the asset rather than referencing the
+                  // catalog row, so retiring a device later never rewrites history.
+                  set('manufacturer', device.manufacturer);
+                  set('model', device.model);
+                  if (device.deviceRole) set('deviceRole', device.deviceRole);
+                  // A starting point, not a price list — still editable below.
+                  if (device.defaultPrice != null) set('purchasePrice', device.defaultPrice);
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Start from a known device"
+                    helperText="Optional — fills in manufacturer, model, and device role. Everything stays editable."
+                  />
+                )}
+              />
+            </Grid>
+          )}
 
           <Field label="Name" field="name" form={form} set={set} sm={6} />
           {uses('asset_tag') && <Field label="Asset tag" field="assetTag" form={form} set={set} sm={6} />}
