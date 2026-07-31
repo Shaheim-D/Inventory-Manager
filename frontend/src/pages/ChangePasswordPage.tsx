@@ -78,7 +78,7 @@ export function ChangePasswordPage() {
                 required
               />
               <Typography variant="caption" color="text.secondary">
-                At least 12 characters, with upper case, lower case, and a digit.
+At least 8 characters. Length is what matters — pick something you can remember.
               </Typography>
               <Button type="submit" variant="contained">
                 Change password

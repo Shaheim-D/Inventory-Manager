@@ -138,7 +138,7 @@ class AuthAndBrandingIntegrationTest extends AbstractIntegrationTest {
         Long roleId = jdbc.queryForObject("SELECT id FROM role WHERE name = ?", Long.class, roleName);
         String username = unique("auth." + roleName.toLowerCase().replace(' ', '.'));
         post(admin, "/api/admin/users", """
-                {"username":"%s","password":"%s","authProvider":"LOCAL","roleIds":[%d]}
+                {"username":"%s","password":"%s","roleIds":[%d]}
                 """.formatted(username, PASSWORD, roleId));
         return username;
     }

@@ -2,8 +2,10 @@ package com.midhudsonfiber.inventory.web;
 
 import com.midhudsonfiber.inventory.audit.AuditService;
 import com.midhudsonfiber.inventory.domain.Location;
+import com.midhudsonfiber.inventory.domain.LocationType;
 import com.midhudsonfiber.inventory.repo.AssetRepository;
 import com.midhudsonfiber.inventory.repo.LocationRepository;
+import com.midhudsonfiber.inventory.repo.LocationTypeRepository;
 import com.midhudsonfiber.inventory.security.PermissionKeys;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -26,19 +28,23 @@ import java.util.Map;
 public class LocationController {
 
     private final LocationRepository locations;
+    private final LocationTypeRepository locationTypes;
     private final AssetRepository assets;
     private final AuditService audit;
 
-    public LocationController(LocationRepository locations, AssetRepository assets, AuditService audit) {
+    public LocationController(LocationRepository locations, LocationTypeRepository locationTypes,
+                              AssetRepository assets, AuditService audit) {
         this.locations = locations;
+        this.locationTypes = locationTypes;
         this.assets = assets;
         this.audit = audit;
     }
 
     public record LocationRequest(@NotBlank String name,
                                   Long parentLocationId,
-                                  @NotNull Location.LocationType locationType,
+                                  @NotNull Long locationTypeId,
                                   @NotNull Location.OwnershipType ownershipType,
+                                  String ownershipOtherDescription,
                                   String addressLine1, String city, String state, String zip,
                                   Boolean active) {}
 
@@ -72,8 +78,11 @@ public class LocationController {
                 AuditService.FieldChange.of("name", location.getName(), request.name()),
                 AuditService.FieldChange.of("parent_location_id",
                         location.getParent() == null ? null : location.getParent().getId(), request.parentLocationId()),
-                AuditService.FieldChange.of("location_type", location.getLocationType(), request.locationType()),
+                AuditService.FieldChange.of("location_type",
+                        location.getLocationType().getName(), request.locationTypeId()),
                 AuditService.FieldChange.of("ownership_type", location.getOwnershipType(), request.ownershipType()),
+                AuditService.FieldChange.of("ownership_other_description",
+                        location.getOwnershipOtherDescription(), request.ownershipOtherDescription()),
                 AuditService.FieldChange.of("address_line1", location.getAddressLine1(), request.addressLine1()),
                 AuditService.FieldChange.of("city", location.getCity(), request.city()),
                 AuditService.FieldChange.of("state", location.getState(), request.state()),
@@ -120,13 +129,72 @@ public class LocationController {
             location.setParent(null);
         }
         location.setName(request.name());
-        location.setLocationType(request.locationType());
+        location.setLocationType(locationTypes.findById(request.locationTypeId())
+                .orElseThrow(() -> new ApiExceptions.NotFoundException("Location type not found")));
         location.setOwnershipType(request.ownershipType());
+
+        // "Other" without an explanation tells a later reader nothing, and the
+        // description is meaningless against any other ownership, so it is
+        // required in one case and cleared in the rest.
+        if (request.ownershipType() == Location.OwnershipType.OTHER) {
+            if (request.ownershipOtherDescription() == null || request.ownershipOtherDescription().isBlank()) {
+                throw new ApiExceptions.BadRequestException(
+                        "Describe what \"Other\" means for this location.");
+            }
+            location.setOwnershipOtherDescription(request.ownershipOtherDescription().trim());
+        } else {
+            location.setOwnershipOtherDescription(null);
+        }
         location.setAddressLine1(request.addressLine1());
         location.setCity(request.city());
         location.setState(request.state());
         location.setZip(request.zip());
         location.setActive(request.active() == null || request.active());
+    }
+
+    // ---------------- location types ----------------
+
+    public record LocationTypeRequest(@NotBlank String name, Integer sortOrder, Boolean active) {}
+
+    @GetMapping("/types")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.LOCATION_READ + "')")
+    public List<Map<String, Object>> types() {
+        return locationTypes.findAllByOrderBySortOrderAscNameAsc().stream()
+                .map(type -> Map.<String, Object>of(
+                        "id", type.getId(), "name", type.getName(),
+                        "sortOrder", type.getSortOrder(), "active", type.isActive()))
+                .toList();
+    }
+
+    /** Adding "Splice Trailer" is a row, not a migration — the point of V12. */
+    @PostMapping("/types")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.LOCATION_WRITE + "')")
+    public Map<String, Object> createType(@Valid @RequestBody LocationTypeRequest request) {
+        LocationType type = new LocationType();
+        type.setName(request.name().trim());
+        type.setSortOrder(request.sortOrder() == null ? 500 : request.sortOrder());
+        type.setActive(request.active() == null || request.active());
+        LocationType saved = locationTypes.save(type);
+        return Map.of("id", saved.getId(), "name", saved.getName(),
+                "sortOrder", saved.getSortOrder(), "active", saved.isActive());
+    }
+
+    @DeleteMapping("/types/{id}")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.LOCATION_WRITE + "')")
+    public ResponseEntity<Void> deleteType(@PathVariable Long id) {
+        LocationType type = locationTypes.findById(id)
+                .orElseThrow(() -> new ApiExceptions.NotFoundException("Location type not found"));
+        boolean inUse = locations.findAllByOrderByNameAsc().stream()
+                .anyMatch(location -> location.getLocationType().getId().equals(id));
+        if (inUse) {
+            // Deactivating keeps existing locations readable while taking the type
+            // out of circulation; deleting it would orphan them.
+            type.setActive(false);
+            locationTypes.save(type);
+        } else {
+            locationTypes.delete(type);
+        }
+        return ResponseEntity.noContent().build();
     }
 
     private Location location(Long id) {
@@ -139,8 +207,10 @@ public class LocationController {
         view.put("id", location.getId());
         view.put("name", location.getName());
         view.put("parentLocationId", location.getParent() == null ? null : location.getParent().getId());
-        view.put("locationType", location.getLocationType().name());
+        view.put("locationTypeId", location.getLocationType().getId());
+        view.put("locationTypeName", location.getLocationType().getName());
         view.put("ownershipType", location.getOwnershipType().name());
+        view.put("ownershipOtherDescription", location.getOwnershipOtherDescription());
         view.put("addressLine1", location.getAddressLine1());
         view.put("city", location.getCity());
         view.put("state", location.getState());

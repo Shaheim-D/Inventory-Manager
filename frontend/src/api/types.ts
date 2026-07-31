@@ -77,6 +77,37 @@ export interface Category {
   description: string | null;
   serialized: boolean;
   verificationIntervalDays: number | null;
+  /** Core columns this category actually uses — a Vehicle has no firmware version. */
+  applicableCoreFields: string[];
+}
+
+export interface LocationTypeOption {
+  id: number;
+  name: string;
+  sortOrder: number;
+  active: boolean;
+}
+
+export interface DeviceModel {
+  id: number;
+  categoryId: number | null;
+  categoryName: string | null;
+  manufacturer: string;
+  model: string;
+  deviceRole: string | null;
+  notes: string | null;
+  active: boolean;
+}
+
+export interface CoreFieldConfig {
+  applicable: string[];
+  configurable: string[];
+  labels: Record<string, string>;
+}
+
+export interface TransitionOptions {
+  suggested: { id: number; name: string }[];
+  all: { id: number; name: string; suggested: boolean }[];
 }
 
 export interface CustomFieldDefinition {
@@ -93,8 +124,10 @@ export interface Location {
   id: number;
   name: string;
   parentLocationId: number | null;
-  locationType: string;
+  locationTypeId: number;
+  locationTypeName: string;
   ownershipType: string;
+  ownershipOtherDescription: string | null;
   addressLine1: string | null;
   city: string | null;
   state: string | null;
@@ -112,6 +145,8 @@ export interface AuditEvent {
   entityType: string;
   entityId: number;
   userId: number | null;
+  /** Resolved server-side. "system" for plugin and scheduled writes. */
+  username: string;
   occurredAt: string;
   action: string;
   fieldName: string | null;
@@ -165,4 +200,10 @@ export interface Branding {
   hasLogo: boolean;
   logoFilename: string | null;
   logoUpdatedAt: string | null;
+}
+
+export interface AssignableUser {
+  id: number;
+  username: string;
+  email: string;
 }

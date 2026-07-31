@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import {
   Alert,
+  Box,
   Button,
   Checkbox,
   Chip,
@@ -9,6 +11,8 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
+  FormGroup,
+  IconButton,
   MenuItem,
   Paper,
   Stack,
@@ -17,7 +21,7 @@ import {
 } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
-import type { Category, CustomFieldDefinition } from '../../api/types';
+import type { Category, CoreFieldConfig, CustomFieldDefinition } from '../../api/types';
 import { EntityTable } from '../../components/EntityTable';
 import { PageHeader } from '../../components/PageHeader';
 
@@ -25,6 +29,7 @@ export function CategoriesPage() {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<Partial<Category> | null>(null);
   const [fieldsFor, setFieldsFor] = useState<Category | null>(null);
+  const [coreFieldsFor, setCoreFieldsFor] = useState<Category | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const categories = useQuery({ queryKey: ['categories'], queryFn: () => api.get<Category[]>('/api/categories') });
@@ -90,6 +95,9 @@ export function CategoriesPage() {
               <Button size="small" onClick={() => setEditing(category)}>
                 Edit
               </Button>
+              <Button size="small" onClick={() => setCoreFieldsFor(category)}>
+                Fields used
+              </Button>
               <Button size="small" onClick={() => setFieldsFor(category)}>
                 Custom fields
               </Button>
@@ -145,6 +153,9 @@ export function CategoriesPage() {
       </Dialog>
 
       {fieldsFor && <CustomFieldsDialog category={fieldsFor} onClose={() => setFieldsFor(null)} />}
+      {coreFieldsFor && (
+        <CoreFieldsDialog category={coreFieldsFor} onClose={() => setCoreFieldsFor(null)} />
+      )}
     </>
   );
 }
@@ -152,6 +163,10 @@ export function CategoriesPage() {
 function CustomFieldsDialog({ category, onClose }: { category: Category; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<Partial<CustomFieldDefinition>>({ fieldType: 'TEXT', sortOrder: 0 });
+  // One entry per option rather than one comma-separated string: an option
+  // containing a comma is perfectly normal, and splitting on one silently
+  // mangles it.
+  const [enumOptions, setEnumOptions] = useState<string[]>(['']);
   const [error, setError] = useState<string | null>(null);
 
   // forAdministration returns every definition, including ones this admin's own
@@ -172,15 +187,11 @@ function CustomFieldsDialog({ category, onClose }: { category: Category; onClose
       api.post(`/api/categories/${category.id}/custom-fields`, {
         ...payload,
         enumOptions:
-          payload.fieldType === 'ENUM'
-            ? String((payload as { enumOptionsText?: string }).enumOptionsText ?? '')
-                .split(',')
-                .map((option) => option.trim())
-                .filter(Boolean)
-            : null,
+          payload.fieldType === 'ENUM' ? enumOptions.map((o) => o.trim()).filter(Boolean) : null,
       }),
     onSuccess: () => {
       setDraft({ fieldType: 'TEXT', sortOrder: 0 });
+      setEnumOptions(['']);
       setError(null);
       invalidate();
     },
@@ -261,11 +272,43 @@ function CustomFieldsDialog({ category, onClose }: { category: Category; onClose
             />
           </Stack>
           {draft.fieldType === 'ENUM' && (
-            <TextField
-              label="Options (comma separated)"
-              value={(draft as { enumOptionsText?: string }).enumOptionsText ?? ''}
-              onChange={(event) => setDraft({ ...draft, enumOptionsText: event.target.value } as typeof draft)}
-            />
+            <Stack spacing={1}>
+              <Typography variant="body2" color="text.secondary">
+                Options — one per line
+              </Typography>
+              {enumOptions.map((option, index) => (
+                <Stack key={index} direction="row" spacing={1} alignItems="center">
+                  <TextField
+                    label={`Option ${index + 1}`}
+                    value={option}
+                    onChange={(event) =>
+                      setEnumOptions((current) =>
+                        current.map((entry, i) => (i === index ? event.target.value : entry)),
+                      )
+                    }
+                    onKeyDown={(event) => {
+                      // Enter adds the next one, so a list can be typed without reaching for the mouse.
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        setEnumOptions((current) => [...current, '']);
+                      }
+                    }}
+                  />
+                  <IconButton
+                    aria-label={`Remove option ${index + 1}`}
+                    disabled={enumOptions.length === 1}
+                    onClick={() => setEnumOptions((current) => current.filter((_, i) => i !== index))}
+                  >
+                    <DeleteOutlineIcon />
+                  </IconButton>
+                </Stack>
+              ))}
+              <Box>
+                <Button size="small" onClick={() => setEnumOptions((current) => [...current, ''])}>
+                  Add option
+                </Button>
+              </Box>
+            </Stack>
           )}
           <FormControlLabel
             control={
@@ -285,6 +328,85 @@ function CustomFieldsDialog({ category, onClose }: { category: Category; onClose
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Done</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+
+/**
+ * Which core columns this category uses. Ticking nothing means every field is
+ * offered, which keeps an unconfigured category behaving exactly as it did
+ * before this existed — and means clearing the list can never leave somebody
+ * with an empty form.
+ *
+ * This is not permission. A field switched off here is off for everybody; who
+ * may see a field is Field Visibility Rules, and that one is a security
+ * boundary.
+ */
+function CoreFieldsDialog({ category, onClose }: { category: Category; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<string[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const config = useQuery({
+    queryKey: ['core-fields', category.id],
+    queryFn: () => api.get<CoreFieldConfig>(`/api/categories/${category.id}/core-fields`),
+  });
+
+  const chosen = selected ?? config.data?.applicable ?? [];
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.put(`/api/categories/${category.id}/core-fields`, { coreFieldNames: chosen }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['core-fields', category.id] });
+      void queryClient.invalidateQueries({ queryKey: ['categories'] });
+      onClose();
+    },
+    onError: (caught) => setError(caught instanceof ApiError ? caught.message : 'Could not save.'),
+  });
+
+  function toggle(field: string, on: boolean) {
+    setSelected(on ? [...chosen, field] : chosen.filter((f) => f !== field));
+  }
+
+  return (
+    <Dialog open onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle>{category.name} — fields used</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Tick the fields that mean something for a {category.name.toLowerCase()}. A vehicle has no
+          firmware version; a spool of fibre has no hostname. Name, category, location, lifecycle
+          state, and assignee are always present and are not listed.
+        </Typography>
+
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
+
+        <FormGroup>
+          {(config.data?.configurable ?? []).map((field) => (
+            <FormControlLabel
+              key={field}
+              control={
+                <Checkbox
+                  checked={chosen.includes(field)}
+                  onChange={(event) => toggle(field, event.target.checked)}
+                />
+              }
+              label={config.data?.labels[field] ?? field}
+            />
+          ))}
+        </FormGroup>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button variant="contained" onClick={() => save.mutate()} disabled={save.isPending}>
+          Save
+        </Button>
       </DialogActions>
     </Dialog>
   );

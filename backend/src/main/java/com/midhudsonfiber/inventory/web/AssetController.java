@@ -1,10 +1,12 @@
 package com.midhudsonfiber.inventory.web;
 
 import com.midhudsonfiber.inventory.audit.AuditService;
+import com.midhudsonfiber.inventory.audit.AuditViewAssembler;
 import com.midhudsonfiber.inventory.domain.Asset;
 import com.midhudsonfiber.inventory.domain.AuditEvent;
 import com.midhudsonfiber.inventory.domain.FieldVisibilityRule;
 import com.midhudsonfiber.inventory.repo.AuditEventRepository;
+import com.midhudsonfiber.inventory.repo.LifecycleStateRepository;
 import com.midhudsonfiber.inventory.security.CurrentUser;
 import com.midhudsonfiber.inventory.security.PermissionKeys;
 import com.midhudsonfiber.inventory.service.AssetService;
@@ -30,17 +32,23 @@ public class AssetController {
     private final AssetViewAssembler assembler;
     private final FieldVisibilityService fieldVisibility;
     private final AuditEventRepository auditEvents;
+    private final AuditViewAssembler auditAssembler;
+    private final LifecycleStateRepository lifecycleStates;
     private final CurrentUser currentUser;
 
     public AssetController(AssetService assets,
                            AssetViewAssembler assembler,
                            FieldVisibilityService fieldVisibility,
                            AuditEventRepository auditEvents,
+                           AuditViewAssembler auditAssembler,
+                           LifecycleStateRepository lifecycleStates,
                            CurrentUser currentUser) {
         this.assets = assets;
         this.assembler = assembler;
         this.fieldVisibility = fieldVisibility;
         this.auditEvents = auditEvents;
+        this.auditAssembler = auditAssembler;
+        this.lifecycleStates = lifecycleStates;
         this.currentUser = currentUser;
     }
 
@@ -97,12 +105,32 @@ public class AssetController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Both the states the category's graph leads to and every state that exists.
+     *
+     * <p>The UI leads with the suggested ones but allows any of them, because real
+     * equipment skips steps and a system that refuses to record what happened just
+     * produces records that are wrong. A skip is still audited, and says so.
+     */
     @GetMapping("/{id}/transitions")
     @PreAuthorize("hasAuthority('" + PermissionKeys.ASSET_READ + "')")
-    public List<Map<String, Object>> transitions(@PathVariable Long id) {
-        return assets.availableTransitions(id).stream()
-                .map(state -> Map.<String, Object>of("id", state.getId(), "name", state.getName()))
+    public Map<String, Object> transitions(@PathVariable Long id) {
+        List<Long> suggestedIds = assets.availableTransitions(id).stream()
+                .map(com.midhudsonfiber.inventory.domain.LifecycleState::getId)
                 .toList();
+        Long currentId = assets.get(id).getLifecycleState().getId();
+
+        return Map.of(
+                "suggested", assets.availableTransitions(id).stream()
+                        .map(state -> Map.<String, Object>of("id", state.getId(), "name", state.getName()))
+                        .toList(),
+                "all", lifecycleStates.findAllByOrderByIdAsc().stream()
+                        .filter(state -> !state.getId().equals(currentId))
+                        .map(state -> Map.<String, Object>of(
+                                "id", state.getId(),
+                                "name", state.getName(),
+                                "suggested", suggestedIds.contains(state.getId())))
+                        .toList());
     }
 
     public record TransitionRequest(Long toStateId, String reason) {}
@@ -130,7 +158,7 @@ public class AssetController {
                 AuditService.ENTITY_ASSET, id,
                 PageRequest.of(page, Math.min(size, 200), Sort.by(Sort.Direction.DESC, "occurredAt", "id")));
         return Map.of(
-                "content", events.getContent(),
+                "content", auditAssembler.toViews(events.getContent()),
                 "page", events.getNumber(),
                 "totalElements", events.getTotalElements(),
                 "totalPages", events.getTotalPages());

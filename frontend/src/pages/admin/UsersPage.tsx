@@ -146,12 +146,11 @@ function CreateUserDialog({
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [authProvider, setAuthProvider] = useState('LOCAL');
   const [roleIds, setRoleIds] = useState<number[]>([]);
 
   const create = useMutation({
     mutationFn: () =>
-      api.post('/api/admin/users', { username, email: email || null, password, authProvider, roleIds }),
+      api.post('/api/admin/users', { username, email: email || null, password, roleIds }),
     onSuccess: onCreated,
     onError: (caught) => onError(caught instanceof ApiError ? caught.message : 'Could not create the user.'),
   });
@@ -163,25 +162,15 @@ function CreateUserDialog({
         <Stack spacing={2} sx={{ mt: 1 }}>
           <TextField label="Username" required value={username} onChange={(e) => setUsername(e.target.value)} />
           <TextField label="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          {/* No sign-in method picker: accounts made here are always local.
+              Directory and RADIUS users appear on first sign-in instead. */}
           <TextField
-            select
-            label="Sign-in method"
-            value={authProvider}
-            onChange={(e) => setAuthProvider(e.target.value)}
-          >
-            <MenuItem value="LOCAL">Local account</MenuItem>
-            <MenuItem value="LDAP">LDAP</MenuItem>
-            <MenuItem value="ACTIVE_DIRECTORY">Active Directory</MenuItem>
-          </TextField>
-          {authProvider === 'LOCAL' && (
-            <TextField
-              label="Temporary password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              helperText="At least 12 characters with upper case, lower case, and a digit. The user must change it at first sign-in."
-            />
-          )}
+            label="Temporary password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            helperText="At least 8 characters. The user is prompted to change it at first sign-in."
+          />
           <Typography variant="subtitle2">Roles</Typography>
           <FormGroup>
             {roles.map((role) => (

@@ -1,5 +1,6 @@
 package com.midhudsonfiber.inventory.web;
 
+import com.midhudsonfiber.inventory.audit.AuditViewAssembler;
 import com.midhudsonfiber.inventory.domain.AuditEvent;
 import com.midhudsonfiber.inventory.repo.AuditEventRepository;
 import com.midhudsonfiber.inventory.security.PermissionKeys;
@@ -25,9 +26,11 @@ import java.util.Map;
 public class AuditController {
 
     private final AuditEventRepository events;
+    private final AuditViewAssembler assembler;
 
-    public AuditController(AuditEventRepository events) {
+    public AuditController(AuditEventRepository events, AuditViewAssembler assembler) {
         this.events = events;
+        this.assembler = assembler;
     }
 
     @GetMapping
@@ -54,7 +57,7 @@ public class AuditController {
                 PageRequest.of(page, Math.min(size, 200), Sort.by(Sort.Direction.DESC, "occurredAt", "id")));
 
         return Map.of(
-                "content", result.getContent(),
+                "content", assembler.toViews(result.getContent()),
                 "page", result.getNumber(),
                 "totalElements", result.getTotalElements(),
                 "totalPages", result.getTotalPages());

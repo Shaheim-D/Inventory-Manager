@@ -23,14 +23,21 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
-import type { Location } from '../api/types';
+import type { Location, LocationTypeOption } from '../api/types';
 import { PageHeader } from '../components/PageHeader';
 import { useAuth } from '../auth/AuthContext';
 
 interface EnumOptions {
-  locationTypes: string[];
   ownershipTypes: string[];
 }
+
+/** Reads better than the stored key, which is all the API deals in. */
+const OWNERSHIP_LABELS: Record<string, string> = {
+  COMPANY_OWNED: 'Company Owned',
+  CUSTOMER_PREMISE: 'Customer Premise',
+  VENDOR: 'Vendor',
+  OTHER: 'Other',
+};
 
 /**
  * Locations are a real hierarchy, so this is a tree rather than a flat list with
@@ -45,6 +52,22 @@ export function LocationsPage() {
 
   const locations = useQuery({ queryKey: ['locations'], queryFn: () => api.get<Location[]>('/api/locations') });
   const enums = useQuery({ queryKey: ['enums'], queryFn: () => api.get<EnumOptions>('/api/reference/enums') });
+  // Location types are a table now, so new ones can be added without a release.
+  const locationTypes = useQuery({
+    queryKey: ['location-types'],
+    queryFn: () => api.get<LocationTypeOption[]>('/api/locations/types'),
+  });
+  const [newTypeName, setNewTypeName] = useState('');
+
+  const addType = useMutation({
+    mutationFn: (name: string) => api.post<LocationTypeOption>('/api/locations/types', { name }),
+    onSuccess: (created) => {
+      setNewTypeName('');
+      setEditing((current) => (current ? { ...current, locationTypeId: created.id } : current));
+      void queryClient.invalidateQueries({ queryKey: ['location-types'] });
+    },
+    onError: (caught) => setError(caught instanceof ApiError ? caught.message : 'Could not add the type.'),
+  });
 
   const childrenOf = useMemo(() => {
     const map = new Map<number | null, Location[]>();
@@ -116,7 +139,7 @@ export function LocationsPage() {
               primary={
                 <Stack direction="row" spacing={1} alignItems="center">
                   <span>{location.name}</span>
-                  <Chip size="small" variant="outlined" label={location.locationType.replaceAll('_', ' ')} />
+                  <Chip size="small" variant="outlined" label={location.locationTypeName} />
                   {!location.active && <Chip size="small" color="warning" label="Inactive" />}
                 </Stack>
               }
@@ -140,7 +163,16 @@ export function LocationsPage() {
         subtitle="Sites, warehouses, towers, and anything else that holds an asset."
         actions={
           has('location:write') ? (
-            <Button variant="contained" onClick={() => setEditing({ locationType: 'WAREHOUSE', ownershipType: 'ISP_OWNED', active: true })}>
+            <Button
+              variant="contained"
+              onClick={() =>
+                setEditing({
+                  locationTypeId: locationTypes.data?.[0]?.id,
+                  ownershipType: 'COMPANY_OWNED',
+                  active: true,
+                })
+              }
+            >
               New location
             </Button>
           ) : undefined
@@ -196,15 +228,43 @@ export function LocationsPage() {
             <TextField
               select
               label="Location type"
-              value={editing?.locationType ?? ''}
-              onChange={(event) => setEditing({ ...editing, locationType: event.target.value })}
+              value={editing?.locationTypeId ?? ''}
+              onChange={(event) => setEditing({ ...editing, locationTypeId: Number(event.target.value) })}
             >
-              {(enums.data?.locationTypes ?? []).map((type) => (
-                <MenuItem key={type} value={type}>
-                  {type.replaceAll('_', ' ')}
-                </MenuItem>
-              ))}
+              {(locationTypes.data ?? [])
+                .filter((type) => type.active || type.id === editing?.locationTypeId)
+                .map((type) => (
+                  <MenuItem key={type.id} value={type.id}>
+                    {type.name}
+                  </MenuItem>
+                ))}
             </TextField>
+
+            {/* Adding a type is a row, so it belongs right here rather than on a
+                separate admin screen someone has to go find. */}
+            <Stack direction="row" spacing={1} alignItems="flex-start">
+              <TextField
+                size="small"
+                label="Add a location type"
+                placeholder="e.g. Splice Trailer"
+                value={newTypeName}
+                onChange={(event) => setNewTypeName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && newTypeName.trim()) {
+                    event.preventDefault();
+                    addType.mutate(newTypeName.trim());
+                  }
+                }}
+              />
+              <Button
+                sx={{ flexShrink: 0 }}
+                disabled={!newTypeName.trim() || addType.isPending}
+                onClick={() => addType.mutate(newTypeName.trim())}
+              >
+                Add
+              </Button>
+            </Stack>
+
             <TextField
               select
               label="Ownership"
@@ -213,10 +273,21 @@ export function LocationsPage() {
             >
               {(enums.data?.ownershipTypes ?? []).map((type) => (
                 <MenuItem key={type} value={type}>
-                  {type.replaceAll('_', ' ')}
+                  {OWNERSHIP_LABELS[type] ?? type.replaceAll('_', ' ')}
                 </MenuItem>
               ))}
             </TextField>
+            {editing?.ownershipType === 'OTHER' && (
+              <TextField
+                label="What does Other mean here?"
+                required
+                value={editing?.ownershipOtherDescription ?? ''}
+                onChange={(event) =>
+                  setEditing({ ...editing, ownershipOtherDescription: event.target.value })
+                }
+                helperText="e.g. Leased from the tower owner, shared municipal site"
+              />
+            )}
             <TextField
               label="Address"
               value={editing?.addressLine1 ?? ''}

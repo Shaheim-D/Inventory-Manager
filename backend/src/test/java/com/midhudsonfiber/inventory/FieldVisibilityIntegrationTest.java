@@ -42,8 +42,8 @@ class FieldVisibilityIntegrationTest extends AbstractIntegrationTest {
         Session admin = signIn("admin", "BootstrapAdmin123");
 
         Long locationId = post(admin, "/api/locations", """
-                {"name":"%s","locationType":"WAREHOUSE","ownershipType":"ISP_OWNED"}
-                """.formatted(unique("visibility-warehouse"))).getBody().get("id").asLong();
+                {"name":"%s","locationTypeId":%d,"ownershipType":"COMPANY_OWNED"}
+                """.formatted(unique("visibility-warehouse"), warehouseTypeId())).getBody().get("id").asLong();
 
         Long vehicleCategory = categoryId("Vehicle");
         Long laptopCategory = categoryId("Laptop");
@@ -158,9 +158,13 @@ class FieldVisibilityIntegrationTest extends AbstractIntegrationTest {
         Long roleId = jdbc.queryForObject("SELECT id FROM role WHERE name = ?", Long.class, roleName);
         String username = unique(roleName.toLowerCase().replace(' ', '.'));
         post(admin, "/api/admin/users", """
-                {"username":"%s","password":"%s","authProvider":"LOCAL","roleIds":[%d]}
+                {"username":"%s","password":"%s","roleIds":[%d]}
                 """.formatted(username, PASSWORD, roleId));
         return username;
+    }
+
+    private Long warehouseTypeId() {
+        return jdbc.queryForObject("SELECT id FROM location_type WHERE name = 'Warehouse'", Long.class);
     }
 
     private Long categoryId(String name) {

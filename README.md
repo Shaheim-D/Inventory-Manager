@@ -41,6 +41,30 @@ automated test on every build.
 Requires **Java 21**, **Node 22**, and a **PostgreSQL 15+** instance. Maven is not
 required — `mvnw` / `mvnw.cmd` in `backend/` fetches the right version itself.
 
+Java must be a full **JDK**, not a JRE, and `JAVA_HOME` must point at it. Maven's
+launcher reads `JAVA_HOME` specifically; having `java` on `PATH` is not enough,
+and the failure is a bare `The JAVA_HOME environment variable is not defined
+correctly` that says nothing about which of the two is missing.
+
+```powershell
+# Check what you have
+java -version
+echo "JAVA_HOME = [$env:JAVA_HOME]"
+
+# Set it if empty -- the JDK folder that CONTAINS bin, not bin itself
+$env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.5.11-hotspot'
+[Environment]::SetEnvironmentVariable('JAVA_HOME', $env:JAVA_HOME, 'User')
+
+# No JDK at all? Install one, then reopen the terminal
+winget install EclipseAdoptium.Temurin.21.JDK
+```
+
+```bash
+java -version
+echo "JAVA_HOME = [$JAVA_HOME]"
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64   # adjust to your install
+```
+
 ### Database setup (once)
 
 The application authenticates as its own role, so the **role** must be created as
