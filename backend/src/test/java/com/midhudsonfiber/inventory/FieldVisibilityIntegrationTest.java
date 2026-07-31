@@ -51,7 +51,7 @@ class FieldVisibilityIntegrationTest extends AbstractIntegrationTest {
         vehicleAssetId = post(admin, "/api/assets", """
                 {"categoryId":%d,"locationId":%d,"name":"%s","serialNumber":"%s",
                  "purchasePrice":48500.00,"invoiceNumber":"INV-9912",
-                 "assigneeType":"FREE_TEXT","assigneeText":"Dana Whitfield",
+                 "assigneeType":"EMPLOYEE","assigneeText":"Dana Whitfield",
                  "customFields":{"VIN":"1FDXF46P17EB12345"}}
                 """.formatted(vehicleCategory, locationId, unique("Bucket Truck"), unique("VIN")))
                 .getBody().get("id").asLong();
@@ -59,7 +59,7 @@ class FieldVisibilityIntegrationTest extends AbstractIntegrationTest {
         laptopAssetId = post(admin, "/api/assets", """
                 {"categoryId":%d,"locationId":%d,"name":"%s","serialNumber":"%s",
                  "purchasePrice":1450.00,
-                 "assigneeType":"FREE_TEXT","assigneeText":"Dana Whitfield"}
+                 "assigneeType":"EMPLOYEE","assigneeText":"Dana Whitfield"}
                 """.formatted(laptopCategory, locationId, unique("Field Laptop"), unique("LT")))
                 .getBody().get("id").asLong();
 
@@ -82,7 +82,7 @@ class FieldVisibilityIntegrationTest extends AbstractIntegrationTest {
         assertThat(asset.get("customFields").has("VIN")).isFalse();
 
         // Deliberately ungated: that an assignee exists is low-sensitivity, who it is is not.
-        assertThat(asset.get("assigneeType").asText()).isEqualTo("FREE_TEXT");
+        assertThat(asset.get("assigneeType").asText()).isEqualTo("EMPLOYEE");
     }
 
     @Test

@@ -31,6 +31,10 @@ public class DeviceModel {
     @Column(name = "device_role")
     private String deviceRole;
 
+    /** A starting point copied onto a new asset, not a price list. */
+    @Column(name = "default_price")
+    private java.math.BigDecimal defaultPrice;
+
     private String notes;
 
     @Column(name = "is_active", nullable = false)
@@ -51,6 +55,8 @@ public class DeviceModel {
     public void setModel(String model) { this.model = model; }
     public String getDeviceRole() { return deviceRole; }
     public void setDeviceRole(String deviceRole) { this.deviceRole = deviceRole; }
+    public java.math.BigDecimal getDefaultPrice() { return defaultPrice; }
+    public void setDefaultPrice(java.math.BigDecimal p) { this.defaultPrice = p; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
     public boolean isActive() { return active; }

@@ -89,16 +89,25 @@ export function AssetDetailPage() {
 
   const data = asset.data;
 
+  // Both come from the server with the asset, so the detail page and the form
+  // agree about what this category uses without either re-deriving it.
+  const applicable = new Set(data.applicableCoreFields);
+  const uses = (field: string) => applicable.has(field);
+  const label = (field: string) => data.coreFieldLabels[field] ?? field;
+
   return (
     <>
       <PageHeader
         title={data.displayLabel}
         subtitle={
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5 }}>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5 }} flexWrap="wrap" useFlexGap>
             <Chip size="small" label={data.categoryName} />
-            <Chip size="small" variant="outlined" label={data.lifecycleStateName} />
+            {data.subcategories.map((sub) => (
+              <Chip key={sub.id} size="small" variant="outlined" label={sub.name} />
+            ))}
+            <Chip size="small" color={lifecycleColor(data.lifecycleStateName)} label={data.lifecycleStateName} />
             <Typography variant="body2" color="text.secondary">
-              {data.locationName}
+              <strong>Location:</strong> {data.locationName}
             </Typography>
           </Stack>
         }
@@ -134,22 +143,26 @@ export function AssetDetailPage() {
         <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 } }}>
           <Grid container spacing={3}>
             <Grid item xs={12} md={6}>
+              {/* Only what this kind of thing actually uses. A vehicle has no
+                  hostname, so showing an empty Hostname row would be noise. */}
               <Section title="Identity">
                 <Field label="Name" value={data.name} />
-                <Field label="Asset tag" value={data.assetTag} />
-                <Field label="Serial number" value={data.serialNumber} />
-                <Field label="Hostname" value={data.hostname} />
-                <Field label="Management IP" value={data.managementIp} />
-                <Field label="MAC addresses" value={data.macAddresses?.join(', ')} />
+                {uses('asset_tag') && <Field label={label('asset_tag')} value={data.assetTag} />}
+                {uses('serial_number') && <Field label={label('serial_number')} value={data.serialNumber} />}
+                {uses('hostname') && <Field label={label('hostname')} value={data.hostname} />}
+                {uses('management_ip') && <Field label={label('management_ip')} value={data.managementIp} />}
+                {uses('mac_addresses') && (
+                  <Field label={label('mac_addresses')} value={data.macAddresses?.join(', ')} />
+                )}
               </Section>
 
               <Section title="Hardware">
-                <Field label="Manufacturer" value={data.manufacturer} />
-                <Field label="Model" value={data.model} />
-                <Field label="Firmware" value={data.firmwareVersion} />
-                <Field label="Software" value={data.softwareVersion} />
-                <Field label="Device role" value={data.deviceRole} />
-                <Field label="Condition" value={data.condition} />
+                {uses('manufacturer') && <Field label={label('manufacturer')} value={data.manufacturer} />}
+                {uses('model') && <Field label={label('model')} value={data.model} />}
+                {uses('firmware_version') && <Field label={label('firmware_version')} value={data.firmwareVersion} />}
+                {uses('software_version') && <Field label={label('software_version')} value={data.softwareVersion} />}
+                {uses('device_role') && <Field label={label('device_role')} value={data.deviceRole} />}
+                {uses('condition') && <Field label={label('condition')} value={data.condition} />}
                 {!data.serialized && <Field label="Quantity on hand" value={String(data.quantity)} />}
               </Section>
             </Grid>
@@ -160,7 +173,7 @@ export function AssetDetailPage() {
                 here too — nothing renders a blank slot or a masked value.
               */}
               <Section title="Purchase & warranty">
-                <Field label="Purchase date" value={data.purchaseDate} />
+                {uses('purchase_date') && <Field label={label('purchase_date')} value={data.purchaseDate} />}
                 {'purchasePrice' in data && (
                   <Field
                     label="Purchase price"
@@ -171,20 +184,30 @@ export function AssetDetailPage() {
                     }
                   />
                 )}
-                <Field label="Vendor" value={data.vendor} />
+                {uses('vendor') && <Field label={label('vendor')} value={data.vendor} />}
                 {'invoiceNumber' in data && <Field label="Invoice number" value={data.invoiceNumber} />}
                 {'purchaseLink' in data && <Field label="Purchase link" value={data.purchaseLink} />}
-                <Field label="Warranty start" value={data.warrantyStart} />
-                <Field label="Warranty expiration" value={data.warrantyExpiration} />
+                {uses('warranty_start') && <Field label={label('warranty_start')} value={data.warrantyStart} />}
+                {uses('warranty_start') && data.warrantyTermMonths != null && (
+                  <Field label="Warranty term" value={formatTerm(data.warrantyTermMonths)} />
+                )}
+                {uses('warranty_start') && (
+                  <Field label="Warranty expires" value={data.warrantyExpiration} />
+                )}
               </Section>
 
               <Section title="Custody">
-                <Field label="Assignee type" value={data.assigneeType} />
-                {'assigneeText' in data && <Field label="Assignee" value={data.assigneeText} />}
-                {'assigneeUserId' in data && data.assigneeUserId != null && (
-                  <Field label="Assigned user id" value={String(data.assigneeUserId)} />
+                <Field label="Assignment" value={ASSIGNMENT_LABELS[data.assigneeType]} />
+                {/* One resolved name, whether the assignee is a user account, a
+                    named employee, or a customer. Previously a user assignment
+                    showed nothing here, because the name lived behind an id. */}
+                {'assigneeDisplay' in data && data.assigneeType !== 'NONE' && (
+                  <Field
+                    label={data.assigneeType === 'CUSTOMER' ? 'Customer' : 'Assigned to'}
+                    value={data.assigneeDisplay}
+                  />
                 )}
-                <Field label="Customer" value={data.customerName} />
+                {uses('customer_name') && <Field label={label('customer_name')} value={data.customerName} />}
                 <Field label="Last verified" value={formatDate(data.lastVerifiedAt)} />
               </Section>
 
@@ -269,7 +292,6 @@ export function AssetDetailPage() {
             {(transitions.data?.all ?? []).map((state) => (
               <MenuItem key={state.id} value={state.id}>
                 {state.name}
-                {state.suggested ? '' : '  — skips ahead'}
               </MenuItem>
             ))}
           </TextField>
@@ -333,7 +355,52 @@ function Field({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
+/**
+ * Reads the state at a glance: green while it is doing its job, amber while it
+ * is on the way there or out of service, red at the end of its life.
+ */
+function lifecycleColor(
+  state: string,
+): 'default' | 'primary' | 'success' | 'warning' | 'error' | 'info' {
+  switch (state) {
+    case 'Ordered':
+    case 'Received':
+      return 'info';
+    case 'Available':
+      return 'success';
+    case 'Reserved':
+      return 'primary';
+    case 'Installed':
+    case 'Active':
+      return 'success';
+    case 'Repair':
+    case 'Returned':
+      return 'warning';
+    case 'Retired':
+    case 'Disposed':
+      return 'error';
+    default:
+      return 'default';
+  }
+}
+
 function formatDate(value: string | null): string {
   if (!value) return '—';
   return new Date(value).toLocaleString();
+}
+
+
+const ASSIGNMENT_LABELS: Record<string, string> = {
+  NONE: 'Unassigned',
+  USER: 'Assigned to an employee',
+  EMPLOYEE: 'Assigned to an employee',
+  CUSTOMER: 'Assigned to a customer',
+};
+
+function formatTerm(months: number): string {
+  if (months % 12 === 0) {
+    const years = months / 12;
+    return `${years} year${years === 1 ? '' : 's'}`;
+  }
+  return `${months} month${months === 1 ? '' : 's'}`;
 }

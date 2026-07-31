@@ -20,7 +20,12 @@ import java.util.Map;
 @Table(name = "asset")
 public class Asset {
 
-    public enum AssigneeType { NONE, FREE_TEXT, USER }
+    /**
+     * Who has it. USER is an account in this system; EMPLOYEE is a named person
+     * who is not; CUSTOMER is out at a customer. The distinction matters because
+     * what you do about an overdue laptop differs depending on which it is.
+     */
+    public enum AssigneeType { NONE, USER, EMPLOYEE, CUSTOMER }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -37,6 +42,17 @@ public class Asset {
     @ManyToOne(optional = false, fetch = FetchType.EAGER)
     @JoinColumn(name = "lifecycle_state_id")
     private LifecycleState lifecycleState;
+
+    /**
+     * Extra groupings this asset is filed under. Labelling only: the primary
+     * category above is the sole thing that decides fields, custom fields, and
+     * lifecycle. Two categories competing to define one form would be ambiguous.
+     */
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(name = "asset_subcategory",
+            joinColumns = @JoinColumn(name = "asset_id"),
+            inverseJoinColumns = @JoinColumn(name = "asset_category_id"))
+    private java.util.Set<AssetCategory> subcategories = new java.util.LinkedHashSet<>();
 
     /** Human-friendly display label (V6) -- distinct from hostname and asset_tag. */
     private String name;
@@ -92,8 +108,13 @@ public class Asset {
     @Column(name = "warranty_start")
     private LocalDate warrantyStart;
 
+    /** Derived from {@link #warrantyStart} plus {@link #warrantyTermMonths}. */
     @Column(name = "warranty_expiration")
     private LocalDate warrantyExpiration;
+
+    /** How long the warranty runs. People are told "two years", not a date. */
+    @Column(name = "warranty_term_months")
+    private Integer warrantyTermMonths;
 
     @Column(name = "license_information")
     private String licenseInformation;
@@ -204,6 +225,21 @@ public class Asset {
     public void setWarrantyStart(LocalDate d) { this.warrantyStart = d; }
     public LocalDate getWarrantyExpiration() { return warrantyExpiration; }
     public void setWarrantyExpiration(LocalDate d) { this.warrantyExpiration = d; }
+    public Integer getWarrantyTermMonths() { return warrantyTermMonths; }
+    public void setWarrantyTermMonths(Integer months) { this.warrantyTermMonths = months; }
+
+    /**
+     * Keeps the stored expiration in step with the term. Everything downstream --
+     * reports, the warranty alert -- still reads warranty_expiration, so deriving
+     * it here meant nothing else had to change.
+     */
+    public void recalculateWarrantyExpiration() {
+        if (warrantyStart != null && warrantyTermMonths != null && warrantyTermMonths > 0) {
+            warrantyExpiration = warrantyStart.plusMonths(warrantyTermMonths);
+        } else if (warrantyTermMonths == null && warrantyStart == null) {
+            warrantyExpiration = null;
+        }
+    }
     public String getLicenseInformation() { return licenseInformation; }
     public void setLicenseInformation(String v) { this.licenseInformation = v; }
     public String getCondition() { return condition; }
@@ -239,6 +275,8 @@ public class Asset {
     public void setPurchaseOrderLineItemId(Long v) { this.purchaseOrderLineItemId = v; }
     public Instant getLastVerifiedAt() { return lastVerifiedAt; }
     public void setLastVerifiedAt(Instant lastVerifiedAt) { this.lastVerifiedAt = lastVerifiedAt; }
+    public java.util.Set<AssetCategory> getSubcategories() { return subcategories; }
+    public void setSubcategories(java.util.Set<AssetCategory> s) { this.subcategories = s; }
     public Long getLastVerifiedBy() { return lastVerifiedBy; }
     public void setLastVerifiedBy(Long lastVerifiedBy) { this.lastVerifiedBy = lastVerifiedBy; }
 

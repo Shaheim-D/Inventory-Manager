@@ -40,6 +40,7 @@ public class DeviceModelController {
                                      @NotBlank String manufacturer,
                                      @NotBlank String model,
                                      String deviceRole,
+                                     java.math.BigDecimal defaultPrice,
                                      String notes,
                                      Boolean active) {}
 
@@ -83,6 +84,7 @@ public class DeviceModelController {
         device.setManufacturer(request.manufacturer().trim());
         device.setModel(request.model().trim());
         device.setDeviceRole(blankToNull(request.deviceRole()));
+        device.setDefaultPrice(request.defaultPrice());
         device.setNotes(blankToNull(request.notes()));
         device.setActive(request.active() == null || request.active());
         device.setCategory(request.categoryId() == null ? null
@@ -102,6 +104,7 @@ public class DeviceModelController {
         view.put("manufacturer", device.getManufacturer());
         view.put("model", device.getModel());
         view.put("deviceRole", device.getDeviceRole());
+        view.put("defaultPrice", device.getDefaultPrice());
         view.put("notes", device.getNotes());
         view.put("active", device.isActive());
         return view;

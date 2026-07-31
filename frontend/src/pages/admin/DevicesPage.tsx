@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Button,
@@ -9,6 +10,7 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
+  InputAdornment,
   MenuItem,
   Paper,
   Stack,
@@ -29,7 +31,11 @@ import { PageHeader } from '../../components/PageHeader';
  */
 export function DevicesPage() {
   const queryClient = useQueryClient();
-  const [editing, setEditing] = useState<Partial<DeviceModel> | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  // The nav's plus shortcut opens the dialog straight away.
+  const [editing, setEditing] = useState<Partial<DeviceModel> | null>(
+    searchParams.get('new') === '1' ? { active: true } : null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState('');
 
@@ -107,6 +113,14 @@ export function DevicesPage() {
             { header: 'Model', render: (d: DeviceModel) => d.model },
             { header: 'Device role', render: (d: DeviceModel) => d.deviceRole ?? '—' },
             {
+              header: 'Typical price',
+              align: 'right',
+              render: (d: DeviceModel) =>
+                d.defaultPrice == null
+                  ? '—'
+                  : Number(d.defaultPrice).toLocaleString(undefined, { style: 'currency', currency: 'USD' }),
+            },
+            {
               header: 'Category',
               render: (d: DeviceModel) =>
                 d.categoryName ? (
@@ -139,7 +153,15 @@ export function DevicesPage() {
         />
       </Paper>
 
-      <Dialog open={Boolean(editing)} onClose={() => setEditing(null)} fullWidth maxWidth="sm">
+      <Dialog
+        open={Boolean(editing)}
+        onClose={() => {
+          setEditing(null);
+          if (searchParams.get('new')) setSearchParams({}, { replace: true });
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
         <DialogTitle>{editing?.id ? 'Edit device' : 'New device'}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
@@ -160,6 +182,19 @@ export function DevicesPage() {
               value={editing?.deviceRole ?? ''}
               onChange={(event) => setEditing({ ...editing, deviceRole: event.target.value })}
               helperText="Optional — pre-filled onto the asset, e.g. Core Router, Edge Switch"
+            />
+            <TextField
+              label="Typical price"
+              value={editing?.defaultPrice ?? ''}
+              onChange={(event) =>
+                setEditing({
+                  ...editing,
+                  defaultPrice: event.target.value === '' ? null : Number(event.target.value.replace(/[^0-9.]/g, '')),
+                })
+              }
+              inputProps={{ inputMode: 'decimal' }}
+              InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+              helperText="Copied onto a new asset as a starting point, and editable there."
             />
             <TextField
               select

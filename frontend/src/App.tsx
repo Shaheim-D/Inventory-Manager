@@ -46,7 +46,7 @@ export function App() {
         <Route path="/audit" element={guard(['audit:view'], <AuditPage />)} />
 
         <Route path="/admin/categories" element={guard(['category:manage'], <CategoriesPage />)} />
-        <Route path="/devices" element={guard(['asset:read'], <DevicesPage />)} />
+        <Route path="/admin/devices" element={guard(['asset:read'], <DevicesPage />)} />
         <Route path="/admin/users" element={guard(['user:manage'], <UsersPage />)} />
         <Route path="/admin/roles" element={guard(['role:manage'], <RolesPage />)} />
         <Route path="/admin/field-visibility" element={guard(['role:manage'], <FieldVisibilityPage />)} />

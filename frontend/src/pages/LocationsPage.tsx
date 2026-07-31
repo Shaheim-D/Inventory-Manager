@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -48,6 +49,7 @@ export function LocationsPage() {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<Partial<Location> | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [searchParams, setSearchParams] = useSearchParams();
   const [error, setError] = useState<string | null>(null);
 
   const locations = useQuery({ queryKey: ['locations'], queryFn: () => api.get<Location[]>('/api/locations') });
@@ -68,6 +70,18 @@ export function LocationsPage() {
     },
     onError: (caught) => setError(caught instanceof ApiError ? caught.message : 'Could not add the type.'),
   });
+
+  // The nav's plus shortcut lands here with ?new=1; open the dialog once the
+  // types have loaded so the form has a sensible default selected.
+  useEffect(() => {
+    if (searchParams.get('new') !== '1' || !locationTypes.data?.length) return;
+    setEditing({
+      locationTypeId: locationTypes.data[0].id,
+      ownershipType: 'COMPANY_OWNED',
+      active: true,
+    });
+    setSearchParams({}, { replace: true });
+  }, [searchParams, locationTypes.data, setSearchParams]);
 
   const childrenOf = useMemo(() => {
     const map = new Map<number | null, Location[]>();
