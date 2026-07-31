@@ -4,10 +4,12 @@ import {
   Alert,
   Autocomplete,
   Box,
+  Chip,
   Button,
   CircularProgress,
   Divider,
   Grid,
+  InputAdornment,
   MenuItem,
   Paper,
   Stack,
@@ -34,6 +36,17 @@ type FormState = Record<string, unknown>;
  *  filter or report on condition. */
 const CONDITIONS = ['New', 'Excellent', 'Good', 'Fair', 'Poor', 'Needs Repair', 'Beyond Repair'];
 
+const WARRANTY_TERMS = [
+  { months: 3, label: '3 months' },
+  { months: 6, label: '6 months' },
+  { months: 12, label: '1 year' },
+  { months: 24, label: '2 years' },
+  { months: 36, label: '3 years' },
+  { months: 60, label: '5 years' },
+  { months: 84, label: '7 years' },
+  { months: 120, label: '10 years' },
+];
+
 export function AssetFormPage() {
   const { id } = useParams<{ id: string }>();
   const editing = Boolean(id);
@@ -42,6 +55,7 @@ export function AssetFormPage() {
 
   const [form, setForm] = useState<FormState>({ assigneeType: 'NONE', quantity: 1 });
   const [customFields, setCustomFields] = useState<Record<string, unknown>>({});
+  const [subcategoryIds, setSubcategoryIds] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const categories = useQuery({ queryKey: ['categories'], queryFn: () => api.get<Category[]>('/api/categories') });
@@ -72,7 +86,7 @@ export function AssetFormPage() {
       purchaseDate: asset.purchaseDate ?? '',
       vendor: asset.vendor ?? '',
       warrantyStart: asset.warrantyStart ?? '',
-      warrantyExpiration: asset.warrantyExpiration ?? '',
+      warrantyTermMonths: asset.warrantyTermMonths ?? '',
       condition: asset.condition ?? '',
       customerName: asset.customerName ?? '',
       notes: asset.notes ?? '',
@@ -87,6 +101,7 @@ export function AssetFormPage() {
       ...('assigneeUserId' in asset ? { assigneeUserId: asset.assigneeUserId ?? '' } : {}),
     });
     setCustomFields({ ...asset.customFields });
+    setSubcategoryIds(asset.subcategories.map((c) => c.id));
   }, [existing.data]);
 
   const categoryId = form.categoryId ? Number(form.categoryId) : undefined;
@@ -103,6 +118,9 @@ export function AssetFormPage() {
 
   const uses = (field: string) =>
     !coreFields.data || coreFields.data.applicable.includes(field);
+
+  // A vehicle has a Make, not a Manufacturer. Wording only; same column.
+  const label = (field: string, fallback: string) => coreFields.data?.labels[field] ?? fallback;
 
   // Devices the catalog offers for this category, used to pre-fill three columns.
   const deviceModels = useQuery({
@@ -123,6 +141,10 @@ export function AssetFormPage() {
   });
 
   // What the combo shows: the matching user when one is recorded, else raw text.
+  // USER is a refinement of EMPLOYEE, so the selector shows them as one choice.
+  const assignmentMode =
+    form.assigneeType === 'USER' ? 'EMPLOYEE' : ((form.assigneeType as string) ?? 'NONE');
+
   const selectedAssignee = useMemo<AssignableUser | string>(() => {
     if (form.assigneeUserId) {
       const match = (assignableUsers.data ?? []).find((u) => u.id === Number(form.assigneeUserId));
@@ -130,6 +152,15 @@ export function AssetFormPage() {
     }
     return (form.assigneeText as string) ?? '';
   }, [form.assigneeUserId, form.assigneeText, assignableUsers.data]);
+
+  const derivedExpiration = useMemo(() => {
+    const start = form.warrantyStart as string | undefined;
+    const months = Number(form.warrantyTermMonths ?? 0);
+    if (!start || !months) return null;
+    const date = new Date(start + 'T00:00:00');
+    date.setMonth(date.getMonth() + months);
+    return date.toISOString().slice(0, 10);
+  }, [form.warrantyStart, form.warrantyTermMonths]);
 
   const hiddenCore = useMemo(
     () => new Set(existing.data?.hiddenFields ?? []),
@@ -155,7 +186,7 @@ export function AssetFormPage() {
     event.preventDefault();
     setError(null);
 
-    const payload: Record<string, unknown> = { customFields };
+    const payload: Record<string, unknown> = { customFields, subcategoryIds };
     for (const [key, value] of Object.entries(form)) {
       payload[key] = value === '' ? null : value;
     }
@@ -168,6 +199,10 @@ export function AssetFormPage() {
     if (form.assigneeUserId !== undefined && form.assigneeUserId !== '') {
       payload.assigneeUserId = Number(form.assigneeUserId);
     }
+    payload.warrantyTermMonths =
+      form.warrantyTermMonths === '' || form.warrantyTermMonths == null
+        ? null
+        : Number(form.warrantyTermMonths);
     save.mutate(payload);
   }
 
@@ -249,6 +284,8 @@ export function AssetFormPage() {
                   set('manufacturer', device.manufacturer);
                   set('model', device.model);
                   if (device.deviceRole) set('deviceRole', device.deviceRole);
+                  // A starting point, not a price list — still editable below.
+                  if (device.defaultPrice != null) set('purchasePrice', device.defaultPrice);
                 }}
                 renderInput={(params) => (
                   <TextField
@@ -261,13 +298,55 @@ export function AssetFormPage() {
             </Grid>
           )}
 
+          <Grid item xs={12}>
+            {/*
+              The first category picked is the primary one and the only thing
+              that decides which fields, custom fields, and lifecycle apply.
+              These are filing labels, nothing more.
+            */}
+            <Autocomplete
+              multiple
+              options={(categories.data ?? []).filter((c) => c.id !== categoryId)}
+              getOptionLabel={(c) => c.name}
+              value={(categories.data ?? []).filter((c) => subcategoryIds.includes(c.id))}
+              onChange={(_, next) => setSubcategoryIds(next.map((c) => c.id))}
+              renderTags={(value, getTagProps) =>
+                value.map((option, index) => (
+                  <Chip
+                    {...getTagProps({ index })}
+                    key={option.id}
+                    size="small"
+                    label={option.name}
+                    variant="outlined"
+                    sx={{
+                      // The remove control only appears on hover, so a row of
+                      // chips reads cleanly until you reach for one.
+                      '& .MuiChip-deleteIcon': { opacity: 0, transition: 'opacity 120ms' },
+                      '&:hover .MuiChip-deleteIcon': { opacity: 1 },
+                    }}
+                  />
+                ))
+              }
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Also filed under"
+                  placeholder={subcategoryIds.length ? '' : 'Optional — extra groupings for searching'}
+                  helperText="Organisation only. The primary category above decides which fields you get."
+                />
+              )}
+            />
+          </Grid>
+
           <Field label="Name" field="name" form={form} set={set} sm={6} />
           {uses('asset_tag') && <Field label="Asset tag" field="assetTag" form={form} set={set} sm={6} />}
           {uses('serial_number') && <Field label="Serial number" field="serialNumber" form={form} set={set} sm={6} />}
           {uses('hostname') && <Field label="Hostname" field="hostname" form={form} set={set} sm={6} />}
           {uses('management_ip') && <Field label="Management IP" field="managementIp" form={form} set={set} sm={6} />}
-          {uses('manufacturer') && <Field label="Manufacturer" field="manufacturer" form={form} set={set} sm={6} />}
-          {uses('model') && <Field label="Model" field="model" form={form} set={set} sm={6} />}
+          {uses('manufacturer') && (
+            <Field label={label('manufacturer', 'Manufacturer')} field="manufacturer" form={form} set={set} sm={6} />
+          )}
+          {uses('model') && <Field label={label('model', 'Model')} field="model" form={form} set={set} sm={6} />}
           {uses('firmware_version') && <Field label="Firmware version" field="firmwareVersion" form={form} set={set} sm={6} />}
           {uses('software_version') && <Field label="Software version" field="softwareVersion" form={form} set={set} sm={6} />}
           {uses('device_role') && <Field label="Device role" field="deviceRole" form={form} set={set} sm={6} />}
@@ -318,7 +397,18 @@ export function AssetFormPage() {
           {/* Two independent reasons a field may be absent: the category does not
               use it, or this viewer may not see it. Both have to pass. */}
           {uses('purchase_price') && !hiddenCore.has('purchase_price') && (
-            <Field label="Purchase price" field="purchasePrice" form={form} set={set} sm={6} type="number" />
+            <Grid item xs={12} sm={6}>
+              {/* Deliberately not type="number": the spinner arrows are useless
+                  for a price somebody reads off an invoice, and a stray scroll
+                  over the field silently changes it. */}
+              <TextField
+                label="Purchase price"
+                value={form.purchasePrice ?? ''}
+                onChange={(event) => set('purchasePrice', event.target.value.replace(/[^0-9.]/g, ''))}
+                inputProps={{ inputMode: 'decimal' }}
+                InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
+              />
+            </Grid>
           )}
           {uses('invoice_number') && !hiddenCore.has('invoice_number') && (
             <Field label="Invoice number" field="invoiceNumber" form={form} set={set} sm={6} />
@@ -326,8 +416,38 @@ export function AssetFormPage() {
           {uses('purchase_link') && !hiddenCore.has('purchase_link') && (
             <Field label="Purchase link" field="purchaseLink" form={form} set={set} sm={6} />
           )}
-          {uses('warranty_start') && <Field label="Warranty start" field="warrantyStart" form={form} set={set} sm={6} type="date" />}
-          {uses('warranty_expiration') && <Field label="Warranty expiration" field="warrantyExpiration" form={form} set={set} sm={6} type="date" />}
+          {uses('warranty_start') && (
+            <>
+              <Field label="Warranty start" field="warrantyStart" form={form} set={set} sm={4} type="date" />
+              <Grid item xs={12} sm={4}>
+                {/* Nobody is told a warranty expires on a date; they are told it
+                    runs two years. The end date is derived from this. */}
+                <TextField
+                  select
+                  label="Warranty length"
+                  value={form.warrantyTermMonths ?? ''}
+                  onChange={(event) => set('warrantyTermMonths', event.target.value)}
+                >
+                  <MenuItem value="">
+                    <em>Not recorded</em>
+                  </MenuItem>
+                  {WARRANTY_TERMS.map((term) => (
+                    <MenuItem key={term.months} value={term.months}>
+                      {term.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <TextField
+                  label="Expires"
+                  value={derivedExpiration ?? ''}
+                  disabled
+                  helperText={derivedExpiration ? 'Calculated from start and length' : 'Set a start date and length'}
+                />
+              </Grid>
+            </>
+          )}
 
           {!assigneeHidden && (
             <>
@@ -341,29 +461,27 @@ export function AssetFormPage() {
                 <TextField
                   select
                   label="Assignment"
-                  value={form.assigneeType && form.assigneeType !== 'NONE' ? 'ASSIGNED' : 'NONE'}
+                  value={assignmentMode}
                   onChange={(event) => {
-                    if (event.target.value === 'NONE') {
-                      set('assigneeType', 'NONE');
-                      set('assigneeText', '');
-                      set('assigneeUserId', '');
-                    } else {
-                      // Settles into FREE_TEXT or USER depending on what is picked below.
-                      set('assigneeType', 'FREE_TEXT');
-                    }
+                    const mode = event.target.value;
+                    set('assigneeText', '');
+                    set('assigneeUserId', '');
+                    // EMPLOYEE settles into USER if a known account is picked below.
+                    set('assigneeType', mode);
                   }}
                 >
                   <MenuItem value="NONE">Unassigned</MenuItem>
-                  <MenuItem value="ASSIGNED">Assigned to</MenuItem>
+                  <MenuItem value="EMPLOYEE">Assigned to — employee</MenuItem>
+                  <MenuItem value="CUSTOMER">Assigned to — customer</MenuItem>
                 </TextField>
               </Grid>
-              {form.assigneeType && form.assigneeType !== 'NONE' && (
+
+              {assignmentMode === 'EMPLOYEE' && (
                 <Grid item xs={12} sm={6}>
                   {/*
-                    One control for both cases. Choosing a known user records the
-                    user id; typing anything else records the text. Whoever is
-                    assigning a laptop should not have to decide up front which
-                    kind of assignee they are dealing with.
+                    Picking a known account records the user id; typing anything
+                    else records the name. Whoever hands over a laptop should not
+                    have to classify the recipient first.
                   */}
                   <Autocomplete
                     freeSolo
@@ -379,22 +497,26 @@ export function AssetFormPage() {
                         set('assigneeUserId', next.id);
                         set('assigneeText', '');
                       } else {
-                        set('assigneeType', 'FREE_TEXT');
+                        set('assigneeType', 'EMPLOYEE');
                         set('assigneeUserId', '');
                         set('assigneeText', next ?? '');
                       }
                     }}
                     onInputChange={(_, text, reason) => {
                       if (reason !== 'input') return;
-                      set('assigneeType', 'FREE_TEXT');
+                      set('assigneeType', 'EMPLOYEE');
                       set('assigneeUserId', '');
                       set('assigneeText', text);
                     }}
                     renderInput={(params) => (
-                      <TextField {...params} label="Assigned to" helperText="Pick a user, or type any name" />
+                      <TextField {...params} label="Employee" helperText="Pick a user, or type any name" />
                     )}
                   />
                 </Grid>
+              )}
+
+              {assignmentMode === 'CUSTOMER' && (
+                <Field label="Customer" field="assigneeText" form={form} set={set} sm={6} />
               )}
             </>
           )}

@@ -2,7 +2,9 @@ package com.midhudsonfiber.inventory.visibility;
 
 import com.midhudsonfiber.inventory.domain.Asset;
 import com.midhudsonfiber.inventory.domain.CustomFieldDefinition;
+import com.midhudsonfiber.inventory.repo.AppUserRepository;
 import com.midhudsonfiber.inventory.repo.CustomFieldDefinitionRepository;
+import com.midhudsonfiber.inventory.service.CategoryFieldService;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -20,9 +22,15 @@ import java.util.function.Supplier;
 public class AssetViewAssembler {
 
     private final CustomFieldDefinitionRepository customFields;
+    private final AppUserRepository users;
+    private final CategoryFieldService categoryFields;
 
-    public AssetViewAssembler(CustomFieldDefinitionRepository customFields) {
+    public AssetViewAssembler(CustomFieldDefinitionRepository customFields,
+                              AppUserRepository users,
+                              CategoryFieldService categoryFields) {
         this.customFields = customFields;
+        this.users = users;
+        this.categoryFields = categoryFields;
     }
 
     /** Core columns that a field_visibility_rule is allowed to gate. */
@@ -39,6 +47,13 @@ public class AssetViewAssembler {
         view.put("name", asset.getName());
         view.put("categoryId", categoryId);
         view.put("categoryName", asset.getCategory().getName());
+        view.put("subcategories", asset.getSubcategories().stream()
+                .map(c -> Map.<String, Object>of("id", c.getId(), "name", c.getName()))
+                .toList());
+        // What this kind of thing actually uses, so the detail page shows the same
+        // fields the form offered rather than a wall of empty rows.
+        view.put("applicableCoreFields", categoryFields.applicableFields(categoryId));
+        view.put("coreFieldLabels", categoryFields.labelsFor(categoryId));
         view.put("serialized", asset.getCategory().isSerialized());
         view.put("locationId", asset.getLocation().getId());
         view.put("locationName", asset.getLocation().getName());
@@ -63,6 +78,7 @@ public class AssetViewAssembler {
         putUnlessHidden(view, "invoiceNumber", "invoice_number", categoryId, decision, asset::getInvoiceNumber);
         view.put("warrantyStart", asset.getWarrantyStart());
         view.put("warrantyExpiration", asset.getWarrantyExpiration());
+        view.put("warrantyTermMonths", asset.getWarrantyTermMonths());
         view.put("licenseInformation", asset.getLicenseInformation());
 
         view.put("condition", asset.getCondition());
@@ -76,6 +92,11 @@ public class AssetViewAssembler {
         view.put("assigneeType", asset.getAssigneeType().name());
         putUnlessHidden(view, "assigneeText", "assignee_text", categoryId, decision, asset::getAssigneeText);
         putUnlessHidden(view, "assigneeUserId", "assignee_user_id", categoryId, decision, asset::getAssigneeUserId);
+        // A USER assignment stores an id and no text, so the detail page had nothing
+        // to show. This resolves whichever of the two is populated into one name,
+        // and stays gated by the same rules as the underlying fields.
+        putUnlessHidden(view, "assigneeDisplay", "assignee_text", categoryId, decision,
+                () -> assigneeDisplay(asset));
 
         view.put("quantity", asset.getQuantity());
         view.put("purchaseOrderId", asset.getPurchaseOrderId());
@@ -91,6 +112,18 @@ public class AssetViewAssembler {
         view.put("hiddenFields", decision.hiddenCoreFieldsFor(categoryId));
 
         return view;
+    }
+
+    private String assigneeDisplay(Asset asset) {
+        return switch (asset.getAssigneeType()) {
+            case NONE -> null;
+            case EMPLOYEE, CUSTOMER -> asset.getAssigneeText();
+            case USER -> asset.getAssigneeUserId() == null ? null
+                    : users.findById(asset.getAssigneeUserId())
+                        .map(com.midhudsonfiber.inventory.domain.AppUser::getUsername)
+                        // The account may have been removed; the assignment still happened.
+                        .orElse("user #" + asset.getAssigneeUserId());
+        };
     }
 
     private Map<String, Object> visibleCustomFields(Asset asset, FieldVisibilityService.Decision decision) {

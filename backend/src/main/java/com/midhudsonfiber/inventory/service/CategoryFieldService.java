@@ -102,7 +102,22 @@ public class CategoryFieldService {
         replace(category, DEFAULT_FOR_NEW_CATEGORY);
     }
 
-    /** Human labels for the admin screen, so it does not display raw column names. */
+    /**
+     * Labels for one category, with its own overrides applied on top of the
+     * defaults — a vehicle has a Make, not a Manufacturer.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, String> labelsFor(Long categoryId) {
+        Map<String, String> resolved = new LinkedHashMap<>(labels());
+        for (CategoryCoreField field : repository.findByCategoryIdOrderBySortOrderAscIdAsc(categoryId)) {
+            if (field.getLabel() != null && !field.getLabel().isBlank()) {
+                resolved.put(field.getCoreFieldName(), field.getLabel());
+            }
+        }
+        return resolved;
+    }
+
+    /** Platform-default labels, so no screen has to display a raw column name. */
     public Map<String, String> labels() {
         Map<String, String> labels = new LinkedHashMap<>();
         labels.put("manufacturer", "Manufacturer");

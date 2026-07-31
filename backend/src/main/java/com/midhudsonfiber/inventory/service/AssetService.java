@@ -118,6 +118,7 @@ public class AssetService {
         asset.setLastVerifiedBy(currentUser.idOrNull());
 
         applyWritableFields(asset, request, category, Set.of());
+        applySubcategories(asset, request, category);
         asset.setCustomFields(customFieldValidator.validate(category.getId(), request.customFields(), Map.of()));
 
         Asset saved = assets.save(asset);
@@ -140,6 +141,7 @@ public class AssetService {
         }
 
         applyWritableFields(asset, request, category, hiddenCoreFields(category.getId()));
+        applySubcategories(asset, request, category);
         asset.setCustomFields(customFieldValidator.validate(
                 category.getId(), request.customFields(), retainedCustomFields(asset, category.getId())));
 
@@ -246,7 +248,11 @@ public class AssetService {
         asset.setPurchaseDate(request.purchaseDate());
         asset.setVendor(request.vendor());
         asset.setWarrantyStart(request.warrantyStart());
-        asset.setWarrantyExpiration(request.warrantyExpiration());
+        // The end date is derived, never typed: people are told "two years",
+        // not "expires 1 January 2029". Everything downstream still reads
+        // warranty_expiration, so nothing else had to change.
+        asset.setWarrantyTermMonths(request.warrantyTermMonths());
+        asset.recalculateWarrantyExpiration();
         asset.setLicenseInformation(request.licenseInformation());
         asset.setCondition(request.condition());
         asset.setStatus(request.status());
@@ -278,21 +284,42 @@ public class AssetService {
                 asset.setAssigneeText(null);
                 asset.setAssigneeUserId(null);
             }
-            case FREE_TEXT -> {
-                if (request.assigneeText() == null || request.assigneeText().isBlank()) {
-                    throw new ApiExceptions.BadRequestException("An assignee name is required for a free-text assignee.");
-                }
-                asset.setAssigneeText(request.assigneeText());
-                asset.setAssigneeUserId(null);
-            }
             case USER -> {
                 if (request.assigneeUserId() == null) {
-                    throw new ApiExceptions.BadRequestException("A user must be selected for a user assignee.");
+                    throw new ApiExceptions.BadRequestException("Select the user this is assigned to.");
                 }
                 asset.setAssigneeText(null);
                 asset.setAssigneeUserId(request.assigneeUserId());
             }
+            // A named person who has no account here, and a customer, are stored
+            // the same way but mean different things operationally.
+            case EMPLOYEE -> {
+                requireText(request.assigneeText(), "Enter the employee's name.");
+                asset.setAssigneeText(request.assigneeText().trim());
+                asset.setAssigneeUserId(null);
+            }
+            case CUSTOMER -> {
+                requireText(request.assigneeText(), "Enter the customer's name.");
+                asset.setAssigneeText(request.assigneeText().trim());
+                asset.setAssigneeUserId(null);
+            }
         }
+    }
+
+    private static void requireText(String value, String message) {
+        if (value == null || value.isBlank()) throw new ApiExceptions.BadRequestException(message);
+    }
+
+    /**
+     * Sub-categories are organisation only. The primary category is excluded so it
+     * can never appear twice, and nothing here touches which fields apply.
+     */
+    private void applySubcategories(Asset asset, AssetRequest request, AssetCategory primary) {
+        if (request.subcategoryIds() == null) return;
+        java.util.Set<AssetCategory> extra = new java.util.LinkedHashSet<>(
+                categories.findAllById(request.subcategoryIds()));
+        extra.removeIf(candidate -> candidate.getId().equals(primary.getId()));
+        asset.setSubcategories(extra);
     }
 
     private Integer resolveQuantity(AssetCategory category, Integer requested) {
@@ -376,6 +403,7 @@ public class AssetService {
         values.put("invoice_number", asset.getInvoiceNumber());
         values.put("warranty_start", asset.getWarrantyStart());
         values.put("warranty_expiration", asset.getWarrantyExpiration());
+        values.put("warranty_term_months", asset.getWarrantyTermMonths());
         values.put("license_information", asset.getLicenseInformation());
         values.put("condition", asset.getCondition());
         values.put("status", asset.getStatus());

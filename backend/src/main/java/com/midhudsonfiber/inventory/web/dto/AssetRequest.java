@@ -33,7 +33,8 @@ public record AssetRequest(
         String purchaseLink,
         String invoiceNumber,
         LocalDate warrantyStart,
-        LocalDate warrantyExpiration,
+        /** How long the warranty runs. The expiration date is derived from it. */
+        Integer warrantyTermMonths,
         String licenseInformation,
         String condition,
         String status,
@@ -44,5 +45,7 @@ public record AssetRequest(
         String assigneeText,
         Long assigneeUserId,
         Integer quantity,
+        /** Extra groupings. Labelling only — the primary category owns the form. */
+        java.util.Set<Long> subcategoryIds,
         Map<String, Object> customFields
 ) {}

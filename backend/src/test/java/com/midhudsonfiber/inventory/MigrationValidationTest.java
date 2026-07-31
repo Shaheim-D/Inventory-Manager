@@ -69,8 +69,8 @@ class MigrationValidationTest extends AbstractIntegrationTest {
                   AND table_name NOT IN ('flyway_schema_history', 'spring_session', 'spring_session_attributes')
                 """, Integer.class);
         // 31 from the V1-V9 chain, plus branding (V10), location_type (V12),
-        // device_model (V14), and category_core_field (V15).
-        assertThat(tables).isEqualTo(35);
+        // device_model (V14), category_core_field (V15), asset_subcategory (V16).
+        assertThat(tables).isEqualTo(36);
     }
 
     @Test
@@ -103,12 +103,13 @@ class MigrationValidationTest extends AbstractIntegrationTest {
         assertThat(transitionCount("Vehicle")).isEqualTo(7);
         assertThat(transitionCount("Fiber Cable")).isEqualTo(5);
 
-        Integer qaEdges = jdbc.queryForObject("""
-                SELECT count(*) FROM lifecycle_transition t
-                JOIN lifecycle_state s ON s.id IN (t.from_state_id, t.to_state_id)
-                WHERE s.name = 'QA'
-                """, Integer.class);
-        assertThat(qaEdges).as("QA is not a step this organization performs").isZero();
+        // V16 removed the QA state outright. V13 had left the row in place on the
+        // theory an administrator might want it back, but it kept surfacing in the
+        // asset filter and the lifecycle dropdown -- so from a user's point of view
+        // it had never been removed at all.
+        Integer qaStates = jdbc.queryForObject(
+                "SELECT count(*) FROM lifecycle_state WHERE name = 'QA'", Integer.class);
+        assertThat(qaStates).as("QA is gone from the vocabulary, not just the graphs").isZero();
 
         Integer vehicleInstalled = jdbc.queryForObject("""
                 SELECT count(*) FROM lifecycle_transition t

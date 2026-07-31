@@ -29,6 +29,9 @@ public class CategoryCoreField {
     @Column(name = "sort_order", nullable = false)
     private int sortOrder;
 
+    /** Category-specific wording. A vehicle has a Make, not a Manufacturer. */
+    private String label;
+
     public Long getId() { return id; }
     public AssetCategory getCategory() { return category; }
     public void setCategory(AssetCategory category) { this.category = category; }
@@ -36,4 +39,6 @@ public class CategoryCoreField {
     public void setCoreFieldName(String coreFieldName) { this.coreFieldName = coreFieldName; }
     public int getSortOrder() { return sortOrder; }
     public void setSortOrder(int sortOrder) { this.sortOrder = sortOrder; }
+    public String getLabel() { return label; }
+    public void setLabel(String label) { this.label = label; }
 }

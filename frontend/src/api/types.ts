@@ -43,7 +43,14 @@ export interface Asset {
   customerName: string | null;
   customerAddress: string | null;
   notes: string | null;
-  assigneeType: 'NONE' | 'FREE_TEXT' | 'USER';
+  assigneeType: 'NONE' | 'USER' | 'EMPLOYEE' | 'CUSTOMER';
+  /** Resolved name whichever way the assignment was recorded. */
+  assigneeDisplay?: string | null;
+  warrantyTermMonths: number | null;
+  subcategories: { id: number; name: string }[];
+  /** Core columns this category uses, and what to call them here. */
+  applicableCoreFields: string[];
+  coreFieldLabels: Record<string, string>;
   quantity: number;
   purchaseOrderId: number | null;
   lastVerifiedAt: string | null;
@@ -95,6 +102,7 @@ export interface DeviceModel {
   manufacturer: string;
   model: string;
   deviceRole: string | null;
+  defaultPrice: number | null;
   notes: string | null;
   active: boolean;
 }

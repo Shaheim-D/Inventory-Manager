@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Alert, Button, MenuItem, Paper, Stack, TextField } from '@mui/material';
+import { Alert, Box, Button, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Asset, Category, Page } from '../api/types';
@@ -79,7 +79,7 @@ export function VerificationPage() {
           <MenuItem value="">All tracked categories</MenuItem>
           {trackedCategories.map((category) => (
             <MenuItem key={category.id} value={String(category.id)}>
-              {category.name} ({category.verificationIntervalDays} days)
+              {category.name}
             </MenuItem>
           ))}
         </TextField>
@@ -93,12 +93,27 @@ export function VerificationPage() {
             { header: 'Location', render: (asset: Asset) => asset.locationName },
             { header: 'Quantity', align: 'right', render: (asset: Asset) => asset.quantity },
             {
-              header: 'Days since verified',
+              header: 'Last verified',
               align: 'right',
-              render: (asset: Asset) =>
-                asset.lastVerifiedAt
+              render: (asset: Asset) => {
+                const days = asset.lastVerifiedAt
                   ? Math.floor((Date.now() - new Date(asset.lastVerifiedAt).getTime()) / 86_400_000)
-                  : '—',
+                  : null;
+                const interval = intervalByCategory.get(asset.categoryId);
+                if (days == null) return '—';
+                // The interval belongs against the row it applies to, where it
+                // explains why this asset is here, not in the filter dropdown.
+                return (
+                  <Box sx={{ textAlign: 'right' }}>
+                    <Typography variant="body2">{days} days ago</Typography>
+                    {interval != null && (
+                      <Typography variant="caption" color="error.main">
+                        {days - interval} days overdue · checked every {interval}
+                      </Typography>
+                    )}
+                  </Box>
+                );
+              },
             },
           ]}
           rows={overdue}

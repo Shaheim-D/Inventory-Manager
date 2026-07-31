@@ -127,7 +127,9 @@ public class CategoryController {
         return Map.of(
                 "applicable", categoryFields.applicableFields(id),
                 "configurable", CategoryFieldService.CONFIGURABLE_CORE_FIELDS,
-                "labels", categoryFields.labels());
+                // This category's own wording, not the platform defaults: the form
+                // that reads this is the one that has to say "Make" on a Vehicle.
+                "labels", categoryFields.labelsFor(id));
     }
 
     @PutMapping("/{id}/core-fields")
