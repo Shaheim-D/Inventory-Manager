@@ -46,6 +46,7 @@ const NAV: NavSection[] = [
     items: [
       { label: 'Dashboard', to: '/', permissions: ['dashboard:view'] },
       { label: 'Assets', to: '/assets', permissions: ['asset:read'] },
+      { label: 'Devices', to: '/devices', permissions: ['asset:read'] },
       { label: 'Locations', to: '/locations', permissions: ['location:read'] },
       { label: 'Inventory Verification', to: '/verification', permissions: ['asset:write'] },
       { label: 'Audit History', to: '/audit', permissions: ['audit:view'] },

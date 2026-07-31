@@ -30,11 +30,14 @@ public class ReferenceDataController {
                 .toList();
     }
 
+    /**
+     * Location types are no longer here: they became a table in V12 so they can be
+     * extended, and are served from /api/locations/types.
+     */
     @GetMapping("/enums")
     @PreAuthorize("isAuthenticated()")
     public Map<String, List<String>> enums() {
         return Map.of(
-                "locationTypes", names(Location.LocationType.values()),
                 "ownershipTypes", names(Location.OwnershipType.values()),
                 "assigneeTypes", names(com.midhudsonfiber.inventory.domain.Asset.AssigneeType.values()),
                 "customFieldTypes",

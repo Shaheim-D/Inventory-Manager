@@ -16,7 +16,15 @@ import {
 } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
-import type { Asset, AssignableUser, Category, CustomFieldDefinition, Location } from '../api/types';
+import type {
+  Asset,
+  AssignableUser,
+  Category,
+  CoreFieldConfig,
+  CustomFieldDefinition,
+  DeviceModel,
+  Location,
+} from '../api/types';
 import { PageHeader } from '../components/PageHeader';
 import { DynamicFieldForm } from '../components/DynamicFieldForm';
 
@@ -83,6 +91,25 @@ export function AssetFormPage() {
 
   const categoryId = form.categoryId ? Number(form.categoryId) : undefined;
   const category = categories.data?.find((entry) => entry.id === categoryId);
+
+  // Which core columns this category actually uses. A Vehicle asks for make and
+  // model; it does not ask for a firmware version, because that means nothing
+  // for a truck. Separate from field visibility, which is about permission.
+  const coreFields = useQuery({
+    queryKey: ['core-fields', categoryId],
+    queryFn: () => api.get<CoreFieldConfig>(`/api/categories/${categoryId}/core-fields`),
+    enabled: Boolean(categoryId),
+  });
+
+  const uses = (field: string) =>
+    !coreFields.data || coreFields.data.applicable.includes(field);
+
+  // Devices the catalog offers for this category, used to pre-fill three columns.
+  const deviceModels = useQuery({
+    queryKey: ['device-models', categoryId],
+    queryFn: () => api.get<DeviceModel[]>(`/api/device-models?categoryId=${categoryId}`),
+    enabled: Boolean(categoryId),
+  });
 
   const definitions = useQuery({
     queryKey: ['custom-fields', categoryId],
@@ -210,16 +237,41 @@ export function AssetFormPage() {
             </TextField>
           </Grid>
 
+          {(deviceModels.data ?? []).length > 0 && (
+            <Grid item xs={12}>
+              <Autocomplete
+                options={deviceModels.data ?? []}
+                getOptionLabel={(d) => `${d.manufacturer} ${d.model}${d.deviceRole ? ' · ' + d.deviceRole : ''}`}
+                onChange={(_, device) => {
+                  if (!device) return;
+                  // Copies the values onto the asset rather than referencing the
+                  // catalog row, so retiring a device later never rewrites history.
+                  set('manufacturer', device.manufacturer);
+                  set('model', device.model);
+                  if (device.deviceRole) set('deviceRole', device.deviceRole);
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Start from a known device"
+                    helperText="Optional — fills in manufacturer, model, and device role. Everything stays editable."
+                  />
+                )}
+              />
+            </Grid>
+          )}
+
           <Field label="Name" field="name" form={form} set={set} sm={6} />
-          <Field label="Asset tag" field="assetTag" form={form} set={set} sm={6} />
-          <Field label="Serial number" field="serialNumber" form={form} set={set} sm={6} />
-          <Field label="Hostname" field="hostname" form={form} set={set} sm={6} />
-          <Field label="Management IP" field="managementIp" form={form} set={set} sm={6} />
-          <Field label="Manufacturer" field="manufacturer" form={form} set={set} sm={6} />
-          <Field label="Model" field="model" form={form} set={set} sm={6} />
-          <Field label="Firmware version" field="firmwareVersion" form={form} set={set} sm={6} />
-          <Field label="Software version" field="softwareVersion" form={form} set={set} sm={6} />
-          <Field label="Device role" field="deviceRole" form={form} set={set} sm={6} />
+          {uses('asset_tag') && <Field label="Asset tag" field="assetTag" form={form} set={set} sm={6} />}
+          {uses('serial_number') && <Field label="Serial number" field="serialNumber" form={form} set={set} sm={6} />}
+          {uses('hostname') && <Field label="Hostname" field="hostname" form={form} set={set} sm={6} />}
+          {uses('management_ip') && <Field label="Management IP" field="managementIp" form={form} set={set} sm={6} />}
+          {uses('manufacturer') && <Field label="Manufacturer" field="manufacturer" form={form} set={set} sm={6} />}
+          {uses('model') && <Field label="Model" field="model" form={form} set={set} sm={6} />}
+          {uses('firmware_version') && <Field label="Firmware version" field="firmwareVersion" form={form} set={set} sm={6} />}
+          {uses('software_version') && <Field label="Software version" field="softwareVersion" form={form} set={set} sm={6} />}
+          {uses('device_role') && <Field label="Device role" field="deviceRole" form={form} set={set} sm={6} />}
+          {uses('condition') && (
           <Grid item xs={12} sm={6}>
             <TextField
               select
@@ -237,6 +289,7 @@ export function AssetFormPage() {
               ))}
             </TextField>
           </Grid>
+          )}
 
           {/* Quantity is a bulk-category concept; the form reads is_serialized
               rather than special-casing any category by name. */}
@@ -260,19 +313,21 @@ export function AssetFormPage() {
             </Typography>
           </Grid>
 
-          <Field label="Purchase date" field="purchaseDate" form={form} set={set} sm={6} type="date" />
-          <Field label="Vendor" field="vendor" form={form} set={set} sm={6} />
-          {!hiddenCore.has('purchase_price') && (
+          {uses('purchase_date') && <Field label="Purchase date" field="purchaseDate" form={form} set={set} sm={6} type="date" />}
+          {uses('vendor') && <Field label="Vendor" field="vendor" form={form} set={set} sm={6} />}
+          {/* Two independent reasons a field may be absent: the category does not
+              use it, or this viewer may not see it. Both have to pass. */}
+          {uses('purchase_price') && !hiddenCore.has('purchase_price') && (
             <Field label="Purchase price" field="purchasePrice" form={form} set={set} sm={6} type="number" />
           )}
-          {!hiddenCore.has('invoice_number') && (
+          {uses('invoice_number') && !hiddenCore.has('invoice_number') && (
             <Field label="Invoice number" field="invoiceNumber" form={form} set={set} sm={6} />
           )}
-          {!hiddenCore.has('purchase_link') && (
+          {uses('purchase_link') && !hiddenCore.has('purchase_link') && (
             <Field label="Purchase link" field="purchaseLink" form={form} set={set} sm={6} />
           )}
-          <Field label="Warranty start" field="warrantyStart" form={form} set={set} sm={6} type="date" />
-          <Field label="Warranty expiration" field="warrantyExpiration" form={form} set={set} sm={6} type="date" />
+          {uses('warranty_start') && <Field label="Warranty start" field="warrantyStart" form={form} set={set} sm={6} type="date" />}
+          {uses('warranty_expiration') && <Field label="Warranty expiration" field="warrantyExpiration" form={form} set={set} sm={6} type="date" />}
 
           {!assigneeHidden && (
             <>

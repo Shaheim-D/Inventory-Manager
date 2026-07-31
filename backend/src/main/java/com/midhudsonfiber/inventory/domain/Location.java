@@ -8,12 +8,12 @@ import java.time.Instant;
 @Table(name = "location")
 public class Location {
 
-    public enum LocationType {
-        WAREHOUSE, STORAGE, CUSTOMER_PREMISE, TOWER, POP,
-        OFFICE, DATA_CENTER, VEHICLE_LOCATION, TEMPORARY_STORAGE, IN_TRANSIT
-    }
-
-    public enum OwnershipType { ISP_OWNED, CUSTOMER_PREMISE, VENDOR, OTHER }
+    /**
+     * Four legal relationships, which is a genuinely closed set rather than a
+     * vocabulary that grows -- so unlike location type this stays an enum, with
+     * OTHER plus a description absorbing the exceptions.
+     */
+    public enum OwnershipType { COMPANY_OWNED, CUSTOMER_PREMISE, VENDOR, OTHER }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -26,8 +26,8 @@ public class Location {
     @Column(nullable = false)
     private String name;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "location_type", nullable = false)
+    @ManyToOne(optional = false, fetch = FetchType.EAGER)
+    @JoinColumn(name = "location_type_id")
     private LocationType locationType;
 
     @Column(name = "address_line1")
@@ -40,6 +40,10 @@ public class Location {
     @Enumerated(EnumType.STRING)
     @Column(name = "ownership_type", nullable = false)
     private OwnershipType ownershipType;
+
+    /** What "Other" means here. Required when ownership is OTHER, cleared otherwise. */
+    @Column(name = "ownership_other_description")
+    private String ownershipOtherDescription;
 
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
@@ -67,6 +71,8 @@ public class Location {
     public void setZip(String zip) { this.zip = zip; }
     public OwnershipType getOwnershipType() { return ownershipType; }
     public void setOwnershipType(OwnershipType o) { this.ownershipType = o; }
+    public String getOwnershipOtherDescription() { return ownershipOtherDescription; }
+    public void setOwnershipOtherDescription(String v) { this.ownershipOtherDescription = v; }
     public boolean isActive() { return active; }
     public void setActive(boolean active) { this.active = active; }
     public Instant getCreatedAt() { return createdAt; }

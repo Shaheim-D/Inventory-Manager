@@ -4,6 +4,8 @@ import com.midhudsonfiber.inventory.audit.AuditService;
 import com.midhudsonfiber.inventory.domain.*;
 import com.midhudsonfiber.inventory.repo.*;
 import com.midhudsonfiber.inventory.security.CurrentUser;
+import com.midhudsonfiber.inventory.service.CategoryFieldService;
+import com.midhudsonfiber.inventory.service.LifecycleGraphSeeder;
 import com.midhudsonfiber.inventory.security.PermissionKeys;
 import com.midhudsonfiber.inventory.visibility.FieldVisibilityService;
 import jakarta.validation.Valid;
@@ -36,6 +38,8 @@ public class CategoryController {
     private final AuditService audit;
     private final FieldVisibilityService fieldVisibility;
     private final CurrentUser currentUser;
+    private final LifecycleGraphSeeder graphSeeder;
+    private final CategoryFieldService categoryFields;
 
     public CategoryController(AssetCategoryRepository categories,
                               CustomFieldDefinitionRepository customFields,
@@ -45,7 +49,9 @@ public class CategoryController {
                               AssetRepository assets,
                               AuditService audit,
                               FieldVisibilityService fieldVisibility,
-                              CurrentUser currentUser) {
+                              CurrentUser currentUser,
+                              LifecycleGraphSeeder graphSeeder,
+                              CategoryFieldService categoryFields) {
         this.categories = categories;
         this.customFields = customFields;
         this.lifecycleStates = lifecycleStates;
@@ -55,10 +61,16 @@ public class CategoryController {
         this.audit = audit;
         this.fieldVisibility = fieldVisibility;
         this.currentUser = currentUser;
+        this.graphSeeder = graphSeeder;
+        this.categoryFields = categoryFields;
     }
 
     public record CategoryRequest(@NotBlank String name, String description,
-                                  boolean serialized, Integer verificationIntervalDays) {}
+                                  boolean serialized, Integer verificationIntervalDays,
+                                  /** Skip the starter lifecycle graph and build one by hand. */
+                                  Boolean skipDefaultLifecycle) {}
+
+    public record CoreFieldsRequest(List<String> coreFieldNames) {}
 
     public record CustomFieldRequest(@NotBlank String fieldName,
                                      @NotNull CustomFieldDefinition.FieldType fieldType,
@@ -80,14 +92,54 @@ public class CategoryController {
         return toView(category(id));
     }
 
+    /**
+     * A new category arrives usable: it gets the standard lifecycle graph for its
+     * kind and a sensible starting field set. Previously the first asset anyone
+     * tried to create in a new category failed with "has no lifecycle transitions
+     * configured yet" — a dead end dressed up as a validation error.
+     */
     @PostMapping
     @PreAuthorize("hasAuthority('" + PermissionKeys.CATEGORY_MANAGE + "')")
+    @Transactional
     public Map<String, Object> create(@Valid @RequestBody CategoryRequest request) {
         AssetCategory category = new AssetCategory();
         apply(category, request);
         AssetCategory saved = categories.save(category);
+
+        if (!Boolean.TRUE.equals(request.skipDefaultLifecycle())) {
+            graphSeeder.seedDefaultGraph(saved);
+        }
+        categoryFields.seedDefaults(saved);
+
         audit.recordCreate(AuditService.ENTITY_ASSET_CATEGORY, saved.getId(), saved.getName());
         return toView(saved);
+    }
+
+    // ---------------- which core fields this category uses ----------------
+
+    /**
+     * Relevance, not permission: a Vehicle has no firmware version for anybody.
+     * Field visibility is a separate mechanism and stays a security boundary.
+     */
+    @GetMapping("/{id}/core-fields")
+    @PreAuthorize("isAuthenticated()")
+    public Map<String, Object> coreFields(@PathVariable Long id) {
+        return Map.of(
+                "applicable", categoryFields.applicableFields(id),
+                "configurable", CategoryFieldService.CONFIGURABLE_CORE_FIELDS,
+                "labels", categoryFields.labels());
+    }
+
+    @PutMapping("/{id}/core-fields")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.CATEGORY_MANAGE + "')")
+    @Transactional
+    public Map<String, Object> updateCoreFields(@PathVariable Long id, @RequestBody CoreFieldsRequest request) {
+        AssetCategory category = category(id);
+        List<String> applied = categoryFields.replace(category,
+                request.coreFieldNames() == null ? List.of() : request.coreFieldNames());
+        audit.recordFieldChanges(AuditService.ENTITY_ASSET_CATEGORY, id,
+                List.of(AuditService.FieldChange.of("core_fields", null, String.join(", ", applied))));
+        return Map.of("applicable", applied);
     }
 
     @PutMapping("/{id}")
@@ -293,6 +345,7 @@ public class CategoryController {
         view.put("description", category.getDescription());
         view.put("serialized", category.isSerialized());
         view.put("verificationIntervalDays", category.getVerificationIntervalDays());
+        view.put("applicableCoreFields", categoryFields.applicableFields(category.getId()));
         return view;
     }
 

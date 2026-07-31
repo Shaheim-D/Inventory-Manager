@@ -12,6 +12,7 @@ import {
   DialogTitle,
   Divider,
   Grid,
+  MenuItem,
   Paper,
   Stack,
   Tab,
@@ -21,7 +22,7 @@ import {
 } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
-import type { Asset, AuditEvent, LifecycleState, Page } from '../api/types';
+import type { Asset, AuditEvent, Page, TransitionOptions } from '../api/types';
 import { PageHeader } from '../components/PageHeader';
 import { EntityTable } from '../components/EntityTable';
 import { useAuth } from '../auth/AuthContext';
@@ -32,7 +33,7 @@ export function AssetDetailPage() {
   const queryClient = useQueryClient();
   const { has } = useAuth();
   const [tab, setTab] = useState(0);
-  const [transitionTarget, setTransitionTarget] = useState<LifecycleState | null>(null);
+  const [transitionTarget, setTransitionTarget] = useState<{ id: number; name: string } | null>(null);
   const [transitionReason, setTransitionReason] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -43,7 +44,7 @@ export function AssetDetailPage() {
 
   const transitions = useQuery({
     queryKey: ['asset-transitions', id],
-    queryFn: () => api.get<LifecycleState[]>(`/api/assets/${id}/transitions`),
+    queryFn: () => api.get<TransitionOptions>(`/api/assets/${id}/transitions`),
     enabled: has('asset:write'),
   });
 
@@ -237,21 +238,41 @@ export function AssetDetailPage() {
             Current state: {data.lifecycleStateName}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Only the transitions this category's lifecycle graph allows from here are offered. The graph is
-            data an administrator edits — nothing about it is hardcoded.
+            The category's lifecycle graph describes the usual path, and those steps are offered first.
+            Any other state can still be chosen — equipment does skip steps, and recording what actually
+            happened beats recording what should have. A skip is noted in the audit trail.
           </Typography>
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            {(transitions.data ?? []).map((state) => (
-              <Button key={state.id} variant="outlined" onClick={() => setTransitionTarget(state)}>
+
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 3 }}>
+            {(transitions.data?.suggested ?? []).map((state) => (
+              <Button key={state.id} variant="contained" onClick={() => setTransitionTarget(state)}>
                 Move to {state.name}
               </Button>
             ))}
-            {transitions.data?.length === 0 && (
+            {transitions.data?.suggested.length === 0 && (
               <Typography variant="body2" color="text.secondary">
-                This is a terminal state — no onward transitions are configured.
+                The graph has no onward step from here — use the dropdown below.
               </Typography>
             )}
           </Stack>
+
+          <TextField
+            select
+            label="Move to any state"
+            value=""
+            onChange={(event) => {
+              const chosen = transitions.data?.all.find((s) => s.id === Number(event.target.value));
+              if (chosen) setTransitionTarget(chosen);
+            }}
+            sx={{ maxWidth: 360 }}
+          >
+            {(transitions.data?.all ?? []).map((state) => (
+              <MenuItem key={state.id} value={state.id}>
+                {state.name}
+                {state.suggested ? '' : '  — skips ahead'}
+              </MenuItem>
+            ))}
+          </TextField>
         </Paper>
       )}
 
@@ -261,11 +282,12 @@ export function AssetDetailPage() {
         </DialogTitle>
         <DialogContent>
           <TextField
-            label="Reason (optional)"
+            label="Notes (optional)"
+            placeholder="Why it moved, who authorised it, anything worth knowing later"
             value={transitionReason}
             onChange={(event) => setTransitionReason(event.target.value)}
             multiline
-            minRows={2}
+            minRows={3}
             sx={{ mt: 1 }}
           />
         </DialogContent>

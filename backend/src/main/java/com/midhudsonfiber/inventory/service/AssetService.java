@@ -57,6 +57,9 @@ public class AssetService {
         this.currentUser = currentUser;
     }
 
+    /** Where an asset starts unless the person creating it says otherwise. */
+    static final String DEFAULT_INITIAL_STATE = "Available";
+
     public record AssetFilter(String q, Long categoryId, Long locationId, Long lifecycleStateId,
                               Long assigneeUserId, Boolean includeDeleted) {}
 
@@ -170,6 +173,15 @@ public class AssetService {
                 .toList();
     }
 
+    /**
+     * Moves an asset to another state.
+     *
+     * <p>The category's graph describes the normal path and the UI leads with it,
+     * but any state may be chosen: real equipment skips steps, and refusing to
+     * record what actually happened only produces records that are wrong. A move
+     * the graph does not describe is still audited — and says so in the audit
+     * trail, so "we skipped a step" stays visible rather than being smoothed over.
+     */
     @Transactional
     public Asset transition(Long assetId, Long toStateId, String reason) {
         Asset asset = get(assetId);
@@ -177,18 +189,25 @@ public class AssetService {
         LifecycleState to = lifecycleStates.findById(toStateId)
                 .orElseThrow(() -> new ApiExceptions.NotFoundException("Lifecycle state not found"));
 
-        boolean allowed = transitions.existsByCategoryIdAndFromStateIdAndToStateId(
-                asset.getCategory().getId(), from.getId(), to.getId());
-        if (!allowed) {
-            throw new ApiExceptions.BadRequestException(
-                    "\"" + from.getName() + " -> " + to.getName() + "\" is not a valid transition for "
-                            + asset.getCategory().getName() + ".");
+        if (from.getId().equals(to.getId())) {
+            throw new ApiExceptions.BadRequestException("That asset is already in " + to.getName() + ".");
         }
+
+        boolean followsGraph = transitions.existsByCategoryIdAndFromStateIdAndToStateId(
+                asset.getCategory().getId(), from.getId(), to.getId());
 
         asset.setLifecycleState(to);
         Asset saved = assets.save(asset);
-        audit.recordLifecycleTransition(assetId, from.getName(), to.getName(), reason);
+
+        String note = followsGraph
+                ? reason
+                : join("Skipped ahead: not a step in the " + asset.getCategory().getName() + " lifecycle", reason);
+        audit.recordLifecycleTransition(assetId, from.getName(), to.getName(), note);
         return saved;
+    }
+
+    private static String join(String prefix, String reason) {
+        return (reason == null || reason.isBlank()) ? prefix : prefix + ". " + reason;
     }
 
     /**
@@ -313,23 +332,23 @@ public class AssetService {
                 .orElseThrow(() -> new ApiExceptions.NotFoundException("Location not found"));
     }
 
+    /**
+     * New assets start in <b>Available</b> unless the caller says otherwise.
+     *
+     * <p>The previous behavior — walk the category's graph and use whatever state
+     * nothing transitions into — put everything in "Ordered", which is wrong for
+     * the common case of recording equipment that is already on the shelf, and
+     * threw outright for a category whose graph had not been set up yet. Neither
+     * is a good first experience.
+     */
     private LifecycleState initialState(AssetCategory category, Long requestedStateId) {
         if (requestedStateId != null) {
             return lifecycleStates.findById(requestedStateId)
                     .orElseThrow(() -> new ApiExceptions.NotFoundException("Lifecycle state not found"));
         }
-        // Default to the category graph's entry state — the one nothing transitions into.
-        List<LifecycleTransition> graph = transitions.findByCategoryId(category.getId());
-        if (graph.isEmpty()) {
-            throw new ApiExceptions.BadRequestException(
-                    "\"" + category.getName() + "\" has no lifecycle transitions configured yet.");
-        }
-        Set<Long> targets = graph.stream().map(t -> t.getToState().getId()).collect(java.util.stream.Collectors.toSet());
-        return graph.stream()
-                .map(LifecycleTransition::getFromState)
-                .filter(state -> !targets.contains(state.getId()))
-                .findFirst()
-                .orElseGet(() -> graph.get(0).getFromState());
+        return lifecycleStates.findByName(DEFAULT_INITIAL_STATE)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Lifecycle state \"" + DEFAULT_INITIAL_STATE + "\" is missing from the vocabulary"));
     }
 
     private static String blankToNull(String value) {

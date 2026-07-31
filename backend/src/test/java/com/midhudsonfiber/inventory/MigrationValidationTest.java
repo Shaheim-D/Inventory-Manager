@@ -68,8 +68,9 @@ class MigrationValidationTest extends AbstractIntegrationTest {
                 WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
                   AND table_name NOT IN ('flyway_schema_history', 'spring_session', 'spring_session_attributes')
                 """, Integer.class);
-        // 31 from the V1-V9 chain, plus branding from V10.
-        assertThat(tables).isEqualTo(32);
+        // 31 from the V1-V9 chain, plus branding (V10), location_type (V12),
+        // device_model (V14), and category_core_field (V15).
+        assertThat(tables).isEqualTo(35);
     }
 
     @Test
@@ -95,9 +96,19 @@ class MigrationValidationTest extends AbstractIntegrationTest {
     @Test
     @DisplayName("the three lifecycle graph shapes are genuinely different")
     void lifecycleGraphsDiffer() {
-        assertThat(transitionCount("Router")).isEqualTo(12);
-        assertThat(transitionCount("Vehicle")).isEqualTo(8);
+        // Each serialized graph lost its two QA edges and gained Received -> Available
+        // in V13, so Router is 11 rather than the design's 12 and Vehicle 7 rather
+        // than 8. Bulk never had a QA step and is unchanged.
+        assertThat(transitionCount("Router")).isEqualTo(11);
+        assertThat(transitionCount("Vehicle")).isEqualTo(7);
         assertThat(transitionCount("Fiber Cable")).isEqualTo(5);
+
+        Integer qaEdges = jdbc.queryForObject("""
+                SELECT count(*) FROM lifecycle_transition t
+                JOIN lifecycle_state s ON s.id IN (t.from_state_id, t.to_state_id)
+                WHERE s.name = 'QA'
+                """, Integer.class);
+        assertThat(qaEdges).as("QA is not a step this organization performs").isZero();
 
         Integer vehicleInstalled = jdbc.queryForObject("""
                 SELECT count(*) FROM lifecycle_transition t
@@ -121,8 +132,9 @@ class MigrationValidationTest extends AbstractIntegrationTest {
     @DisplayName("the quantity trigger bumps last_verified_at and other edits do not")
     void stalenessTriggerBehaviour() {
         jdbc.update("""
-                INSERT INTO location (name, location_type, ownership_type)
-                VALUES ('trigger-test-location', 'WAREHOUSE', 'ISP_OWNED')
+                INSERT INTO location (name, location_type_id, ownership_type)
+                SELECT 'trigger-test-location', lt.id, 'COMPANY_OWNED'
+                FROM location_type lt WHERE lt.name = 'Warehouse'
                 """);
         Long locationId = jdbc.queryForObject(
                 "SELECT id FROM location WHERE name = 'trigger-test-location'", Long.class);
