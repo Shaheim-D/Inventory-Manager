@@ -11,6 +11,21 @@ import java.util.List;
 public interface AssetRepository extends JpaRepository<Asset, Long>, JpaSpecificationExecutor<Asset> {
 
     /**
+     * Serial numbers already in use by live assets, out of the ones offered.
+     *
+     * <p>Asked in one query rather than per row: a thousand-row file would
+     * otherwise be a thousand round trips to learn the same thing. Soft-deleted
+     * assets are excluded to match uq_asset_serial, which is a partial index --
+     * a serial freed by a deletion really is available again.
+     */
+    @Query("""
+            SELECT a.serialNumber FROM Asset a
+            WHERE a.deleted = FALSE AND LOWER(a.serialNumber) IN :serials
+            """)
+    List<String> findSerialsInUse(java.util.Collection<String> serials);
+
+
+    /**
      * Ranked search over the tsvector and trigram indexes built in V1/V6. Native
      * SQL on purpose: those indexes exist precisely so no second search system is
      * needed, and JPQL cannot express a ranked tsvector match.

@@ -10,6 +10,9 @@ import {
   DialogContent,
   DialogTitle,
   LinearProgress,
+  List,
+  ListItem,
+  ListItemText,
   Stack,
   Typography,
 } from '@mui/material';
@@ -29,6 +32,7 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [batch, setBatch] = useState<ImportBatchDetail | null>(null);
+  const [confirmingClose, setConfirmingClose] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refreshAssets = () => {
@@ -77,12 +81,27 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
     onError: (caught) => fail(caught, 'Could not check the file again.'),
   });
 
-  const close = () => {
+  /** Throws the staging away and closes. */
+  const discardAndClose = () => {
     // Nothing to keep. The assets that were created are the record.
     if (batch) void api.del(`/api/imports/${batch.id}`).catch(() => undefined);
     setBatch(null);
+    setConfirmingClose(false);
     setError(null);
     onClose();
+  };
+
+  /**
+   * Closing is destructive once rows are still waiting — the staged file goes
+   * with it and the CSV has to be uploaded again. Ask, and say how many would
+   * be lost, rather than letting a stray click undo the work of checking.
+   */
+  const requestClose = () => {
+    if (waiting > 0) {
+      setConfirmingClose(true);
+      return;
+    }
+    discardAndClose();
   };
 
   const downloadTemplate = async () => {
@@ -106,7 +125,8 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
   const busy = upload.isPending || importAll.isPending || importRow.isPending || recheck.isPending;
 
   return (
-    <Dialog open={open} onClose={close} fullWidth maxWidth={batch ? 'lg' : 'sm'}>
+    <>
+    <Dialog open={open} onClose={requestClose} fullWidth maxWidth={batch ? 'lg' : 'sm'}>
       <DialogTitle>{batch ? `Import — ${batch.filename}` : 'Import assets'}</DialogTitle>
       <DialogContent>
         {error && (
@@ -229,8 +249,10 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
                   <Button
                     size="small"
                     onClick={() => {
-                      close();
-                      navigate(`/assets/${row.createdAssetId}`);
+                      // Leaving to look at what was just created is still
+                      // leaving, so the same warning applies.
+                      requestClose();
+                      if (waiting === 0) navigate(`/assets/${row.createdAssetId}`);
                     }}
                   >
                     View
@@ -246,8 +268,42 @@ export function ImportDialog({ open, onClose }: { open: boolean; onClose: () => 
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={close}>{batch && imported > 0 ? 'Done' : 'Cancel'}</Button>
+        <Button onClick={requestClose}>{batch && imported > 0 ? 'Done' : 'Cancel'}</Button>
       </DialogActions>
     </Dialog>
+
+    <Dialog open={confirmingClose} onClose={() => setConfirmingClose(false)} maxWidth="xs" fullWidth>
+      <DialogTitle>Close without importing the rest?</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" gutterBottom>
+          <strong>
+            {waiting} {waiting === 1 ? 'row is' : 'rows are'} checked and ready but not yet imported.
+          </strong>{' '}
+          Closing discards this file — those {waiting === 1 ? 'row' : 'rows'} will not be created,
+          and you will need to upload the CSV again to import them.
+        </Typography>
+        {/* The rows themselves, not just the count: "6 rows" is a number, and
+            the names are what tell someone whether they meant to leave them. */}
+        <List dense sx={{ maxHeight: 220, overflowY: 'auto' }}>
+          {rows
+            .filter((row) => row.status === 'VALID')
+            .map((row) => (
+              <ListItem key={row.rowNumber} disableGutters>
+                <ListItemText
+                  primary={row.data.name || row.data.serial_number || row.data.asset_tag || '—'}
+                  secondary={`Line ${row.rowNumber} · ${row.data.category ?? '—'}`}
+                />
+              </ListItem>
+            ))}
+        </List>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setConfirmingClose(false)}>Go back</Button>
+        <Button color="error" onClick={discardAndClose}>
+          Close and discard
+        </Button>
+      </DialogActions>
+    </Dialog>
+    </>
   );
 }

@@ -54,6 +54,7 @@ public class ImportService {
     private final ImportBatchRowRepository rows;
     private final AssetCategoryRepository categories;
     private final LocationRepository locations;
+    private final AssetRepository assets;
     private final ImportRowCommitter rowCommitter;
     private final CustomFieldDefinitionRepository customFields;
     private final AuditService audit;
@@ -61,6 +62,7 @@ public class ImportService {
 
     public ImportService(ImportBatchRepository batches, ImportBatchRowRepository rows,
                          AssetCategoryRepository categories, LocationRepository locations,
+                         AssetRepository assets,
                          ImportRowCommitter rowCommitter,
                          CustomFieldDefinitionRepository customFields,
                          AuditService audit, CurrentUser currentUser) {
@@ -68,6 +70,7 @@ public class ImportService {
         this.rows = rows;
         this.categories = categories;
         this.locations = locations;
+        this.assets = assets;
         this.rowCommitter = rowCommitter;
         this.customFields = customFields;
         this.audit = audit;
@@ -123,6 +126,10 @@ public class ImportService {
         // Serial numbers already in this file, so a file that repeats one is
         // caught here rather than by the database halfway through committing.
         Set<String> serialsInFile = new HashSet<>();
+        // ...and the ones already belonging to a live asset. Asked once for the
+        // whole file: without this a serial that collides with existing stock
+        // looks fine in the preview and fails at commit with a constraint name.
+        Set<String> serialsInUse = serialsAlreadyInUse(sheet.rows());
 
         int valid = 0;
         int invalid = 0;
@@ -133,7 +140,7 @@ public class ImportService {
             stored.setRowNumber(row.lineNumber());
             stored.setRawData(new LinkedHashMap<>(values));
 
-            String problem = check(values, categoryByName, locationByName, serialsInFile);
+            String problem = check(values, categoryByName, locationByName, serialsInFile, serialsInUse);
             if (problem == null) {
                 stored.setStatus(ImportBatchRow.Status.VALID);
                 valid++;
@@ -213,8 +220,12 @@ public class ImportService {
         ImportBatch batch = batch(batchId);
         Lookups lookups = lookups();
         Set<String> serialsInFile = new HashSet<>();
+        List<ImportBatchRow> all = rows.findByBatchIdOrderByRowNumberAsc(batchId);
+        // Asked again rather than reused: the point of re-checking is that the
+        // database has changed since the file was read.
+        Set<String> serialsInUse = serialsAlreadyInUseFromRows(all);
 
-        for (ImportBatchRow row : rows.findByBatchIdOrderByRowNumberAsc(batchId)) {
+        for (ImportBatchRow row : all) {
             if (row.getStatus() == ImportBatchRow.Status.IMPORTED) {
                 // Already real, and its serial is now taken -- it still has to
                 // count towards the in-file duplicate check.
@@ -224,7 +235,8 @@ public class ImportService {
             }
 
             Map<String, String> values = stringValues(row);
-            String problem = check(values, lookups.categories(), lookups.locations(), serialsInFile);
+            String problem = check(values, lookups.categories(), lookups.locations(),
+                    serialsInFile, serialsInUse);
             if (problem == null) {
                 row.setStatus(ImportBatchRow.Status.VALID);
                 row.setErrorMessage(null);
@@ -293,6 +305,35 @@ public class ImportService {
         return saved;
     }
 
+    /** The serials in this sheet that a live asset already holds. */
+    private Set<String> serialsAlreadyInUse(List<CsvReader.Row> sheetRows) {
+        Set<String> offered = new HashSet<>();
+        for (CsvReader.Row row : sheetRows) {
+            String serial = normaliseKeys(row.values()).getOrDefault("serial_number", "");
+            if (!serial.isBlank()) offered.add(serial.toLowerCase());
+        }
+        return lookupSerials(offered);
+    }
+
+    private Set<String> serialsAlreadyInUseFromRows(List<ImportBatchRow> storedRows) {
+        Set<String> offered = new HashSet<>();
+        for (ImportBatchRow row : storedRows) {
+            // A row this batch already imported holds its own serial; counting it
+            // would make the row look like a duplicate of itself.
+            if (row.getStatus() == ImportBatchRow.Status.IMPORTED) continue;
+            String serial = stringValues(row).getOrDefault("serial_number", "");
+            if (!serial.isBlank()) offered.add(serial.toLowerCase());
+        }
+        return lookupSerials(offered);
+    }
+
+    private Set<String> lookupSerials(Set<String> offered) {
+        if (offered.isEmpty()) return Set.of();
+        Set<String> inUse = new HashSet<>();
+        assets.findSerialsInUse(offered).forEach(s -> inUse.add(s.toLowerCase()));
+        return inUse;
+    }
+
     private ImportBatch batch(Long batchId) {
         return batches.findById(batchId)
                 .orElseThrow(() -> new ApiExceptions.NotFoundException("Import not found"));
@@ -319,7 +360,8 @@ public class ImportService {
     private String check(Map<String, String> values,
                          Map<String, AssetCategory> categoryByName,
                          Map<String, Location> locationByName,
-                         Set<String> serialsInFile) {
+                         Set<String> serialsInFile,
+                         Set<String> serialsInUse) {
         String categoryName = values.getOrDefault("category", "");
         if (categoryName.isBlank()) return "Category is required.";
         AssetCategory category = categoryByName.get(categoryName.toLowerCase());
@@ -338,8 +380,14 @@ public class ImportService {
         }
 
         String serial = values.getOrDefault("serial_number", "");
-        if (!serial.isBlank() && !serialsInFile.add(serial.toLowerCase())) {
-            return "Serial number \"" + serial + "\" appears more than once in this file.";
+        if (!serial.isBlank()) {
+            if (serialsInUse.contains(serial.toLowerCase())) {
+                return "Serial number \"" + serial + "\" already belongs to an asset. "
+                        + "Importing it would be a duplicate.";
+            }
+            if (!serialsInFile.add(serial.toLowerCase())) {
+                return "Serial number \"" + serial + "\" appears more than once in this file.";
+            }
         }
 
         // A bulk category counts stock, so a quantity that is not a positive
@@ -504,11 +552,22 @@ public class ImportService {
         }
     }
 
-    /** The innermost message, since the outer ones are usually framework noise. */
+    /**
+     * The innermost message, since the outer ones are usually framework noise.
+     *
+     * <p>A unique-serial violation gets said in words. The preview catches these
+     * now, but only as of the moment it ran: someone else can create the asset
+     * in between, and "duplicate key value violates unique constraint
+     * uq_asset_serial" is not something to put in front of a person.
+     */
     private static String rootMessage(Throwable e) {
         Throwable cause = e;
         while (cause.getCause() != null && cause.getCause() != cause) cause = cause.getCause();
         String message = cause.getMessage();
+        if (message != null && message.contains("uq_asset_serial")) {
+            return "That serial number already belongs to another asset. "
+                    + "It may have been created since this file was checked.";
+        }
         return message == null || message.isBlank() ? e.getClass().getSimpleName() : message;
     }
 

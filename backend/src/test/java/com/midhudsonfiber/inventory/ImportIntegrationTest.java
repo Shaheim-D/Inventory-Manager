@@ -418,6 +418,87 @@ class ImportIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("a serial that already belongs to an asset is caught in the preview")
+    void existingSerialIsCaughtBeforeCommitting() {
+        Session admin = admin();
+        String location = newLocationNamed();
+        String taken = unique("SN");
+
+        Long categoryId = jdbc.queryForObject(
+                "SELECT id FROM asset_category WHERE name = 'Router'", Long.class);
+        Long locationId = jdbc.queryForObject(
+                "SELECT id FROM location WHERE name = ?", Long.class, location);
+        post(admin, "/api/assets", """
+                {"categoryId":%d,"locationId":%d,"name":"%s","serialNumber":"%s"}
+                """.formatted(categoryId, locationId, unique("already here"), taken));
+
+        JsonNode batch = upload(admin, """
+                category,location,name,serial_number
+                Router,%s,%s,%s
+                """.formatted(location, unique("would duplicate"), taken));
+
+        // Previously this looked importable and only failed at commit, with a
+        // message naming a database index.
+        assertThat(batch.get("failureCount").asInt()).isEqualTo(1);
+        assertThat(batch.get("rows").get(0).get("errorMessage").asText())
+                .contains("already belongs to an asset");
+    }
+
+    @Test
+    @DisplayName("a serial freed by deleting an asset is available again")
+    void softDeletedSerialsDoNotBlockAnImport() {
+        Session admin = admin();
+        String location = newLocationNamed();
+        String serial = unique("SN");
+
+        Long categoryId = jdbc.queryForObject(
+                "SELECT id FROM asset_category WHERE name = 'Router'", Long.class);
+        Long locationId = jdbc.queryForObject(
+                "SELECT id FROM location WHERE name = ?", Long.class, location);
+        Long assetId = post(admin, "/api/assets", """
+                {"categoryId":%d,"locationId":%d,"name":"%s","serialNumber":"%s"}
+                """.formatted(categoryId, locationId, unique("outgoing"), serial))
+                .getBody().get("id").asLong();
+        delete(admin, "/api/assets/" + assetId);
+
+        // uq_asset_serial is a partial index over live assets only, so the check
+        // has to agree with it -- refusing here would block a re-import of
+        // something that was deleted by mistake.
+        JsonNode batch = upload(admin, """
+                category,location,name,serial_number
+                Router,%s,%s,%s
+                """.formatted(location, unique("replacement"), serial));
+        assertThat(batch.get("successCount").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a serial taken after the preview fails in words, not in constraint names")
+    void raceAtCommitTimeIsExplained() {
+        Session admin = admin();
+        String location = newLocationNamed();
+        String serial = unique("SN");
+
+        Long batchId = upload(admin, """
+                category,location,name,serial_number
+                Router,%s,%s,%s
+                """.formatted(location, unique("racing"), serial)).get("id").asLong();
+
+        // Somebody else creates it between the check and the commit.
+        Long categoryId = jdbc.queryForObject(
+                "SELECT id FROM asset_category WHERE name = 'Router'", Long.class);
+        Long locationId = jdbc.queryForObject(
+                "SELECT id FROM location WHERE name = ?", Long.class, location);
+        post(admin, "/api/assets", """
+                {"categoryId":%d,"locationId":%d,"name":"%s","serialNumber":"%s"}
+                """.formatted(categoryId, locationId, unique("got there first"), serial));
+
+        JsonNode after = post(admin, "/api/imports/" + batchId + "/commit", "{}").getBody();
+        String message = after.get("rows").get(0).get("errorMessage").asText();
+        assertThat(message).contains("already belongs to another asset");
+        assertThat(message).doesNotContain("uq_asset_serial");
+    }
+
+    @Test
     @DisplayName("importing needs import:run")
     void importIsPermissionGated() {
         Session admin = admin();
