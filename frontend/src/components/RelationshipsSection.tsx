@@ -22,6 +22,39 @@ import { EntityTable } from './EntityTable';
 import { useAuth } from '../auth/AuthContext';
 
 /**
+ * A colour per kind of link, chosen so the colour carries the same meaning it
+ * does elsewhere in the app rather than being decoration.
+ *
+ * Both wordings of a link map to the same colour — "Installed In" on the SFP
+ * and "Contains" on the switch are one fact, and it would read as two if the
+ * chips disagreed.
+ */
+const RELATIONSHIP_COLOR: Record<
+  string,
+  'default' | 'primary' | 'info' | 'success' | 'warning' | 'error'
+> = {
+  // Physically part of something: the strongest form of "these belong together".
+  'Installed In': 'primary',
+  Contains: 'primary',
+  'Part Of': 'primary',
+  Comprises: 'primary',
+  // In a rack or enclosure — where it lives, not what it is.
+  'Mounted In': 'info',
+  Houses: 'info',
+  // A live signal path.
+  'Connected To': 'success',
+  // Power: the thing whose loss takes the other down with it.
+  'Powered By': 'warning',
+  Powers: 'warning',
+  // Standby stock. Reassuring rather than urgent.
+  'Spare For': 'default',
+  'Has spare': 'default',
+  // Something failed. Red, for the same reason Broken is red on a lifecycle chip.
+  'Replaced By': 'error',
+  Replaced: 'error',
+};
+
+/**
  * Links from one asset to another — an SFP installed in a switch, a spare held
  * against a particular router.
  *
@@ -30,7 +63,7 @@ import { useAuth } from '../auth/AuthContext';
  * where you are standing: the server words the inverse, and this component
  * never has to know which end the row was created from.
  */
-export function RelationshipsTab({ assetId }: { assetId: string }) {
+export function RelationshipsSection({ assetId }: { assetId: string }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { has } = useAuth();
@@ -116,7 +149,12 @@ export function RelationshipsTab({ assetId }: { assetId: string }) {
             {
               header: 'Relationship',
               render: (link: AssetRelationship) => (
-                <Chip size="small" variant="outlined" label={link.typeName} />
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  color={RELATIONSHIP_COLOR[link.typeName] ?? 'default'}
+                  label={link.typeName}
+                />
               ),
             },
             { header: 'Asset', render: (link: AssetRelationship) => link.otherAssetLabel },
@@ -129,8 +167,11 @@ export function RelationshipsTab({ assetId }: { assetId: string }) {
           cardTitle={(link) => `${link.typeName} · ${link.otherAssetLabel}`}
           rowActions={(link) => (
             <>
-              <Button size="small" onClick={() => navigate(`/assets/${link.otherAssetId}`)}>
-                Open
+              <Button
+                size="small"
+                onClick={() => navigate(`/assets/${link.otherAssetId}`)}
+              >
+                View
               </Button>
               {canManage && (
                 <Button size="small" color="error" onClick={() => remove.mutate(link.id)}>

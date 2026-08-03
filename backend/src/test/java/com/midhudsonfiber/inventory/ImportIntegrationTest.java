@@ -205,7 +205,7 @@ class ImportIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(post(admin, "/api/imports/" + batchId + "/commit", "{}").getStatusCode())
                 .isEqualTo(HttpStatus.OK);
-        // Without this, a double-click on the commit button imports the file twice.
+        // Without this, a double-click on the button imports the file twice.
         assertThat(post(admin, "/api/imports/" + batchId + "/commit", "{}").getStatusCode())
                 .isEqualTo(HttpStatus.BAD_REQUEST);
     }
@@ -303,6 +303,118 @@ class ImportIntegrationTest extends AbstractIntegrationTest {
                 Router,Somewhere,Thing,2026-01-01
                 """.getBytes(StandardCharsets.UTF_8)).getStatusCode())
                 .isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("a single row can be imported without accepting the rest of the file")
+    void oneRowAtATime() {
+        Session admin = admin();
+        String location = newLocationNamed();
+        String wanted = unique("SN");
+        String notWanted = unique("SN");
+
+        JsonNode batch = upload(admin, """
+                category,location,name,serial_number
+                Router,%s,%s,%s
+                Router,%s,%s,%s
+                """.formatted(location, unique("wanted"), wanted,
+                location, unique("later"), notWanted));
+        Long batchId = batch.get("id").asLong();
+        int firstLine = batch.get("rows").get(0).get("rowNumber").asInt();
+
+        JsonNode after = post(admin, "/api/imports/" + batchId + "/rows/" + firstLine + "/commit", "{}")
+                .getBody();
+
+        assertThat(after.get("rows").get(0).get("status").asText()).isEqualTo("IMPORTED");
+        assertThat(after.get("rows").get(0).get("createdAssetId").isNull()).isFalse();
+        // The other row is untouched and still waiting.
+        assertThat(after.get("rows").get(1).get("status").asText()).isEqualTo("VALID");
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM asset WHERE serial_number = ?", Integer.class, notWanted))
+                .isEqualTo(0);
+
+        // The batch stays open while something is left to do.
+        assertThat(after.get("status").asText()).isEqualTo("VALIDATED");
+
+        // And the same row cannot be imported twice.
+        assertThat(post(admin, "/api/imports/" + batchId + "/rows/" + firstLine + "/commit", "{}")
+                .getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("creating the missing location and re-checking beats uploading again")
+    void revalidateAfterFixingTheData() {
+        Session admin = admin();
+        String missingLocation = unique("not-yet-a-place");
+
+        JsonNode batch = upload(admin, """
+                category,location,name,serial_number
+                Router,%s,%s,%s
+                """.formatted(missingLocation, unique("waiting"), unique("SN")));
+        Long batchId = batch.get("id").asLong();
+        assertThat(batch.get("failureCount").asInt()).isEqualTo(1);
+
+        // The location did not exist when the file was read. Create it now --
+        // this is exactly the situation that used to mean uploading again.
+        Long locationType = jdbc.queryForObject(
+                "SELECT id FROM location_type WHERE name = 'Warehouse'", Long.class);
+        post(admin, "/api/locations", """
+                {"name":"%s","locationTypeId":%d,"ownershipType":"COMPANY_OWNED"}
+                """.formatted(missingLocation, locationType));
+
+        JsonNode rechecked = post(admin, "/api/imports/" + batchId + "/revalidate", "{}").getBody();
+        assertThat(rechecked.get("rows").get(0).get("status").asText()).isEqualTo("VALID");
+        assertThat(rechecked.get("rows").get(0).get("errorMessage").isNull()).isTrue();
+
+        assertThat(post(admin, "/api/imports/" + batchId + "/commit", "{}").getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+    }
+
+    @Test
+    @DisplayName("re-checking does not resurrect a row that already imported")
+    void revalidateLeavesImportedRowsAlone() {
+        Session admin = admin();
+        String location = newLocationNamed();
+        String serial = unique("SN");
+
+        JsonNode batch = upload(admin, """
+                category,location,name,serial_number
+                Router,%s,%s,%s
+                """.formatted(location, unique("done"), serial));
+        Long batchId = batch.get("id").asLong();
+        post(admin, "/api/imports/" + batchId + "/commit", "{}");
+
+        // Its own serial is now taken. Re-checking must not read that as a
+        // conflict and offer to import the row a second time.
+        JsonNode rechecked = post(admin, "/api/imports/" + batchId + "/revalidate", "{}").getBody();
+        assertThat(rechecked.get("rows").get(0).get("status").asText()).isEqualTo("IMPORTED");
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM asset WHERE serial_number = ?", Integer.class, serial))
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("discarding a file removes the staging without touching what it created")
+    void discardKeepsTheAssets() {
+        Session admin = admin();
+        String location = newLocationNamed();
+        String serial = unique("SN");
+
+        Long batchId = upload(admin, """
+                category,location,name,serial_number
+                Router,%s,%s,%s
+                """.formatted(location, unique("kept"), serial)).get("id").asLong();
+        post(admin, "/api/imports/" + batchId + "/commit", "{}");
+
+        assertThat(delete(admin, "/api/imports/" + batchId).getStatusCode())
+                .isEqualTo(HttpStatus.NO_CONTENT);
+
+        // An import is a thing someone did; the asset is the record of it.
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM asset WHERE serial_number = ?", Integer.class, serial))
+                .isEqualTo(1);
+        assertThat(get(admin, "/api/imports/" + batchId).getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
     }
 
     @Test

@@ -44,12 +44,6 @@ public class ImportController {
         this.users = users;
     }
 
-    @GetMapping
-    @PreAuthorize("hasAuthority('" + PermissionKeys.IMPORT_RUN + "')")
-    public List<Map<String, Object>> list() {
-        return batches.findTop50ByOrderByIdDesc().stream().map(this::toView).toList();
-    }
-
     /**
      * A starting file with the right column names, so the first attempt is not
      * a guess about what the importer accepts.
@@ -78,7 +72,9 @@ public class ImportController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('" + PermissionKeys.IMPORT_RUN + "')")
     public Map<String, Object> upload(@RequestPart("file") MultipartFile file) {
-        return toView(imports.upload(file));
+        // Returns the rows too: the caller's next move is always to show them,
+        // and a second round trip to fetch what we just parsed is pure latency.
+        return detail(imports.upload(file).getId());
     }
 
     /** The batch plus every row, which is what the preview screen renders. */
@@ -95,10 +91,37 @@ public class ImportController {
         return view;
     }
 
+    /** Imports everything still marked valid. */
     @PostMapping("/{id}/commit")
     @PreAuthorize("hasAuthority('" + PermissionKeys.IMPORT_RUN + "')")
     public Map<String, Object> commit(@PathVariable Long id) {
-        return toView(imports.commit(id));
+        return detail(imports.commitAll(id).getId());
+    }
+
+    /** Imports one row, for a reader who wants three of the thirty. */
+    @PostMapping("/{id}/rows/{rowNumber}/commit")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.IMPORT_RUN + "')")
+    public Map<String, Object> commitRow(@PathVariable Long id, @PathVariable int rowNumber) {
+        return detail(imports.commitRow(id, rowNumber).getId());
+    }
+
+    /**
+     * Checks the remaining rows again against the current database, so creating
+     * the missing location is enough -- the file does not have to be uploaded
+     * a second time.
+     */
+    @PostMapping("/{id}/revalidate")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.IMPORT_RUN + "')")
+    public Map<String, Object> revalidate(@PathVariable Long id) {
+        return detail(imports.revalidate(id).getId());
+    }
+
+    /** Throws the staged file away. The assets it created are the record. */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.IMPORT_RUN + "')")
+    public ResponseEntity<Void> discard(@PathVariable Long id) {
+        imports.discard(id);
+        return ResponseEntity.noContent().build();
     }
 
     private Map<String, Object> toView(ImportBatch batch) {

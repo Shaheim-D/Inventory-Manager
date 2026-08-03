@@ -6,12 +6,14 @@ import { api } from '../api/client';
 import type { Asset, Category, LifecycleState, Location, Page } from '../api/types';
 import { EntityTable, type Column } from '../components/EntityTable';
 import { PageHeader } from '../components/PageHeader';
+import { ImportDialog } from '../components/ImportDialog';
 import { useAuth } from '../auth/AuthContext';
 
 export function AssetListPage() {
   const navigate = useNavigate();
   const { has } = useAuth();
 
+  const [importing, setImporting] = useState(false);
   const [q, setQ] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -113,13 +115,24 @@ export function AssetListPage() {
           assets.data ? `${assets.data.totalElements.toLocaleString()} matching assets` : 'Loading…'
         }
         actions={
-          has('asset:write') ? (
-            <Button variant="contained" onClick={() => navigate('/assets/new')}>
-              New asset
-            </Button>
-          ) : undefined
+          <Stack direction="row" spacing={1}>
+            {/* Importing is loading assets, so it belongs where the assets are
+                rather than behind a module of its own. */}
+            {has('import:run') && (
+              <Button variant="outlined" onClick={() => setImporting(true)}>
+                Import
+              </Button>
+            )}
+            {has('asset:write') && (
+              <Button variant="contained" onClick={() => navigate('/assets/new')}>
+                New asset
+              </Button>
+            )}
+          </Stack>
         }
       />
+
+      <ImportDialog open={importing} onClose={() => setImporting(false)} />
 
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
         <Grid container spacing={2}>

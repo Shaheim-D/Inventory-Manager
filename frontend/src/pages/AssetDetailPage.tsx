@@ -25,7 +25,7 @@ import { api, ApiError } from '../api/client';
 import type { Asset, AuditEvent, Page, TransitionOptions } from '../api/types';
 import { PageHeader } from '../components/PageHeader';
 import { EntityTable } from '../components/EntityTable';
-import { RelationshipsTab } from '../components/RelationshipsTab';
+import { RelationshipsSection } from '../components/RelationshipsSection';
 import { AttachmentsTab } from '../components/AttachmentsTab';
 import { useAuth } from '../auth/AuthContext';
 
@@ -141,13 +141,11 @@ export function AssetDetailPage() {
 
       <Tabs value={tab} onChange={(_, next) => setTab(next)} sx={{ mb: 2 }} variant="scrollable" allowScrollButtonsMobile>
         <Tab value="overview" label="Overview" />
-        <Tab value="relationships" label="Relationships" />
         <Tab value="attachments" label="Attachments" />
         {has('audit:view') && <Tab value="audit" label="Audit history" />}
         {has('asset:write') && <Tab value="lifecycle" label="Lifecycle" />}
       </Tabs>
 
-      {tab === 'relationships' && <RelationshipsTab assetId={id!} />}
       {tab === 'attachments' && <AttachmentsTab assetId={id!} />}
 
       {tab === 'overview' && (
@@ -244,6 +242,19 @@ export function AssetDetailPage() {
             )}
           </Grid>
         </Paper>
+      )}
+
+      {tab === 'overview' && (
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="subtitle1" gutterBottom>
+            Relationships
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            What this is physically part of, connected to, powered by, or held as a spare for. A
+            link entered on either asset shows on both.
+          </Typography>
+          <RelationshipsSection assetId={id!} />
+        </Box>
       )}
 
       {tab === 'audit' && has('audit:view') && (
