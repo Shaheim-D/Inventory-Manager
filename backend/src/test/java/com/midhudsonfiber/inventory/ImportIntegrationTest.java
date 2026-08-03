@@ -211,6 +211,101 @@ class ImportIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("a row that fails during the commit does not take the batch with it")
+    void aFailureAtCommitTimeDoesNotPoisonTheBatch() {
+        Session admin = admin();
+        String location = newLocationNamed();
+        String goodSerial = unique("SN");
+        String collidingSerial = unique("SN");
+
+        // Two rows carrying the same serial in different letter-case. The
+        // in-file duplicate check compares lower-cased, so this pair passes
+        // validation and only collides once the database sees it -- which is
+        // exactly the shape of failure that used to mark the whole transaction
+        // rollback-only and destroy every good row alongside it.
+        JsonNode batch = upload(admin, """
+                category,location,name,serial_number
+                Router,%s,%s,%s
+                Router,%s,%s,%s
+                """.formatted(location, unique("survivor"), goodSerial,
+                location, unique("collides"), collidingSerial));
+        assertThat(batch.get("successCount").asInt()).isEqualTo(2);
+
+        Long batchId = batch.get("id").asLong();
+        // Create the colliding asset outside the import, between validate and commit.
+        Long categoryId = jdbc.queryForObject(
+                "SELECT id FROM asset_category WHERE name = 'Router'", Long.class);
+        Long locationId = jdbc.queryForObject(
+                "SELECT id FROM location WHERE name = ?", Long.class, location);
+        post(admin, "/api/assets", """
+                {"categoryId":%d,"locationId":%d,"name":"%s","serialNumber":"%s"}
+                """.formatted(categoryId, locationId, unique("interloper"), collidingSerial));
+
+        assertThat(post(admin, "/api/imports/" + batchId + "/commit", "{}").getStatusCode())
+                .as("one doomed row must not fail the whole commit")
+                .isEqualTo(HttpStatus.OK);
+
+        // The good row is really there, not rolled back with the bad one.
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM asset WHERE serial_number = ?", Integer.class, goodSerial))
+                .isEqualTo(1);
+        assertThat(get(admin, "/api/imports/" + batchId).getBody().get("successCount").asInt())
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a category with a required custom field says so in the preview")
+    void requiredCustomFieldIsCaughtBeforeCommitting() {
+        Session admin = admin();
+        String location = newLocationNamed();
+
+        // A Vehicle requires its VIN. Without this the row looked valid and then
+        // failed during the commit, which is the worst place to learn about it.
+        JsonNode batch = upload(admin, """
+                category,location,name
+                Vehicle,%s,%s
+                """.formatted(location, unique("van")));
+
+        assertThat(batch.get("failureCount").asInt()).isEqualTo(1);
+        assertThat(get(admin, "/api/imports/" + batch.get("id").asLong()).getBody()
+                .get("rows").get(0).get("errorMessage").asText())
+                .contains("VIN", "custom:VIN");
+    }
+
+    @Test
+    @DisplayName("custom fields import through a custom: column")
+    void customFieldsCanBeImported() {
+        Session admin = admin();
+        String location = newLocationNamed();
+        String vin = "1FTBW3XM4NK" + unique("").replaceAll("\\W", "").substring(0, 6).toUpperCase();
+
+        JsonNode batch = upload(admin, """
+                category,location,name,custom:VIN
+                Vehicle,%s,%s,%s
+                """.formatted(location, unique("van"), vin));
+        assertThat(batch.get("successCount").asInt()).isEqualTo(1);
+
+        post(admin, "/api/imports/" + batch.get("id").asLong() + "/commit", "{}");
+        assertThat(jdbc.queryForObject(
+                "SELECT custom_fields ->> 'VIN' FROM asset WHERE custom_fields ->> 'VIN' = ?",
+                String.class, vin)).isEqualTo(vin);
+    }
+
+    @Test
+    @DisplayName("a misspelled core column still fails the file, custom: prefix or not")
+    void customPrefixDoesNotWeakenTheUnknownColumnCheck() {
+        Session admin = admin();
+        // "warrenty_start" must still be caught. The custom: prefix is opt-in
+        // precisely so that a typo in a core column cannot slip through as a
+        // custom field nobody asked for.
+        assertThat(postMultipart(admin, "/api/imports", "assets.csv", "text/csv", """
+                category,location,name,warrenty_start
+                Router,Somewhere,Thing,2026-01-01
+                """.getBytes(StandardCharsets.UTF_8)).getStatusCode())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
     @DisplayName("importing needs import:run")
     void importIsPermissionGated() {
         Session admin = admin();

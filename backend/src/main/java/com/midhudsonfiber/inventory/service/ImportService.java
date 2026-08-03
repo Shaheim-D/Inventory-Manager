@@ -33,6 +33,15 @@ public class ImportService {
     /** Enough for a real inventory load, low enough that one upload cannot exhaust memory. */
     static final int MAX_ROWS = 10_000;
 
+    /**
+     * Marks a column as a category custom field rather than a core one:
+     * {@code custom:VIN}. A prefix rather than "any unrecognised column is a
+     * custom field", because an unknown column has to keep failing the file --
+     * silently ignoring a misspelled core column is how an import looks
+     * successful and loses data.
+     */
+    public static final String CUSTOM_PREFIX = "custom:";
+
     /** Column names the importer understands, in the order the template offers them. */
     public static final List<String> COLUMNS = List.of(
             "category", "location", "name", "manufacturer", "model", "serial_number",
@@ -45,18 +54,22 @@ public class ImportService {
     private final ImportBatchRowRepository rows;
     private final AssetCategoryRepository categories;
     private final LocationRepository locations;
-    private final AssetService assets;
+    private final ImportRowCommitter rowCommitter;
+    private final CustomFieldDefinitionRepository customFields;
     private final AuditService audit;
     private final CurrentUser currentUser;
 
     public ImportService(ImportBatchRepository batches, ImportBatchRowRepository rows,
                          AssetCategoryRepository categories, LocationRepository locations,
-                         AssetService assets, AuditService audit, CurrentUser currentUser) {
+                         ImportRowCommitter rowCommitter,
+                         CustomFieldDefinitionRepository customFields,
+                         AuditService audit, CurrentUser currentUser) {
         this.batches = batches;
         this.rows = rows;
         this.categories = categories;
         this.locations = locations;
-        this.assets = assets;
+        this.rowCommitter = rowCommitter;
+        this.customFields = customFields;
         this.audit = audit;
         this.currentUser = currentUser;
     }
@@ -89,6 +102,7 @@ public class ImportService {
 
         List<String> unknown = sheet.headers().stream()
                 .filter(header -> !header.isBlank())
+                .filter(header -> !isCustomColumn(header))
                 .filter(header -> !COLUMNS.contains(normalise(header)))
                 .toList();
         if (!unknown.isEmpty()) {
@@ -170,7 +184,8 @@ public class ImportService {
             row.getRawData().forEach((k, v) -> values.put(k, v == null ? "" : String.valueOf(v)));
 
             try {
-                Asset asset = assets.create(toRequest(values, categoryByName, locationByName));
+                // In its own transaction: see ImportRowCommitter for why.
+                Asset asset = rowCommitter.create(toRequest(values, categoryByName, locationByName));
                 row.setStatus(ImportBatchRow.Status.IMPORTED);
                 row.setCreatedAssetId(asset.getId());
                 created++;
@@ -233,6 +248,18 @@ public class ImportService {
             }
         } else if (!category.isSerialized()) {
             return "Quantity is required for %s, which is counted in bulk.".formatted(category.getName());
+        }
+
+        // A category can require custom fields -- a Vehicle needs its VIN. Without
+        // this the row passes validation and then fails during the commit, which
+        // is the worst place to find out.
+        for (var definition : customFields.findByCategoryIdOrderBySortOrderAscIdAsc(category.getId())) {
+            if (!definition.isRequired()) continue;
+            String supplied = values.get(CUSTOM_PREFIX + definition.getFieldName().toLowerCase());
+            if (supplied == null || supplied.isBlank()) {
+                return "%s requires \"%s\". Add a column named \"custom:%s\"."
+                        .formatted(category.getName(), definition.getFieldName(), definition.getFieldName());
+            }
         }
 
         String price = values.getOrDefault("purchase_price", "");
@@ -300,7 +327,25 @@ public class ImportService {
                 null, null,
                 parseInt(values.getOrDefault("quantity", "")),
                 Set.of(),
-                Map.of());
+                customFieldsFrom(values, category));
+    }
+
+    /**
+     * Pulls the {@code custom:} columns back out, restoring each definition's
+     * real name -- the header was lower-cased for matching, and the stored key
+     * has to be exactly what the definition calls it.
+     */
+    private Map<String, Object> customFieldsFrom(Map<String, String> values, AssetCategory category) {
+        Map<String, Object> supplied = new LinkedHashMap<>();
+        for (var definition : customFields.findByCategoryIdOrderBySortOrderAscIdAsc(category.getId())) {
+            String value = values.get(CUSTOM_PREFIX + definition.getFieldName().toLowerCase());
+            if (value != null && !value.isBlank()) supplied.put(definition.getFieldName(), value);
+        }
+        return supplied;
+    }
+
+    static boolean isCustomColumn(String header) {
+        return header.trim().toLowerCase().startsWith(CUSTOM_PREFIX);
     }
 
     /** Column names are matched case- and separator-insensitively. */
@@ -310,9 +355,17 @@ public class ImportService {
         return normalised;
     }
 
-    /** "Serial Number", "serial number", and "serial_number" are the same column. */
+    /**
+     * "Serial Number", "serial number", and "serial_number" are the same column.
+     * A {@code custom:} column keeps its spacing beyond the prefix, since it has
+     * to match a custom field definition's name exactly.
+     */
     static String normalise(String header) {
-        return header.trim().toLowerCase().replaceAll("[\\s-]+", "_");
+        String trimmed = header.trim().toLowerCase();
+        if (trimmed.startsWith(CUSTOM_PREFIX)) {
+            return CUSTOM_PREFIX + trimmed.substring(CUSTOM_PREFIX.length()).trim();
+        }
+        return trimmed.replaceAll("[\\s-]+", "_");
     }
 
     private static String blankToNull(String value) {
