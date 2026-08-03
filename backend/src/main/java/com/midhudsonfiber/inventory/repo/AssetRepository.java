@@ -24,6 +24,13 @@ public interface AssetRepository extends JpaRepository<Asset, Long>, JpaSpecific
             """)
     List<String> findSerialsInUse(java.util.Collection<String> serials);
 
+    /** The same question for asset tags, which uq_asset_tag makes unique too. */
+    @Query("""
+            SELECT a.assetTag FROM Asset a
+            WHERE a.deleted = FALSE AND LOWER(a.assetTag) IN :tags
+            """)
+    List<String> findAssetTagsInUse(java.util.Collection<String> tags);
+
 
     /**
      * Ranked search over the tsvector and trigram indexes built in V1/V6. Native

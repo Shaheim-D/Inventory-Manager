@@ -499,6 +499,67 @@ class ImportIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("an asset tag already in use is caught in the preview")
+    void existingAssetTagIsCaught() {
+        Session admin = admin();
+        String location = newLocationNamed();
+        String tag = unique("TAG").toUpperCase();
+
+        Long categoryId = jdbc.queryForObject(
+                "SELECT id FROM asset_category WHERE name = 'Router'", Long.class);
+        Long locationId = jdbc.queryForObject(
+                "SELECT id FROM location WHERE name = ?", Long.class, location);
+        post(admin, "/api/assets", """
+                {"categoryId":%d,"locationId":%d,"name":"%s","assetTag":"%s"}
+                """.formatted(categoryId, locationId, unique("labelled"), tag));
+
+        JsonNode batch = upload(admin, """
+                category,location,name,asset_tag
+                Router,%s,%s,%s
+                """.formatted(location, unique("same label"), tag));
+
+        assertThat(batch.get("failureCount").asInt()).isEqualTo(1);
+        assertThat(batch.get("rows").get(0).get("errorMessage").asText())
+                .contains("already belongs to an asset");
+    }
+
+    @Test
+    @DisplayName("an asset tag repeated within one file is caught too")
+    void duplicateAssetTagsWithinAFile() {
+        Session admin = admin();
+        String location = newLocationNamed();
+        String tag = unique("TAG").toUpperCase();
+
+        JsonNode batch = upload(admin, """
+                category,location,name,asset_tag
+                Router,%s,%s,%s
+                Router,%s,%s,%s
+                """.formatted(location, unique("first"), tag, location, unique("second"), tag));
+
+        assertThat(batch.get("successCount").asInt()).isEqualTo(1);
+        assertThat(batch.get("failureCount").asInt()).isEqualTo(1);
+        assertThat(batch.get("rows").get(1).get("errorMessage").asText())
+                .contains("appears more than once");
+    }
+
+    @Test
+    @DisplayName("assets with no tag at all do not collide with each other")
+    void untaggedAssetsAreUnconstrained() {
+        Session admin = admin();
+        String location = newLocationNamed();
+
+        // NULL is not a value. Most bulk stock carries no tag, and requiring one
+        // would make the constraint unusable.
+        JsonNode batch = upload(admin, """
+                category,location,name,serial_number
+                Router,%s,%s,%s
+                Router,%s,%s,%s
+                """.formatted(location, unique("no tag a"), unique("SN"),
+                location, unique("no tag b"), unique("SN")));
+        assertThat(batch.get("successCount").asInt()).isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("importing needs import:run")
     void importIsPermissionGated() {
         Session admin = admin();

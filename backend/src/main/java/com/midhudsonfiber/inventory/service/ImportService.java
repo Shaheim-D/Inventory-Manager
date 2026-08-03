@@ -130,6 +130,10 @@ public class ImportService {
         // whole file: without this a serial that collides with existing stock
         // looks fine in the preview and fails at commit with a constraint name.
         Set<String> serialsInUse = serialsAlreadyInUse(sheet.rows());
+        // Asset tags get the same treatment: uq_asset_tag makes them unique, so
+        // a collision has to be visible in the preview rather than at commit.
+        Set<String> tagsInFile = new HashSet<>();
+        Set<String> tagsInUse = tagsAlreadyInUse(sheet.rows());
 
         int valid = 0;
         int invalid = 0;
@@ -140,7 +144,8 @@ public class ImportService {
             stored.setRowNumber(row.lineNumber());
             stored.setRawData(new LinkedHashMap<>(values));
 
-            String problem = check(values, categoryByName, locationByName, serialsInFile, serialsInUse);
+            String problem = check(values, categoryByName, locationByName,
+                    serialsInFile, serialsInUse, tagsInFile, tagsInUse);
             if (problem == null) {
                 stored.setStatus(ImportBatchRow.Status.VALID);
                 valid++;
@@ -224,19 +229,24 @@ public class ImportService {
         // Asked again rather than reused: the point of re-checking is that the
         // database has changed since the file was read.
         Set<String> serialsInUse = serialsAlreadyInUseFromRows(all);
+        Set<String> tagsInFile = new HashSet<>();
+        Set<String> tagsInUse = tagsAlreadyInUseFromRows(all);
 
         for (ImportBatchRow row : all) {
             if (row.getStatus() == ImportBatchRow.Status.IMPORTED) {
-                // Already real, and its serial is now taken -- it still has to
-                // count towards the in-file duplicate check.
-                String serial = String.valueOf(row.getRawData().getOrDefault("serial_number", ""));
+                // Already real, and its serial and tag are now taken -- they
+                // still have to count towards the in-file duplicate checks.
+                Map<String, String> done = stringValues(row);
+                String serial = done.getOrDefault("serial_number", "");
                 if (!serial.isBlank()) serialsInFile.add(serial.toLowerCase());
+                String tag = done.getOrDefault("asset_tag", "");
+                if (!tag.isBlank()) tagsInFile.add(tag.toLowerCase());
                 continue;
             }
 
             Map<String, String> values = stringValues(row);
             String problem = check(values, lookups.categories(), lookups.locations(),
-                    serialsInFile, serialsInUse);
+                    serialsInFile, serialsInUse, tagsInFile, tagsInUse);
             if (problem == null) {
                 row.setStatus(ImportBatchRow.Status.VALID);
                 row.setErrorMessage(null);
@@ -315,6 +325,33 @@ public class ImportService {
         return lookupSerials(offered);
     }
 
+    /** The asset tags in this sheet that a live asset already holds. */
+    private Set<String> tagsAlreadyInUse(List<CsvReader.Row> sheetRows) {
+        Set<String> offered = new HashSet<>();
+        for (CsvReader.Row row : sheetRows) {
+            String tag = normaliseKeys(row.values()).getOrDefault("asset_tag", "");
+            if (!tag.isBlank()) offered.add(tag.toLowerCase());
+        }
+        return lookupTags(offered);
+    }
+
+    private Set<String> tagsAlreadyInUseFromRows(List<ImportBatchRow> storedRows) {
+        Set<String> offered = new HashSet<>();
+        for (ImportBatchRow row : storedRows) {
+            if (row.getStatus() == ImportBatchRow.Status.IMPORTED) continue;
+            String tag = stringValues(row).getOrDefault("asset_tag", "");
+            if (!tag.isBlank()) offered.add(tag.toLowerCase());
+        }
+        return lookupTags(offered);
+    }
+
+    private Set<String> lookupTags(Set<String> offered) {
+        if (offered.isEmpty()) return Set.of();
+        Set<String> inUse = new HashSet<>();
+        assets.findAssetTagsInUse(offered).forEach(t -> inUse.add(t.toLowerCase()));
+        return inUse;
+    }
+
     private Set<String> serialsAlreadyInUseFromRows(List<ImportBatchRow> storedRows) {
         Set<String> offered = new HashSet<>();
         for (ImportBatchRow row : storedRows) {
@@ -361,7 +398,9 @@ public class ImportService {
                          Map<String, AssetCategory> categoryByName,
                          Map<String, Location> locationByName,
                          Set<String> serialsInFile,
-                         Set<String> serialsInUse) {
+                         Set<String> serialsInUse,
+                         Set<String> tagsInFile,
+                         Set<String> tagsInUse) {
         String categoryName = values.getOrDefault("category", "");
         if (categoryName.isBlank()) return "Category is required.";
         AssetCategory category = categoryByName.get(categoryName.toLowerCase());
@@ -401,6 +440,17 @@ public class ImportService {
             }
         } else if (!category.isSerialized()) {
             return "Quantity is required for %s, which is counted in bulk.".formatted(category.getName());
+        }
+
+        String tag = values.getOrDefault("asset_tag", "");
+        if (!tag.isBlank()) {
+            if (tagsInUse.contains(tag.toLowerCase())) {
+                return "Asset tag \"" + tag + "\" already belongs to an asset. "
+                        + "A tag identifies one physical item.";
+            }
+            if (!tagsInFile.add(tag.toLowerCase())) {
+                return "Asset tag \"" + tag + "\" appears more than once in this file.";
+            }
         }
 
         // A category can require custom fields -- a Vehicle needs its VIN. Without
@@ -566,6 +616,10 @@ public class ImportService {
         String message = cause.getMessage();
         if (message != null && message.contains("uq_asset_serial")) {
             return "That serial number already belongs to another asset. "
+                    + "It may have been created since this file was checked.";
+        }
+        if (message != null && message.contains("uq_asset_tag")) {
+            return "That asset tag already belongs to another asset. "
                     + "It may have been created since this file was checked.";
         }
         return message == null || message.isBlank() ? e.getClass().getSimpleName() : message;

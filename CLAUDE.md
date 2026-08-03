@@ -46,6 +46,15 @@ Two consequences that are easy to miss:
 "notify about Y" is a row or a widened CHECK constraint, not a new table. Ask
 whether an existing mechanism generalizes before adding one.
 
+**Serial number and asset tag are unique among live assets**, via the partial
+indexes `uq_asset_serial` and `uq_asset_tag`. Partial matters twice over: NULL is
+not a value, so untagged bulk stock is unconstrained, and a soft-deleted asset
+releases both, so something deleted by mistake can be re-created with the label
+still physically on it. Name and hostname are deliberately *not* unique -- things
+share names, and a replacement reusing its predecessor's hostname is correct data.
+Anything that checks these in the application must match the index, deleted rows
+and all, or it will reject writes the database would have allowed.
+
 **Assets are soft-deleted.** `audit_event.entity_id` is deliberately not a
 foreign key so history survives whatever it describes. `import_batch_row.created_asset_id`
 is not one either, for the same reason.

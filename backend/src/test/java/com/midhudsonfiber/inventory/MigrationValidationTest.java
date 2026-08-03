@@ -75,6 +75,22 @@ class MigrationValidationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("serial number and asset tag are unique among live assets")
+    void identifiersAreUnique() {
+        // Both are partial indexes: NULL is not a value, and a soft-deleted
+        // asset releases its identifiers so it can be re-created if the
+        // deletion was a mistake.
+        for (String index : java.util.List.of("uq_asset_serial", "uq_asset_tag")) {
+            String definition = jdbc.queryForObject(
+                    "SELECT indexdef FROM pg_indexes WHERE tablename = 'asset' AND indexname = ?",
+                    String.class, index);
+            assertThat(definition).as(index).contains("UNIQUE");
+            assertThat(definition).as("%s must exclude deleted assets", index)
+                    .contains("is_deleted = false");
+        }
+    }
+
+    @Test
     @DisplayName("the relationship vocabulary is seeded, so links can actually be drawn")
     void relationshipTypesSeeded() {
         // The table existed from V1 but was empty, which made asset_relationship
