@@ -16,3 +16,7 @@ node_modules/
 
 # TypeScript incremental build state
 *.tsbuildinfo
+
+# Attachment uploads when running the backend directly. Real deployments point
+# APP_ATTACHMENTS_DIRECTORY at a volume; this is only where a local run puts them.
+backend/data/

@@ -55,8 +55,15 @@ previous image tag.
 
 ## 3. Backups
 
-`scripts/backup.sh` takes a `pg_dump -Fc` and copies it to whatever
-`BACKUP_DESTINATION_TYPE` names. Install it nightly:
+`scripts/backup.sh` produces **two** artefacts per night and copies both to
+whatever `BACKUP_DESTINATION_TYPE` names:
+
+| Artefact | Contains |
+|---|---|
+| `inventory-manager-<stamp>.dump` | `pg_dump -Fc` of the database |
+| `inventory-manager-files-<stamp>.tar.gz` | the attachment directory |
+
+Install it nightly:
 
 ```
 15 2 * * * /opt/inventory-manager/scripts/backup.sh >> /var/log/im-backup.log 2>&1
@@ -69,8 +76,15 @@ nothing.
 **The destination must not be the disk running the database.** A copy sitting
 next to the thing it protects is lost with it.
 
-The uploaded logo lives in the database as `BYTEA`, so these dumps already
-capture branding. There is no separate asset volume to remember.
+**A dump on its own is not a complete backup.** The uploaded logo lives in the
+database as `BYTEA`, so branding is covered by the dump — but attachments are
+not. `attachment.file_path` stores a path, and the bytes live on a Docker volume
+mounted at `/var/lib/inventory-manager/attachments`. Restoring only the dump
+brings back every attachment row pointing at a file that is no longer there.
+
+That is why the script takes both, keeps them on the same retention window, and
+names them with the same timestamp: the pair belongs together, and a restore
+needs the two halves from the same night.
 
 ---
 
@@ -81,10 +95,16 @@ down-migrations. That makes this the most important procedure in this document,
 and it is why it must be rehearsed rather than merely written down.
 
 ```
-/opt/inventory-manager/scripts/restore.sh /path/to/inventory-manager-<stamp>.dump
+/opt/inventory-manager/scripts/restore.sh /path/to/inventory-manager-<stamp>.dump \
+                                          /path/to/inventory-manager-files-<stamp>.tar.gz
 ```
 
-The script walks the same five steps by hand:
+The second argument can be omitted when the archive sits next to the dump — the
+script finds it by matching the timestamp. If it finds neither, it says so and
+makes you confirm before continuing, because a silent restore-without-files is
+the failure that only shows up weeks later when someone opens an invoice.
+
+The script walks these six steps by hand:
 
 1. **Stop `app`** so nothing writes mid-restore.
 2. **Drop and recreate** the database.
@@ -92,8 +112,11 @@ The script walks the same five steps by hand:
 4. **Verify `flyway_schema_history`** reflects the version you are restoring to.
    This is the step most likely to be skipped under pressure, which is why the
    script stops and asks rather than scrolling past it.
-5. **Start `app`**, confirm health, then smoke-test: sign in, open an asset,
-   and confirm a restricted role still cannot see cost fields.
+5. **Unpack the attachment archive** into the attachment volume.
+6. **Start `app`**, confirm health, then smoke-test: sign in, open an asset,
+   confirm a restricted role still cannot see cost fields, **and download an
+   attachment**. A file reported as missing means the archive did not come back
+   with the database.
 
 **Rehearse this at least once against a real backup before you need it.** Much of
 this platform's risk tolerance — automatic Flyway on startup, no down-migrations

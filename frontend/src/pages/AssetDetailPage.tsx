@@ -25,6 +25,8 @@ import { api, ApiError } from '../api/client';
 import type { Asset, AuditEvent, Page, TransitionOptions } from '../api/types';
 import { PageHeader } from '../components/PageHeader';
 import { EntityTable } from '../components/EntityTable';
+import { RelationshipsTab } from '../components/RelationshipsTab';
+import { AttachmentsTab } from '../components/AttachmentsTab';
 import { useAuth } from '../auth/AuthContext';
 
 export function AssetDetailPage() {
@@ -32,7 +34,11 @@ export function AssetDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { has } = useAuth();
-  const [tab, setTab] = useState(0);
+  // Keyed rather than indexed. Tabs are permission-gated, so a numeric index
+  // silently means a different tab for a viewer who cannot see one of them --
+  // hiding Audit History used to shift Lifecycle to 1 while the render still
+  // checked for 2, leaving that viewer a tab that showed nothing.
+  const [tab, setTab] = useState('overview');
   const [transitionTarget, setTransitionTarget] = useState<{ id: number; name: string } | null>(null);
   const [transitionReason, setTransitionReason] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +57,7 @@ export function AssetDetailPage() {
   const audit = useQuery({
     queryKey: ['asset-audit', id],
     queryFn: () => api.get<Page<AuditEvent>>(`/api/assets/${id}/audit?size=100`),
-    enabled: has('audit:view') && tab === 1,
+    enabled: has('audit:view') && tab === 'audit',
   });
 
   const transition = useMutation({
@@ -134,12 +140,17 @@ export function AssetDetailPage() {
       )}
 
       <Tabs value={tab} onChange={(_, next) => setTab(next)} sx={{ mb: 2 }} variant="scrollable" allowScrollButtonsMobile>
-        <Tab label="Overview" />
-        {has('audit:view') && <Tab label="Audit history" />}
-        {has('asset:write') && <Tab label="Lifecycle" />}
+        <Tab value="overview" label="Overview" />
+        <Tab value="relationships" label="Relationships" />
+        <Tab value="attachments" label="Attachments" />
+        {has('audit:view') && <Tab value="audit" label="Audit history" />}
+        {has('asset:write') && <Tab value="lifecycle" label="Lifecycle" />}
       </Tabs>
 
-      {tab === 0 && (
+      {tab === 'relationships' && <RelationshipsTab assetId={id!} />}
+      {tab === 'attachments' && <AttachmentsTab assetId={id!} />}
+
+      {tab === 'overview' && (
         <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 } }}>
           <Grid container spacing={3}>
             <Grid item xs={12} md={6}>
@@ -235,7 +246,7 @@ export function AssetDetailPage() {
         </Paper>
       )}
 
-      {tab === 1 && has('audit:view') && (
+      {tab === 'audit' && has('audit:view') && (
         <Paper variant="outlined">
           <EntityTable
             columns={[
@@ -255,7 +266,7 @@ export function AssetDetailPage() {
         </Paper>
       )}
 
-      {tab === 2 && has('asset:write') && (
+      {tab === 'lifecycle' && has('asset:write') && (
         <Paper variant="outlined" sx={{ p: 3 }}>
           <Typography variant="subtitle1" gutterBottom>
             Current state: {data.lifecycleStateName}

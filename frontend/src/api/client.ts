@@ -64,6 +64,23 @@ export const api = {
     form.append('file', file);
     return request<T>('POST', path, form, true);
   },
+  /**
+   * Fetches binary content. Attachments come back as octet-stream with a
+   * Content-Disposition, so they cannot go through the JSON path above.
+   */
+  getBlob: async (path: string): Promise<Blob> => {
+    const response = await fetch(path, { credentials: 'same-origin' });
+    if (!response.ok) {
+      const text = await response.text();
+      const payload = text ? safeParse(text) : undefined;
+      const message =
+        (payload && typeof payload === 'object' && 'error' in payload
+          ? String((payload as { error: unknown }).error)
+          : undefined) ?? `Request failed (${response.status})`;
+      throw new ApiError(response.status, message);
+    }
+    return response.blob();
+  },
 };
 
 /**
