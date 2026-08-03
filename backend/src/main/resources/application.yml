@@ -46,8 +46,11 @@ spring:
 
   servlet:
     multipart:
-      max-file-size: 5MB
-      max-request-size: 6MB
+      # Above the 25 MB attachment ceiling, so the application's own limit is
+      # what a user hits -- and gets an explanation for -- rather than the
+      # container rejecting the request before any of this code runs.
+      max-file-size: 30MB
+      max-request-size: 31MB
 
 server:
   port: 8080
@@ -75,6 +78,13 @@ app:
     lockout-minutes: 15
   branding:
     max-logo-bytes: 2097152
+  attachments:
+    # Attachment bytes live here rather than in Postgres, because the schema
+    # stores a path. That makes this directory real data: it needs the same
+    # backup schedule as the database, and a restore that brings back only the
+    # dump leaves every attachment row pointing at a file that is not there.
+    directory: ${APP_ATTACHMENTS_DIRECTORY:data/attachments}
+    max-bytes: ${APP_ATTACHMENTS_MAX_BYTES:26214400}
   ldap:
     enabled: ${LDAP_ENABLED:false}
     url: ${LDAP_URL:}

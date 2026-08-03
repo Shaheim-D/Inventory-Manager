@@ -5,6 +5,7 @@ import { LoginPage } from './pages/LoginPage';
 import { ChangePasswordPage } from './pages/ChangePasswordPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { AssetListPage } from './pages/AssetListPage';
+import { ImportPage } from './pages/ImportPage';
 import { AssetDetailPage } from './pages/AssetDetailPage';
 import { AssetFormPage } from './pages/AssetFormPage';
 import { LocationsPage } from './pages/LocationsPage';
@@ -40,6 +41,8 @@ export function App() {
         <Route path="/assets/new" element={guard(['asset:write'], <AssetFormPage />)} />
         <Route path="/assets/:id" element={guard(['asset:read'], <AssetDetailPage />)} />
         <Route path="/assets/:id/edit" element={guard(['asset:write'], <AssetFormPage />)} />
+
+        <Route path="/import" element={guard(['import:run'], <ImportPage />)} />
 
         <Route path="/locations" element={guard(['location:read'], <LocationsPage />)} />
         <Route path="/verification" element={guard(['asset:write'], <VerificationPage />)} />

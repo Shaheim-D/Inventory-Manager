@@ -8,6 +8,7 @@ public class AppProperties {
     private BootstrapAdmin bootstrapAdmin = new BootstrapAdmin();
     private Auth auth = new Auth();
     private BrandingLimits branding = new BrandingLimits();
+    private Attachments attachments = new Attachments();
     private Ldap ldap = new Ldap();
     private ActiveDirectory activeDirectory = new ActiveDirectory();
 
@@ -37,6 +38,22 @@ public class AppProperties {
 
         public long getMaxLogoBytes() { return maxLogoBytes; }
         public void setMaxLogoBytes(long v) { this.maxLogoBytes = v; }
+    }
+
+    public static class Attachments {
+        /**
+         * Where uploaded files live. The schema stores a path rather than the
+         * bytes, so this directory is real data -- it must be on the same
+         * backup schedule as the database, and a restore that brings back only
+         * the database leaves every attachment row pointing at nothing.
+         */
+        private String directory = "data/attachments";
+        private long maxBytes = 25L * 1024 * 1024;
+
+        public String getDirectory() { return directory; }
+        public void setDirectory(String directory) { this.directory = directory; }
+        public long getMaxBytes() { return maxBytes; }
+        public void setMaxBytes(long v) { this.maxBytes = v; }
     }
 
     public static class Ldap {
@@ -80,6 +97,8 @@ public class AppProperties {
     public void setAuth(Auth auth) { this.auth = auth; }
     public BrandingLimits getBranding() { return branding; }
     public void setBranding(BrandingLimits branding) { this.branding = branding; }
+    public Attachments getAttachments() { return attachments; }
+    public void setAttachments(Attachments v) { this.attachments = v; }
     public Ldap getLdap() { return ldap; }
     public void setLdap(Ldap ldap) { this.ldap = ldap; }
     public ActiveDirectory getActiveDirectory() { return activeDirectory; }

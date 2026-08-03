@@ -101,6 +101,17 @@ public abstract class AbstractIntegrationTest {
         return rest.exchange(path, HttpMethod.POST, new HttpEntity<>(typedBody, headers), JsonNode.class);
     }
 
+    /** The raw response, for assertions about status and headers rather than body. */
+    protected ResponseEntity<byte[]> rawGet(Session session, String path) {
+        return rest.exchange(path, HttpMethod.GET,
+                new HttpEntity<>(headers(session.cookies(), session.csrfToken())), byte[].class);
+    }
+
+    /** The bytes a download actually produced, for comparing against what went up. */
+    protected byte[] getBytes(Session session, String path) {
+        return rawGet(session, path).getBody();
+    }
+
     private static HttpHeaders headers(List<String> cookies, String csrf) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);

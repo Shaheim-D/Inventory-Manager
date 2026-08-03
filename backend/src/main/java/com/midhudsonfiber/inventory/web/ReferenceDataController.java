@@ -41,7 +41,10 @@ public class ReferenceDataController {
                 "ownershipTypes", names(Location.OwnershipType.values()),
                 "assigneeTypes", names(com.midhudsonfiber.inventory.domain.Asset.AssigneeType.values()),
                 "customFieldTypes",
-                names(com.midhudsonfiber.inventory.domain.CustomFieldDefinition.FieldType.values()));
+                names(com.midhudsonfiber.inventory.domain.CustomFieldDefinition.FieldType.values()),
+                // Served from the one list the controller validates against, so
+                // the picker can never offer a value the CHECK constraint rejects.
+                "attachmentCategories", AttachmentController.FILE_CATEGORIES);
     }
 
     private static List<String> names(Enum<?>[] values) {

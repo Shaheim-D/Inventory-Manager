@@ -24,13 +24,9 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
-import type { Location, LocationTypeOption } from '../api/types';
+import type { Location, LocationTypeOption, ReferenceEnums } from '../api/types';
 import { PageHeader } from '../components/PageHeader';
 import { useAuth } from '../auth/AuthContext';
-
-interface EnumOptions {
-  ownershipTypes: string[];
-}
 
 /** Reads better than the stored key, which is all the API deals in. */
 const OWNERSHIP_LABELS: Record<string, string> = {
@@ -53,7 +49,7 @@ export function LocationsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const locations = useQuery({ queryKey: ['locations'], queryFn: () => api.get<Location[]>('/api/locations') });
-  const enums = useQuery({ queryKey: ['enums'], queryFn: () => api.get<EnumOptions>('/api/reference/enums') });
+  const enums = useQuery({ queryKey: ['enums'], queryFn: () => api.get<ReferenceEnums>('/api/reference/enums') });
   // Location types are a table now, so new ones can be added without a release.
   const locationTypes = useQuery({
     queryKey: ['location-types'],

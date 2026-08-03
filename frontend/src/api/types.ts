@@ -236,3 +236,45 @@ export interface AssetRelationship {
   otherAssetCategory: string;
   createdAt: string;
 }
+
+/** A file held against an asset. The stored path is never sent to the client. */
+export interface Attachment {
+  id: number;
+  fileCategory: string;
+  originalFilename: string;
+  uploadedAt: string;
+  uploadedBy: string;
+}
+
+/** Everything /api/reference/enums serves, in one shape rather than one per caller. */
+export interface ReferenceEnums {
+  ownershipTypes: string[];
+  assigneeTypes: string[];
+  customFieldTypes: string[];
+  attachmentCategories: string[];
+}
+
+/** One uploaded import file and what became of it. */
+export interface ImportBatch {
+  id: number;
+  filename: string;
+  status: 'PENDING' | 'VALIDATED' | 'COMMITTED' | 'FAILED';
+  rowCount: number;
+  successCount: number;
+  failureCount: number;
+  importedAt: string;
+  importedBy: string;
+}
+
+/** One parsed row, with why it cannot import if it cannot. */
+export interface ImportRow {
+  rowNumber: number;
+  status: 'VALID' | 'INVALID' | 'IMPORTED';
+  errorMessage: string | null;
+  createdAssetId: number | null;
+  data: Record<string, string>;
+}
+
+export interface ImportBatchDetail extends ImportBatch {
+  rows: ImportRow[];
+}

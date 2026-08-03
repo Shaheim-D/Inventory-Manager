@@ -26,6 +26,7 @@ import type { Asset, AuditEvent, Page, TransitionOptions } from '../api/types';
 import { PageHeader } from '../components/PageHeader';
 import { EntityTable } from '../components/EntityTable';
 import { RelationshipsTab } from '../components/RelationshipsTab';
+import { AttachmentsTab } from '../components/AttachmentsTab';
 import { useAuth } from '../auth/AuthContext';
 
 export function AssetDetailPage() {
@@ -141,11 +142,13 @@ export function AssetDetailPage() {
       <Tabs value={tab} onChange={(_, next) => setTab(next)} sx={{ mb: 2 }} variant="scrollable" allowScrollButtonsMobile>
         <Tab value="overview" label="Overview" />
         <Tab value="relationships" label="Relationships" />
+        <Tab value="attachments" label="Attachments" />
         {has('audit:view') && <Tab value="audit" label="Audit history" />}
         {has('asset:write') && <Tab value="lifecycle" label="Lifecycle" />}
       </Tabs>
 
       {tab === 'relationships' && <RelationshipsTab assetId={id!} />}
+      {tab === 'attachments' && <AttachmentsTab assetId={id!} />}
 
       {tab === 'overview' && (
         <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 } }}>

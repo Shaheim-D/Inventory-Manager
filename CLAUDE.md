@@ -47,7 +47,14 @@ Two consequences that are easy to miss:
 whether an existing mechanism generalizes before adding one.
 
 **Assets are soft-deleted.** `audit_event.entity_id` is deliberately not a
-foreign key so history survives whatever it describes.
+foreign key so history survives whatever it describes. `import_batch_row.created_asset_id`
+is not one either, for the same reason.
+
+**Attachment bytes are not in the database.** `attachment.file_path` points at a
+file on a volume, so `pg_dump` alone is an incomplete backup. `backup.sh` takes a
+dump *and* a tar of the attachment directory, and `restore.sh` wants both halves
+from the same night. Anything that adds a second store of bytes on disk has to
+join that pair — a backup that silently omits data is worse than one that fails.
 
 ## Testing
 
@@ -74,7 +81,7 @@ commit and say why.
 
 ## What is not built yet
 
-Milestones 2–7 are largely open — see the status table in `README.md`. The
+Milestones 3–7 are largely open — see the status table in `README.md`. The
 schema for Purchase Orders (V3), plugins (V8), and saved reports (V9) already
 exists and is validated; those milestones are application and UI layers on top of
 tables that are already there.
