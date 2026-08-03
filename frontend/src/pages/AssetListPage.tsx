@@ -103,7 +103,9 @@ export function AssetListPage() {
       header: 'Quantity',
       align: 'right',
       secondary: true,
-      render: (asset) => (asset.serialized ? '—' : asset.quantity),
+      // A serialized asset is one physical unit and the column says 1. A dash
+      // read as "not known", which was wrong -- it is known, and it is one.
+      render: (asset) => asset.quantity,
     },
   ];
 

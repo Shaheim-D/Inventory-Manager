@@ -124,7 +124,17 @@ export function LocationsPage() {
       return (
         <Box key={location.id}>
           <ListItem
-            sx={{ pl: 2 + depth * 3 }}
+            divider
+            sx={{
+              pl: 2 + depth * 3,
+              // Nesting is shown by indentation alone, which left siblings
+              // running together. A rule under each row separates them, and a
+              // tint by depth keeps a child visibly subordinate to its parent
+              // rather than merely shifted right.
+              bgcolor: depth > 0 ? 'action.hover' : undefined,
+              borderLeft: depth > 0 ? '3px solid' : undefined,
+              borderLeftColor: depth > 0 ? 'divider' : undefined,
+            }}
             secondaryAction={
               has('location:write') ? (
                 <Stack direction="row" spacing={1}>

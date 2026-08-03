@@ -36,6 +36,9 @@ public class ImportRowCommitter {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Asset create(AssetRequest request) {
-        return assets.create(request);
+        // Not strict: an import is getting existing inventory into the system,
+        // where refusing a row over a blank optional field just means the asset
+        // goes untracked. The form still insists; see AssetService.create.
+        return assets.create(request, false);
     }
 }

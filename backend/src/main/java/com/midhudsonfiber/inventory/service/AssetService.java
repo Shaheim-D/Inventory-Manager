@@ -118,6 +118,20 @@ public class AssetService {
 
     @Transactional
     public Asset create(AssetRequest request) {
+        return create(request, true);
+    }
+
+    /**
+     * @param strict false for bulk import. Loading a spreadsheet is not the same
+     *               act as filling in the form: the form is one person entering
+     *               one asset and can reasonably insist, while an import is
+     *               getting existing inventory into the system, where refusing a
+     *               row over a blank optional field just means the asset is not
+     *               tracked at all. Category and location are still required --
+     *               those are structural, an asset cannot exist without them.
+     */
+    @Transactional
+    public Asset create(AssetRequest request, boolean strict) {
         Asset asset = new Asset();
         AssetCategory category = category(request.categoryId());
         asset.setCategory(category);
@@ -126,9 +140,10 @@ public class AssetService {
         asset.setLastVerifiedAt(Instant.now());
         asset.setLastVerifiedBy(currentUser.idOrNull());
 
-        applyWritableFields(asset, request, category, Set.of());
+        applyWritableFields(asset, request, category, Set.of(), strict);
         applySubcategories(asset, request, category);
-        asset.setCustomFields(customFieldValidator.validate(category.getId(), request.customFields(), Map.of()));
+        asset.setCustomFields(
+                customFieldValidator.validate(category.getId(), request.customFields(), Map.of(), strict));
 
         Asset saved = assets.save(asset);
         audit.recordCreate(AuditService.ENTITY_ASSET, saved.getId(), saved.displayLabel());
@@ -243,6 +258,16 @@ public class AssetService {
 
     private void applyWritableFields(Asset asset, AssetRequest request, AssetCategory category,
                                      Set<String> hiddenCoreFields) {
+        applyWritableFields(asset, request, category, hiddenCoreFields, true);
+    }
+
+    private void applyWritableFields(Asset asset, AssetRequest request, AssetCategory category,
+                                     Set<String> hiddenCoreFields, boolean strict) {
+        applyFieldsInternal(asset, request, category, hiddenCoreFields, strict);
+    }
+
+    private void applyFieldsInternal(Asset asset, AssetRequest request, AssetCategory category,
+                                     Set<String> hiddenCoreFields, boolean strict) {
         asset.setName(request.name());
         asset.setManufacturer(request.manufacturer());
         asset.setModel(request.model());
@@ -282,7 +307,7 @@ public class AssetService {
             applyAssignee(asset, request);
         }
 
-        asset.setQuantity(resolveQuantity(category, request.quantity()));
+        asset.setQuantity(resolveQuantity(category, request.quantity(), strict));
     }
 
     private void applyAssignee(Asset asset, AssetRequest request) {
@@ -332,11 +357,17 @@ public class AssetService {
     }
 
     private Integer resolveQuantity(AssetCategory category, Integer requested) {
+        return resolveQuantity(category, requested, true);
+    }
+
+    private Integer resolveQuantity(AssetCategory category, Integer requested, boolean strict) {
         if (category.isSerialized()) return 1;   // one row per unit, always
-        if (requested == null || requested < 1) {
-            throw new ApiExceptions.BadRequestException("Quantity must be at least 1 for a bulk category.");
-        }
-        return requested;
+        if (requested != null && requested >= 1) return requested;
+        // Blank on an import means "we have some and did not count them", which
+        // is worth recording as 1 and correcting later. A wrong number is still
+        // wrong, so an explicit 0 or -3 is rejected in either mode.
+        if (!strict && requested == null) return 1;
+        throw new ApiExceptions.BadRequestException("Quantity must be at least 1 for a bulk category.");
     }
 
     private Set<String> hiddenCoreFields(Long categoryId) {
