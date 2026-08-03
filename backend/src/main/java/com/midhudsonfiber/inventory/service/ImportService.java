@@ -429,8 +429,10 @@ public class ImportService {
             }
         }
 
-        // A bulk category counts stock, so a quantity that is not a positive
-        // number is a data problem rather than something to silently default.
+        // A number that is given has to make sense; a blank one does not stop the
+        // row. Bulk stock left blank becomes 1 -- "we have some and did not count
+        // them" is worth recording and correcting later, and a serialized asset
+        // is one unit regardless of what the column says.
         String quantity = values.getOrDefault("quantity", "");
         if (!quantity.isBlank()) {
             try {
@@ -438,8 +440,6 @@ public class ImportService {
             } catch (NumberFormatException e) {
                 return "Quantity \"" + quantity + "\" is not a whole number.";
             }
-        } else if (!category.isSerialized()) {
-            return "Quantity is required for %s, which is counted in bulk.".formatted(category.getName());
         }
 
         String tag = values.getOrDefault("asset_tag", "");
@@ -450,18 +450,6 @@ public class ImportService {
             }
             if (!tagsInFile.add(tag.toLowerCase())) {
                 return "Asset tag \"" + tag + "\" appears more than once in this file.";
-            }
-        }
-
-        // A category can require custom fields -- a Vehicle needs its VIN. Without
-        // this the row passes validation and then fails during the commit, which
-        // is the worst place to find out.
-        for (var definition : customFields.findByCategoryIdOrderBySortOrderAscIdAsc(category.getId())) {
-            if (!definition.isRequired()) continue;
-            String supplied = values.get(CUSTOM_PREFIX + definition.getFieldName().toLowerCase());
-            if (supplied == null || supplied.isBlank()) {
-                return "%s requires \"%s\". Add a column named \"custom:%s\"."
-                        .formatted(category.getName(), definition.getFieldName(), definition.getFieldName());
             }
         }
 

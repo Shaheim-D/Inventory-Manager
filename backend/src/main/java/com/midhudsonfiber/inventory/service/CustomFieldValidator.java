@@ -41,6 +41,22 @@ public class CustomFieldValidator {
     public Map<String, Object> validate(Long categoryId,
                                         Map<String, Object> submitted,
                                         Map<String, Object> retainedValues) {
+        return validate(categoryId, submitted, retainedValues, true);
+    }
+
+    /**
+     * @param enforceRequired false when loading data in bulk. A spreadsheet of
+     *                        six hundred assets should not be refused because
+     *                        three vehicles are missing a VIN -- the rows are
+     *                        still worth having, and the gap is visible and
+     *                        fixable afterwards. A value that IS supplied is
+     *                        still coerced and checked either way.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> validate(Long categoryId,
+                                        Map<String, Object> submitted,
+                                        Map<String, Object> retainedValues,
+                                        boolean enforceRequired) {
         Map<String, Object> result = new LinkedHashMap<>(retainedValues == null ? Map.of() : retainedValues);
         Map<String, Object> input = submitted == null ? Map.of() : submitted;
 
@@ -52,7 +68,7 @@ public class CustomFieldValidator {
 
             Object raw = input.get(fieldName);
             if (raw == null || (raw instanceof String s && s.isBlank())) {
-                if (definition.isRequired()) {
+                if (definition.isRequired() && enforceRequired) {
                     throw new ApiExceptions.BadRequestException("\"" + fieldName + "\" is required.");
                 }
                 result.remove(fieldName);

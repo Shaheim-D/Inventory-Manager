@@ -173,22 +173,59 @@ class ImportIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("a bulk category needs a quantity")
-    void bulkCategoryNeedsQuantity() {
+    @DisplayName("a blank quantity becomes 1 rather than stopping the row")
+    void blankQuantityDefaultsToOne() {
         Session admin = admin();
         String location = newLocationNamed();
+        String noQty = unique("no-qty");
 
+        // Refusing here meant the asset went untracked entirely, which is worse
+        // than recording it with a count somebody can correct.
         JsonNode batch = upload(admin, """
                 category,location,name,quantity
                 Fiber Cable,%s,%s,
                 Fiber Cable,%s,%s,40
-                """.formatted(location, unique("no-qty"), location, unique("with-qty")));
+                """.formatted(location, noQty, location, unique("with-qty")));
 
-        assertThat(batch.get("failureCount").asInt()).isEqualTo(1);
-        assertThat(batch.get("successCount").asInt()).isEqualTo(1);
-        assertThat(get(admin, "/api/imports/" + batch.get("id").asLong()).getBody()
-                .get("rows").get(0).get("errorMessage").asText())
-                .contains("counted in bulk");
+        assertThat(batch.get("successCount").asInt()).isEqualTo(2);
+        assertThat(batch.get("failureCount").asInt()).isZero();
+
+        post(admin, "/api/imports/" + batch.get("id").asLong() + "/commit", "{}");
+        assertThat(jdbc.queryForObject(
+                "SELECT quantity FROM asset WHERE name = ?", Integer.class, noQty)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a quantity that is given still has to make sense")
+    void explicitlyWrongQuantityIsStillRejected() {
+        Session admin = admin();
+        String location = newLocationNamed();
+
+        // Blank means "not counted". Zero means somebody counted zero, which is
+        // a different claim and a wrong one.
+        JsonNode batch = upload(admin, """
+                category,location,name,quantity
+                Fiber Cable,%s,%s,0
+                Fiber Cable,%s,%s,lots
+                """.formatted(location, unique("zero"), location, unique("words")));
+        assertThat(batch.get("failureCount").asInt()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("a serialized asset is one unit whatever the column says")
+    void serializedAssetsAreAlwaysOne() {
+        Session admin = admin();
+        String location = newLocationNamed();
+        String name = unique("router");
+
+        JsonNode batch = upload(admin, """
+                category,location,name,serial_number
+                Router,%s,%s,%s
+                """.formatted(location, name, unique("SN")));
+        post(admin, "/api/imports/" + batch.get("id").asLong() + "/commit", "{}");
+
+        assertThat(jdbc.queryForObject(
+                "SELECT quantity FROM asset WHERE name = ?", Integer.class, name)).isEqualTo(1);
     }
 
     @Test
@@ -254,22 +291,44 @@ class ImportIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("a category with a required custom field says so in the preview")
-    void requiredCustomFieldIsCaughtBeforeCommitting() {
+    @DisplayName("a missing required custom field does not stop an import")
+    void requiredCustomFieldsDoNotBlockAnImport() {
         Session admin = admin();
         String location = newLocationNamed();
+        String name = unique("van");
 
-        // A Vehicle requires its VIN. Without this the row looked valid and then
-        // failed during the commit, which is the worst place to learn about it.
+        // A Vehicle's VIN is required on the form, and rightly so. An import is a
+        // different act: six hundred assets should not be refused because three
+        // vans are missing a VIN, since the alternative is not tracking them.
         JsonNode batch = upload(admin, """
                 category,location,name
                 Vehicle,%s,%s
-                """.formatted(location, unique("van")));
+                """.formatted(location, name));
+        assertThat(batch.get("successCount").asInt()).isEqualTo(1);
 
-        assertThat(batch.get("failureCount").asInt()).isEqualTo(1);
-        assertThat(get(admin, "/api/imports/" + batch.get("id").asLong()).getBody()
-                .get("rows").get(0).get("errorMessage").asText())
-                .contains("VIN", "custom:VIN");
+        post(admin, "/api/imports/" + batch.get("id").asLong() + "/commit", "{}");
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM asset WHERE name = ?", Integer.class, name)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the form still insists on a required custom field")
+    void theFormIsStillStrict() {
+        Session admin = admin();
+        Long locationType = jdbc.queryForObject(
+                "SELECT id FROM location_type WHERE name = 'Warehouse'", Long.class);
+        Long locationId = post(admin, "/api/locations", """
+                {"name":"%s","locationTypeId":%d,"ownershipType":"COMPANY_OWNED"}
+                """.formatted(unique("strict"), locationType)).getBody().get("id").asLong();
+        Long vehicle = jdbc.queryForObject(
+                "SELECT id FROM asset_category WHERE name = 'Vehicle'", Long.class);
+
+        // One person entering one asset can reasonably be asked for the VIN.
+        // Relaxing the import must not quietly relax this too.
+        assertThat(post(admin, "/api/assets", """
+                {"categoryId":%d,"locationId":%d,"name":"%s"}
+                """.formatted(vehicle, locationId, unique("van"))).getStatusCode())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
     }
 
     @Test

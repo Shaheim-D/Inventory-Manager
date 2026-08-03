@@ -172,7 +172,8 @@ export function AssetDetailPage() {
                 {uses('software_version') && <Field label={label('software_version')} value={data.softwareVersion} />}
                 {uses('device_role') && <Field label={label('device_role')} value={data.deviceRole} />}
                 {uses('condition') && <Field label={label('condition')} value={data.condition} />}
-                {!data.serialized && <Field label="Quantity on hand" value={String(data.quantity)} />}
+                {/* Shown for serialized assets too, where it is always 1. */}
+                <Field label="Quantity on hand" value={String(data.quantity)} />
               </Section>
             </Grid>
 
