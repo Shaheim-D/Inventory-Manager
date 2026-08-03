@@ -27,7 +27,6 @@ import InventoryIcon from '@mui/icons-material/Inventory2';
 import RouterIcon from '@mui/icons-material/Router';
 import PlaceIcon from '@mui/icons-material/Place';
 import FactCheckIcon from '@mui/icons-material/FactCheck';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
 import HistoryIcon from '@mui/icons-material/History';
 import CategoryIcon from '@mui/icons-material/Category';
 import PeopleIcon from '@mui/icons-material/People';
@@ -80,14 +79,6 @@ const NAV: NavSection[] = [
         permissions: ['location:read'],
         createTo: '/locations?new=1',
         createPermissions: ['location:write'],
-      },
-      {
-        // Under Assets rather than Admin: loading inventory is the job of
-        // whoever keeps the inventory, not a system-administration task.
-        label: 'Bulk Import',
-        to: '/import',
-        icon: <UploadFileIcon />,
-        permissions: ['import:run'],
       },
       {
         label: 'Inventory Verification',

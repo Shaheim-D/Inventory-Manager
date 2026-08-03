@@ -33,6 +33,15 @@ public class ImportService {
     /** Enough for a real inventory load, low enough that one upload cannot exhaust memory. */
     static final int MAX_ROWS = 10_000;
 
+    /**
+     * Marks a column as a category custom field rather than a core one:
+     * {@code custom:VIN}. A prefix rather than "any unrecognised column is a
+     * custom field", because an unknown column has to keep failing the file --
+     * silently ignoring a misspelled core column is how an import looks
+     * successful and loses data.
+     */
+    public static final String CUSTOM_PREFIX = "custom:";
+
     /** Column names the importer understands, in the order the template offers them. */
     public static final List<String> COLUMNS = List.of(
             "category", "location", "name", "manufacturer", "model", "serial_number",
@@ -45,18 +54,25 @@ public class ImportService {
     private final ImportBatchRowRepository rows;
     private final AssetCategoryRepository categories;
     private final LocationRepository locations;
-    private final AssetService assets;
+    private final AssetRepository assets;
+    private final ImportRowCommitter rowCommitter;
+    private final CustomFieldDefinitionRepository customFields;
     private final AuditService audit;
     private final CurrentUser currentUser;
 
     public ImportService(ImportBatchRepository batches, ImportBatchRowRepository rows,
                          AssetCategoryRepository categories, LocationRepository locations,
-                         AssetService assets, AuditService audit, CurrentUser currentUser) {
+                         AssetRepository assets,
+                         ImportRowCommitter rowCommitter,
+                         CustomFieldDefinitionRepository customFields,
+                         AuditService audit, CurrentUser currentUser) {
         this.batches = batches;
         this.rows = rows;
         this.categories = categories;
         this.locations = locations;
         this.assets = assets;
+        this.rowCommitter = rowCommitter;
+        this.customFields = customFields;
         this.audit = audit;
         this.currentUser = currentUser;
     }
@@ -89,6 +105,7 @@ public class ImportService {
 
         List<String> unknown = sheet.headers().stream()
                 .filter(header -> !header.isBlank())
+                .filter(header -> !isCustomColumn(header))
                 .filter(header -> !COLUMNS.contains(normalise(header)))
                 .toList();
         if (!unknown.isEmpty()) {
@@ -109,6 +126,14 @@ public class ImportService {
         // Serial numbers already in this file, so a file that repeats one is
         // caught here rather than by the database halfway through committing.
         Set<String> serialsInFile = new HashSet<>();
+        // ...and the ones already belonging to a live asset. Asked once for the
+        // whole file: without this a serial that collides with existing stock
+        // looks fine in the preview and fails at commit with a constraint name.
+        Set<String> serialsInUse = serialsAlreadyInUse(sheet.rows());
+        // Asset tags get the same treatment: uq_asset_tag makes them unique, so
+        // a collision has to be visible in the preview rather than at commit.
+        Set<String> tagsInFile = new HashSet<>();
+        Set<String> tagsInUse = tagsAlreadyInUse(sheet.rows());
 
         int valid = 0;
         int invalid = 0;
@@ -119,7 +144,8 @@ public class ImportService {
             stored.setRowNumber(row.lineNumber());
             stored.setRawData(new LinkedHashMap<>(values));
 
-            String problem = check(values, categoryByName, locationByName, serialsInFile);
+            String problem = check(values, categoryByName, locationByName,
+                    serialsInFile, serialsInUse, tagsInFile, tagsInUse);
             if (problem == null) {
                 stored.setStatus(ImportBatchRow.Status.VALID);
                 valid++;
@@ -141,65 +167,240 @@ public class ImportService {
     }
 
     /**
-     * Creates an asset for each valid row. Invalid rows are left alone and stay
-     * visible on the batch afterwards as the record of what was skipped.
+     * Imports every row currently marked valid. Rows that are already imported
+     * are left alone, so this is safe to call again after re-checking.
      */
     @Transactional
-    public ImportBatch commit(Long batchId) {
-        ImportBatch batch = batches.findById(batchId)
-                .orElseThrow(() -> new ApiExceptions.NotFoundException("Import not found"));
-
-        if (batch.getStatus() != ImportBatch.Status.VALIDATED) {
-            throw new ApiExceptions.BadRequestException(
-                    batch.getStatus() == ImportBatch.Status.COMMITTED
-                            ? "That import has already been committed."
-                            : "That import cannot be committed in its current state.");
+    public ImportBatch commitAll(Long batchId) {
+        ImportBatch batch = batch(batchId);
+        List<ImportBatchRow> pending =
+                rows.findByBatchIdAndStatusOrderByRowNumberAsc(batchId, ImportBatchRow.Status.VALID);
+        if (pending.isEmpty()) {
+            throw new ApiExceptions.BadRequestException("There is nothing left to import in this file.");
         }
 
+        Lookups lookups = lookups();
+        for (ImportBatchRow row : pending) {
+            importOne(row, lookups);
+        }
+        return recount(batch);
+    }
+
+    /**
+     * Imports one row. The preview is a list someone is reading, and a reader
+     * who spots the three rows they actually wanted should be able to take just
+     * those without accepting the rest of the file.
+     */
+    @Transactional
+    public ImportBatch commitRow(Long batchId, int rowNumber) {
+        ImportBatch batch = batch(batchId);
+        ImportBatchRow row = rows.findByBatchIdOrderByRowNumberAsc(batchId).stream()
+                .filter(r -> r.getRowNumber() == rowNumber)
+                .findFirst()
+                .orElseThrow(() -> new ApiExceptions.NotFoundException("No such row in this file"));
+
+        if (row.getStatus() == ImportBatchRow.Status.IMPORTED) {
+            throw new ApiExceptions.BadRequestException("That row has already been imported.");
+        }
+        if (row.getStatus() == ImportBatchRow.Status.INVALID) {
+            throw new ApiExceptions.BadRequestException(
+                    "That row cannot be imported: " + row.getErrorMessage());
+        }
+
+        importOne(row, lookups());
+        return recount(batch);
+    }
+
+    /**
+     * Re-runs validation over the rows that have not been imported.
+     *
+     * <p>This exists because of how the failure actually plays out: a file is
+     * rejected for naming a location that does not exist, the person creates the
+     * location, and then has nothing to do but upload the same file again. The
+     * parse is already stored; checking it again against the current database
+     * costs nothing and saves the round trip.
+     */
+    @Transactional
+    public ImportBatch revalidate(Long batchId) {
+        ImportBatch batch = batch(batchId);
+        Lookups lookups = lookups();
+        Set<String> serialsInFile = new HashSet<>();
+        List<ImportBatchRow> all = rows.findByBatchIdOrderByRowNumberAsc(batchId);
+        // Asked again rather than reused: the point of re-checking is that the
+        // database has changed since the file was read.
+        Set<String> serialsInUse = serialsAlreadyInUseFromRows(all);
+        Set<String> tagsInFile = new HashSet<>();
+        Set<String> tagsInUse = tagsAlreadyInUseFromRows(all);
+
+        for (ImportBatchRow row : all) {
+            if (row.getStatus() == ImportBatchRow.Status.IMPORTED) {
+                // Already real, and its serial and tag are now taken -- they
+                // still have to count towards the in-file duplicate checks.
+                Map<String, String> done = stringValues(row);
+                String serial = done.getOrDefault("serial_number", "");
+                if (!serial.isBlank()) serialsInFile.add(serial.toLowerCase());
+                String tag = done.getOrDefault("asset_tag", "");
+                if (!tag.isBlank()) tagsInFile.add(tag.toLowerCase());
+                continue;
+            }
+
+            Map<String, String> values = stringValues(row);
+            String problem = check(values, lookups.categories(), lookups.locations(),
+                    serialsInFile, serialsInUse, tagsInFile, tagsInUse);
+            if (problem == null) {
+                row.setStatus(ImportBatchRow.Status.VALID);
+                row.setErrorMessage(null);
+            } else {
+                row.setStatus(ImportBatchRow.Status.INVALID);
+                row.setErrorMessage(problem);
+            }
+            rows.save(row);
+        }
+        return recount(batch);
+    }
+
+    /**
+     * Throws the staged file away.
+     *
+     * <p>An import is a thing someone does, not a record worth keeping: the
+     * assets it created are the record, and each carries its own audit history.
+     * Keeping the staged rows around would leave half-finished uploads lying
+     * about looking like they still needed attention.
+     */
+    @Transactional
+    public void discard(Long batchId) {
+        batches.findById(batchId).ifPresent(batches::delete);
+    }
+
+    /** Creates the asset for one row, recording success or failure on the row. */
+    private void importOne(ImportBatchRow row, Lookups lookups) {
+        try {
+            // In its own transaction: see ImportRowCommitter for why.
+            Asset asset = rowCommitter.create(
+                    toRequest(stringValues(row), lookups.categories(), lookups.locations()));
+            row.setStatus(ImportBatchRow.Status.IMPORTED);
+            row.setCreatedAssetId(asset.getId());
+            row.setErrorMessage(null);
+        } catch (Exception e) {
+            // Something that passed the checks can still be rejected here -- a
+            // duplicate serial against a row imported moments ago, for instance.
+            // The row records why and the others are unaffected.
+            row.setStatus(ImportBatchRow.Status.INVALID);
+            row.setErrorMessage(rootMessage(e));
+        }
+        rows.save(row);
+    }
+
+    /** Recomputes the batch counters from the rows, which are the truth. */
+    private ImportBatch recount(ImportBatch batch) {
+        List<ImportBatchRow> all = rows.findByBatchIdOrderByRowNumberAsc(batch.getId());
+        int imported = (int) all.stream()
+                .filter(r -> r.getStatus() == ImportBatchRow.Status.IMPORTED).count();
+        int invalid = (int) all.stream()
+                .filter(r -> r.getStatus() == ImportBatchRow.Status.INVALID).count();
+
+        batch.setSuccessCount(imported);
+        batch.setFailureCount(invalid);
+        // COMMITTED only once nothing is left to do, so a partly-imported file
+        // stays open rather than looking finished with rows still waiting.
+        boolean anythingLeft = all.stream()
+                .anyMatch(r -> r.getStatus() == ImportBatchRow.Status.VALID);
+        batch.setStatus(anythingLeft ? ImportBatch.Status.VALIDATED : ImportBatch.Status.COMMITTED);
+        ImportBatch saved = batches.save(batch);
+
+        if (!anythingLeft && imported > 0) {
+            audit.recordCreate("IMPORT_BATCH", batch.getId(),
+                    "%s: %d imported, %d skipped".formatted(batch.getFilename(), imported, invalid));
+        }
+        return saved;
+    }
+
+    /** The serials in this sheet that a live asset already holds. */
+    private Set<String> serialsAlreadyInUse(List<CsvReader.Row> sheetRows) {
+        Set<String> offered = new HashSet<>();
+        for (CsvReader.Row row : sheetRows) {
+            String serial = normaliseKeys(row.values()).getOrDefault("serial_number", "");
+            if (!serial.isBlank()) offered.add(serial.toLowerCase());
+        }
+        return lookupSerials(offered);
+    }
+
+    /** The asset tags in this sheet that a live asset already holds. */
+    private Set<String> tagsAlreadyInUse(List<CsvReader.Row> sheetRows) {
+        Set<String> offered = new HashSet<>();
+        for (CsvReader.Row row : sheetRows) {
+            String tag = normaliseKeys(row.values()).getOrDefault("asset_tag", "");
+            if (!tag.isBlank()) offered.add(tag.toLowerCase());
+        }
+        return lookupTags(offered);
+    }
+
+    private Set<String> tagsAlreadyInUseFromRows(List<ImportBatchRow> storedRows) {
+        Set<String> offered = new HashSet<>();
+        for (ImportBatchRow row : storedRows) {
+            if (row.getStatus() == ImportBatchRow.Status.IMPORTED) continue;
+            String tag = stringValues(row).getOrDefault("asset_tag", "");
+            if (!tag.isBlank()) offered.add(tag.toLowerCase());
+        }
+        return lookupTags(offered);
+    }
+
+    private Set<String> lookupTags(Set<String> offered) {
+        if (offered.isEmpty()) return Set.of();
+        Set<String> inUse = new HashSet<>();
+        assets.findAssetTagsInUse(offered).forEach(t -> inUse.add(t.toLowerCase()));
+        return inUse;
+    }
+
+    private Set<String> serialsAlreadyInUseFromRows(List<ImportBatchRow> storedRows) {
+        Set<String> offered = new HashSet<>();
+        for (ImportBatchRow row : storedRows) {
+            // A row this batch already imported holds its own serial; counting it
+            // would make the row look like a duplicate of itself.
+            if (row.getStatus() == ImportBatchRow.Status.IMPORTED) continue;
+            String serial = stringValues(row).getOrDefault("serial_number", "");
+            if (!serial.isBlank()) offered.add(serial.toLowerCase());
+        }
+        return lookupSerials(offered);
+    }
+
+    private Set<String> lookupSerials(Set<String> offered) {
+        if (offered.isEmpty()) return Set.of();
+        Set<String> inUse = new HashSet<>();
+        assets.findSerialsInUse(offered).forEach(s -> inUse.add(s.toLowerCase()));
+        return inUse;
+    }
+
+    private ImportBatch batch(Long batchId) {
+        return batches.findById(batchId)
+                .orElseThrow(() -> new ApiExceptions.NotFoundException("Import not found"));
+    }
+
+    /** Category and location names, resolved once rather than per row. */
+    private record Lookups(Map<String, AssetCategory> categories, Map<String, Location> locations) {}
+
+    private Lookups lookups() {
         Map<String, AssetCategory> categoryByName = new HashMap<>();
         categories.findAll().forEach(c -> categoryByName.put(c.getName().toLowerCase(), c));
         Map<String, Location> locationByName = new HashMap<>();
         locations.findAll().forEach(l -> locationByName.put(l.getName().toLowerCase(), l));
+        return new Lookups(categoryByName, locationByName);
+    }
 
-        int created = 0;
-        int failed = batch.getFailureCount();
-
-        for (ImportBatchRow row : rows.findByBatchIdAndStatusOrderByRowNumberAsc(
-                batchId, ImportBatchRow.Status.VALID)) {
-            Map<String, String> values = new LinkedHashMap<>();
-            row.getRawData().forEach((k, v) -> values.put(k, v == null ? "" : String.valueOf(v)));
-
-            try {
-                Asset asset = assets.create(toRequest(values, categoryByName, locationByName));
-                row.setStatus(ImportBatchRow.Status.IMPORTED);
-                row.setCreatedAssetId(asset.getId());
-                created++;
-            } catch (Exception e) {
-                // Something that passed the checks can still be rejected here --
-                // a duplicate serial against a row created earlier in this same
-                // commit, for instance. The row records why and the rest carry on.
-                row.setStatus(ImportBatchRow.Status.INVALID);
-                row.setErrorMessage(rootMessage(e));
-                failed++;
-            }
-            rows.save(row);
-        }
-
-        batch.setSuccessCount(created);
-        batch.setFailureCount(failed);
-        batch.setStatus(ImportBatch.Status.COMMITTED);
-        ImportBatch saved = batches.save(batch);
-
-        audit.recordCreate("IMPORT_BATCH", batch.getId(),
-                "%s: %d imported, %d skipped".formatted(batch.getFilename(), created, failed));
-        return saved;
+    private static Map<String, String> stringValues(ImportBatchRow row) {
+        Map<String, String> values = new LinkedHashMap<>();
+        row.getRawData().forEach((k, v) -> values.put(k, v == null ? "" : String.valueOf(v)));
+        return values;
     }
 
     /** Checks a row without creating anything. Returns null when it is fine. */
     private String check(Map<String, String> values,
                          Map<String, AssetCategory> categoryByName,
                          Map<String, Location> locationByName,
-                         Set<String> serialsInFile) {
+                         Set<String> serialsInFile,
+                         Set<String> serialsInUse,
+                         Set<String> tagsInFile,
+                         Set<String> tagsInUse) {
         String categoryName = values.getOrDefault("category", "");
         if (categoryName.isBlank()) return "Category is required.";
         AssetCategory category = categoryByName.get(categoryName.toLowerCase());
@@ -218,8 +419,14 @@ public class ImportService {
         }
 
         String serial = values.getOrDefault("serial_number", "");
-        if (!serial.isBlank() && !serialsInFile.add(serial.toLowerCase())) {
-            return "Serial number \"" + serial + "\" appears more than once in this file.";
+        if (!serial.isBlank()) {
+            if (serialsInUse.contains(serial.toLowerCase())) {
+                return "Serial number \"" + serial + "\" already belongs to an asset. "
+                        + "Importing it would be a duplicate.";
+            }
+            if (!serialsInFile.add(serial.toLowerCase())) {
+                return "Serial number \"" + serial + "\" appears more than once in this file.";
+            }
         }
 
         // A bulk category counts stock, so a quantity that is not a positive
@@ -233,6 +440,29 @@ public class ImportService {
             }
         } else if (!category.isSerialized()) {
             return "Quantity is required for %s, which is counted in bulk.".formatted(category.getName());
+        }
+
+        String tag = values.getOrDefault("asset_tag", "");
+        if (!tag.isBlank()) {
+            if (tagsInUse.contains(tag.toLowerCase())) {
+                return "Asset tag \"" + tag + "\" already belongs to an asset. "
+                        + "A tag identifies one physical item.";
+            }
+            if (!tagsInFile.add(tag.toLowerCase())) {
+                return "Asset tag \"" + tag + "\" appears more than once in this file.";
+            }
+        }
+
+        // A category can require custom fields -- a Vehicle needs its VIN. Without
+        // this the row passes validation and then fails during the commit, which
+        // is the worst place to find out.
+        for (var definition : customFields.findByCategoryIdOrderBySortOrderAscIdAsc(category.getId())) {
+            if (!definition.isRequired()) continue;
+            String supplied = values.get(CUSTOM_PREFIX + definition.getFieldName().toLowerCase());
+            if (supplied == null || supplied.isBlank()) {
+                return "%s requires \"%s\". Add a column named \"custom:%s\"."
+                        .formatted(category.getName(), definition.getFieldName(), definition.getFieldName());
+            }
         }
 
         String price = values.getOrDefault("purchase_price", "");
@@ -300,7 +530,25 @@ public class ImportService {
                 null, null,
                 parseInt(values.getOrDefault("quantity", "")),
                 Set.of(),
-                Map.of());
+                customFieldsFrom(values, category));
+    }
+
+    /**
+     * Pulls the {@code custom:} columns back out, restoring each definition's
+     * real name -- the header was lower-cased for matching, and the stored key
+     * has to be exactly what the definition calls it.
+     */
+    private Map<String, Object> customFieldsFrom(Map<String, String> values, AssetCategory category) {
+        Map<String, Object> supplied = new LinkedHashMap<>();
+        for (var definition : customFields.findByCategoryIdOrderBySortOrderAscIdAsc(category.getId())) {
+            String value = values.get(CUSTOM_PREFIX + definition.getFieldName().toLowerCase());
+            if (value != null && !value.isBlank()) supplied.put(definition.getFieldName(), value);
+        }
+        return supplied;
+    }
+
+    static boolean isCustomColumn(String header) {
+        return header.trim().toLowerCase().startsWith(CUSTOM_PREFIX);
     }
 
     /** Column names are matched case- and separator-insensitively. */
@@ -310,9 +558,17 @@ public class ImportService {
         return normalised;
     }
 
-    /** "Serial Number", "serial number", and "serial_number" are the same column. */
+    /**
+     * "Serial Number", "serial number", and "serial_number" are the same column.
+     * A {@code custom:} column keeps its spacing beyond the prefix, since it has
+     * to match a custom field definition's name exactly.
+     */
     static String normalise(String header) {
-        return header.trim().toLowerCase().replaceAll("[\\s-]+", "_");
+        String trimmed = header.trim().toLowerCase();
+        if (trimmed.startsWith(CUSTOM_PREFIX)) {
+            return CUSTOM_PREFIX + trimmed.substring(CUSTOM_PREFIX.length()).trim();
+        }
+        return trimmed.replaceAll("[\\s-]+", "_");
     }
 
     private static String blankToNull(String value) {
@@ -346,11 +602,26 @@ public class ImportService {
         }
     }
 
-    /** The innermost message, since the outer ones are usually framework noise. */
+    /**
+     * The innermost message, since the outer ones are usually framework noise.
+     *
+     * <p>A unique-serial violation gets said in words. The preview catches these
+     * now, but only as of the moment it ran: someone else can create the asset
+     * in between, and "duplicate key value violates unique constraint
+     * uq_asset_serial" is not something to put in front of a person.
+     */
     private static String rootMessage(Throwable e) {
         Throwable cause = e;
         while (cause.getCause() != null && cause.getCause() != cause) cause = cause.getCause();
         String message = cause.getMessage();
+        if (message != null && message.contains("uq_asset_serial")) {
+            return "That serial number already belongs to another asset. "
+                    + "It may have been created since this file was checked.";
+        }
+        if (message != null && message.contains("uq_asset_tag")) {
+            return "That asset tag already belongs to another asset. "
+                    + "It may have been created since this file was checked.";
+        }
         return message == null || message.isBlank() ? e.getClass().getSimpleName() : message;
     }
 

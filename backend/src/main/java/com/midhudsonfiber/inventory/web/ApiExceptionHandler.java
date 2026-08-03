@@ -77,6 +77,9 @@ public class ApiExceptionHandler {
         if (detail.contains("uq_asset_serial")) {
             return "Another asset already uses that serial number.";
         }
+        if (detail.contains("uq_asset_tag")) {
+            return "Another asset already uses that asset tag.";
+        }
         if (detail.contains("asset_category_name_key")) {
             return "A category with that name already exists.";
         }

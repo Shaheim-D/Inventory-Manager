@@ -169,6 +169,28 @@ class ClientFeedbackBatchCTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("two assets cannot share an asset tag, and the message says so")
+    void assetTagIsUnique() {
+        Session admin = admin();
+        Long locationId = newLocation(admin);
+        String tag = unique("TAG").toUpperCase();
+
+        assertThat(post(admin, "/api/assets", """
+                {"categoryId":%d,"locationId":%d,"name":"%s","assetTag":"%s"}
+                """.formatted(categoryId("Router"), locationId, unique("tagged"), tag))
+                .getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        // A tag is a label on one physical item. The second one is a mistake,
+        // and it should read as one rather than as an index name.
+        var second = post(admin, "/api/assets", """
+                {"categoryId":%d,"locationId":%d,"name":"%s","assetTag":"%s"}
+                """.formatted(categoryId("Switch"), locationId, unique("same tag"), tag));
+        assertThat(second.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(second.getBody().get("error").asText())
+                .isEqualTo("Another asset already uses that asset tag.");
+    }
+
+    @Test
     @DisplayName("the primary category can never also appear as a sub-category")
     void primaryIsNeverAlsoASubcategory() {
         Session admin = admin();
