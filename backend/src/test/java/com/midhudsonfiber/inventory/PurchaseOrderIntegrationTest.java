@@ -390,4 +390,111 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
                 "SELECT purchase_price FROM asset WHERE purchase_order_id = ?",
                 java.math.BigDecimal.class, orderId)).isEqualByComparingTo("2450.00");
     }
+
+    @Test
+    @DisplayName("units are numbered across the whole line, not per delivery")
+    void splitDeliveriesNumberAssetsContinuously() {
+        Session admin = admin();
+        Long locationId = newLocation(admin);
+        String description = unique("core switch");
+        Long orderId = draft(admin, description, 4, "Switch");
+
+        post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/approve", """
+                {"orderNumber":"%s","vendor":"CDW"}
+                """.formatted(unique("PO")));
+        Long lineItemId = get(admin, "/api/purchase-orders/" + orderId).getBody()
+                .get("lineItems").get(0).get("id").asLong();
+
+        // Two shipments of two against one line of four.
+        for (int shipment = 0; shipment < 2; shipment++) {
+            post(admin, "/api/purchase-orders/" + orderId + "/receipts", """
+                    {"locationId":%d,"lines":[{"lineItemId":%d,"quantityReceived":2}]}
+                    """.formatted(locationId, lineItemId));
+        }
+
+        // Numbering per delivery gave "1 of 2" and "2 of 2" twice over, so a
+        // warehouse holding four boxes had two pairs it could not tell apart.
+        assertThat(jdbc.queryForList(
+                "SELECT name FROM asset WHERE purchase_order_id = ? ORDER BY name", String.class, orderId))
+                .containsExactly(
+                        description + " (1 of 4)",
+                        description + " (2 of 4)",
+                        description + " (3 of 4)",
+                        description + " (4 of 4)");
+    }
+
+    @Test
+    @DisplayName("an order nobody has priced has no total, rather than a total of zero")
+    void anUnpricedOrderHasNoTotal() {
+        Session admin = admin();
+        // Raised the way someone without cost permission raises one: no prices.
+        Long orderId = post(admin, "/api/purchase-orders", """
+                {"justification":"%s","lineItems":[
+                  {"categoryId":%d,"description":"%s","quantityOrdered":3}]}
+                """.formatted(unique("need"), categoryId("Switch"), unique("unpriced switch")))
+                .getBody().get("id").asLong();
+
+        JsonNode view = get(admin, "/api/purchase-orders/" + orderId).getBody();
+        // Present, because the viewer may see costs -- but null, because "$0.00"
+        // reads as free when the truth is that nobody has priced it yet.
+        assertThat(view.has("total")).isTrue();
+        assertThat(view.get("total").isNull()).isTrue();
+
+        Long priced = draft(admin, unique("priced switch"), 2, "Switch");
+        assertThat(get(admin, "/api/purchase-orders/" + priced).getBody().get("total").asDouble())
+                .isEqualTo(4900.00);
+    }
+
+    @Test
+    @DisplayName("the asset list can be scoped to what an order delivered")
+    void assetsAreFilterableByTheOrderThatBoughtThem() {
+        Session admin = admin();
+        Long locationId = newLocation(admin);
+        String description = unique("scoped switch");
+        Long orderId = draft(admin, description, 3, "Switch");
+        // A second order into the same location, so the filter has something to
+        // exclude rather than passing because there is only one order in the row.
+        Long otherOrderId = draft(admin, unique("other switch"), 2, "Switch");
+
+        for (Long id : new Long[] { orderId, otherOrderId }) {
+            post(admin, "/api/purchase-orders/" + id + "/submit", "{}");
+            post(admin, "/api/purchase-orders/" + id + "/approve", """
+                    {"orderNumber":"%s","vendor":"CDW"}
+                    """.formatted(unique("PO")));
+            Long lineItemId = get(admin, "/api/purchase-orders/" + id).getBody()
+                    .get("lineItems").get(0).get("id").asLong();
+            post(admin, "/api/purchase-orders/" + id + "/receipts", """
+                    {"locationId":%d,"lines":[{"lineItemId":%d,"quantityReceived":%d}]}
+                    """.formatted(locationId, lineItemId, id.equals(orderId) ? 3 : 2));
+        }
+
+        JsonNode scoped = get(admin, "/api/assets?purchaseOrderId=" + orderId + "&size=200").getBody();
+        assertThat(scoped.get("totalElements").asInt()).isEqualTo(3);
+        for (JsonNode asset : scoped.get("content")) {
+            assertThat(asset.get("name").asText()).startsWith(description);
+        }
+    }
+
+    @Test
+    @DisplayName("an order carries its own history, and audit:view is what opens it")
+    void orderHistoryIsGatedOnAuditView() {
+        Session admin = admin();
+        Long orderId = draft(admin, unique("history router"), 1, "Router");
+        post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/approve", """
+                {"orderNumber":"%s","vendor":"CDW"}
+                """.formatted(unique("PO")));
+
+        JsonNode history = get(admin, "/api/purchase-orders/" + orderId + "/audit").getBody();
+        assertThat(history.get("totalElements").asInt()).isGreaterThanOrEqualTo(3);
+
+        // A purchaser can place orders all day without being able to read the
+        // audit trail: seeing an order and auditing it are separate grants.
+        Session purchaser = userWithRole(admin, "Purchaser");
+        assertThat(get(purchaser, "/api/purchase-orders/" + orderId).getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+        assertThat(get(purchaser, "/api/purchase-orders/" + orderId + "/audit").getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
+    }
 }

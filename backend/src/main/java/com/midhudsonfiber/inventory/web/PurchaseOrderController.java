@@ -1,13 +1,20 @@
 package com.midhudsonfiber.inventory.web;
 
+import com.midhudsonfiber.inventory.audit.AuditService;
+import com.midhudsonfiber.inventory.domain.AuditEvent;
 import com.midhudsonfiber.inventory.domain.FieldVisibilityRule;
 import com.midhudsonfiber.inventory.domain.PurchaseOrder;
+import com.midhudsonfiber.inventory.repo.AuditEventRepository;
 import com.midhudsonfiber.inventory.security.CurrentUser;
 import com.midhudsonfiber.inventory.security.PermissionKeys;
 import com.midhudsonfiber.inventory.service.PurchaseOrderService;
+import com.midhudsonfiber.inventory.audit.AuditViewAssembler;
 import com.midhudsonfiber.inventory.visibility.FieldVisibilityService;
 import com.midhudsonfiber.inventory.visibility.PurchaseOrderViewAssembler;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -31,15 +38,21 @@ public class PurchaseOrderController {
     private final PurchaseOrderViewAssembler assembler;
     private final FieldVisibilityService fieldVisibility;
     private final CurrentUser currentUser;
+    private final AuditEventRepository auditEvents;
+    private final AuditViewAssembler auditAssembler;
 
     public PurchaseOrderController(PurchaseOrderService orders,
                                    PurchaseOrderViewAssembler assembler,
                                    FieldVisibilityService fieldVisibility,
-                                   CurrentUser currentUser) {
+                                   CurrentUser currentUser,
+                                   AuditEventRepository auditEvents,
+                                   AuditViewAssembler auditAssembler) {
         this.orders = orders;
         this.assembler = assembler;
         this.fieldVisibility = fieldVisibility;
         this.currentUser = currentUser;
+        this.auditEvents = auditEvents;
+        this.auditAssembler = auditAssembler;
     }
 
     public record ApproveRequest(String orderNumber, String vendor) {}
@@ -117,6 +130,26 @@ public class PurchaseOrderController {
         // The order afterwards, since the receipt changed its status and every
         // line's outstanding count -- which is what the screen needs next.
         return ResponseEntity.ok(assembler.toView(orders.get(id), decision(), orders.receiptsFor(id)));
+    }
+
+    /**
+     * This order's own history. Gated on {@code audit:view} rather than on being
+     * able to see the order, because who approved what and when is the audit
+     * trail, and that is a separate grant everywhere else in the application.
+     */
+    @GetMapping("/{id}/audit")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.AUDIT_VIEW + "')")
+    public Map<String, Object> auditHistory(@PathVariable Long id,
+                                            @RequestParam(defaultValue = "0") int page,
+                                            @RequestParam(defaultValue = "50") int size) {
+        Page<AuditEvent> events = auditEvents.findByEntityTypeAndEntityId(
+                AuditService.ENTITY_PURCHASE_ORDER, id,
+                PageRequest.of(page, Math.min(size, 200), Sort.by(Sort.Direction.DESC, "occurredAt", "id")));
+        return Map.of(
+                "content", auditAssembler.toViews(events.getContent()),
+                "page", events.getNumber(),
+                "totalElements", events.getTotalElements(),
+                "totalPages", events.getTotalPages());
     }
 
     private FieldVisibilityService.Decision decision() {

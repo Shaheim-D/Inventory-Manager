@@ -2,7 +2,9 @@ import { Box, Card, CardContent, Grid, LinearProgress, Stack, Typography } from 
 import { useQuery } from '@tanstack/react-query';
 import { Link as RouterLink } from 'react-router-dom';
 import { api } from '../api/client';
+import type { PurchaseOrderStatus } from '../api/types';
 import { PageHeader } from '../components/PageHeader';
+import { statusLabel } from './purchase-orders/shared';
 
 interface Bucket {
   label: string;
@@ -16,6 +18,9 @@ interface DashboardSummary {
   staleAssetCount?: number;
   warrantyExpiringSoon?: number;
   recentAuditCount?: number;
+  purchaseOrdersByStatus?: Bucket[];
+  purchaseOrdersAwaitingApproval?: number;
+  purchaseOrdersAwaitingDelivery?: number;
 }
 
 /**
@@ -48,10 +53,35 @@ export function DashboardPage() {
             to="/verification"
           />
         )}
+        {summary.purchaseOrdersAwaitingApproval !== undefined && (
+          <Stat
+            label="Purchase requests awaiting approval"
+            value={summary.purchaseOrdersAwaitingApproval}
+            to="/purchase-orders/approvals"
+          />
+        )}
+        {summary.purchaseOrdersAwaitingDelivery !== undefined && (
+          <Stat
+            label="Orders waiting to be received"
+            value={summary.purchaseOrdersAwaitingDelivery}
+            to="/purchase-orders/receiving"
+          />
+        )}
         {summary.recentAuditCount !== undefined && (
           <Stat label="Recorded changes this week" value={summary.recentAuditCount} to="/audit" />
         )}
 
+        {summary.purchaseOrdersByStatus && summary.purchaseOrdersByStatus.length > 0 && (
+          <Breakdown
+            title="Purchase orders by status"
+            // The server sends the stored enum; the human wording lives in one
+            // place so the dashboard and the order screens never disagree.
+            buckets={summary.purchaseOrdersByStatus.map((bucket) => ({
+              ...bucket,
+              label: statusLabel(bucket.label as PurchaseOrderStatus),
+            }))}
+          />
+        )}
         {summary.assetsByCategory && (
           <Breakdown title="Assets by category" buckets={summary.assetsByCategory} />
         )}

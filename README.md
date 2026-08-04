@@ -22,7 +22,7 @@ Against the roadmap's ten milestones:
 | 0 | Foundation — skeleton, Docker, CI, migrations validated live | **Done** |
 | 1 | Core domain, auth, baseline admin, field visibility | **Done** |
 | 2 | Search, relationships, attachments, audit, bulk import | **Done** |
-| 3 | Purchase Orders | Schema only (V3); no application layer yet |
+| 3 | Purchase Orders | **Done** — request, approve/place, partial receiving, receipts create assets |
 | 4 | Notifications & warranty alerts | Not started |
 | 5 | Inventory staleness & verification | Schema (V7), the queue screen, and the three resolution actions are in; the scheduled notification is not |
 | 6 | Plugin Framework | Schema only (V8); no plugins |

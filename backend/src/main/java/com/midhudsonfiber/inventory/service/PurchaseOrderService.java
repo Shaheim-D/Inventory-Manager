@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -201,9 +202,9 @@ public class PurchaseOrderService {
      * <p>The assets are created here rather than left for someone to enter later
      * because that is the point of receiving: the shipment is on the desk, and
      * the person holding it is the one who knows what turned up. Serialized
-     * categories get one asset per unit -- an SFP ordered fifty at a time is
-     * still fifty individually serialized things -- while bulk categories get a
-     * single row carrying the count.
+     * categories get one asset per unit -- ten switches are ten things that will
+     * each be racked somewhere and tracked separately -- while bulk categories
+     * get a single row carrying the count.
      */
     @Transactional
     public PurchaseOrderReceipt receive(Long id, ReceiptRequest request) {
@@ -227,6 +228,12 @@ public class PurchaseOrderService {
         receipt.setNotes(blankToNull(request.notes()));
 
         List<Asset> created = new ArrayList<>();
+        // How many of each line have already landed, so the units this delivery
+        // creates are numbered from where the last one left off. Seeded from the
+        // stored count -- the trigger has not run yet at this point, so it still
+        // reads as it did before this receipt -- and carried forward within the
+        // request in case one call names the same line twice.
+        Map<Long, Integer> alreadyReceived = new HashMap<>();
         for (ReceiptLineRequest line : request.lines()) {
             if (line.quantityReceived() == null || line.quantityReceived() < 1) continue;
 
@@ -242,7 +249,9 @@ public class PurchaseOrderService {
             receiptLine.setQuantityReceived(line.quantityReceived());
             receipt.getLines().add(receiptLine);
 
-            created.addAll(assetsFor(item, line.quantityReceived(), location, order));
+            int offset = alreadyReceived.computeIfAbsent(item.getId(), key -> item.getQuantityReceived());
+            created.addAll(assetsFor(item, line.quantityReceived(), offset, location, order));
+            alreadyReceived.put(item.getId(), offset + line.quantityReceived());
         }
 
         if (receipt.getLines().isEmpty()) {
@@ -274,7 +283,12 @@ public class PurchaseOrderService {
     // internals
     // ------------------------------------------------------------------
 
-    private List<Asset> assetsFor(PurchaseOrderLineItem item, int quantity,
+    /**
+     * @param offset how many of this line arrived on earlier deliveries, so a
+     *               four-unit line split across two shipments numbers its assets
+     *               1..4 rather than 1..2 twice
+     */
+    private List<Asset> assetsFor(PurchaseOrderLineItem item, int quantity, int offset,
                                   Location location, PurchaseOrder order) {
         AssetCategory category = item.getCategory();
         LifecycleState received = lifecycleStates.findAll().stream()
@@ -290,13 +304,17 @@ public class PurchaseOrderService {
         // One row per unit when each unit is individually identifiable, one row
         // carrying the count when they are not.
         int rows = category.isSerialized() ? quantity : 1;
+        // Numbered against the whole line, not this delivery: two shipments of
+        // two against a line of four produced "1 of 2" twice, and a warehouse
+        // holding four boxes could not tell which row was which.
+        int ordered = item.getQuantityOrdered();
         for (int index = 0; index < rows; index++) {
             Asset asset = new Asset();
             asset.setCategory(category);
             asset.setLocation(location);
             asset.setLifecycleState(received);
-            asset.setName(category.isSerialized() && quantity > 1
-                    ? "%s (%d of %d)".formatted(item.getDescription(), index + 1, quantity)
+            asset.setName(category.isSerialized() && ordered > 1
+                    ? "%s (%d of %d)".formatted(item.getDescription(), offset + index + 1, ordered)
                     : item.getDescription());
             asset.setQuantity(category.isSerialized() ? 1 : quantity);
             asset.setPurchasePrice(item.getUnitPrice());

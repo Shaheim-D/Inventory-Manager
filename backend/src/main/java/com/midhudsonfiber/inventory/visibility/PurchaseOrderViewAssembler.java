@@ -69,7 +69,14 @@ public class PurchaseOrderViewAssembler {
         view.put("fullyReceived", ordered > 0 && ordered == received);
 
         if (!costHidden) {
-            view.put("total", order.getLineItems().stream()
+            // Null rather than zero when nothing on the order carries a price.
+            // A request raised by someone without cost permission has no prices
+            // on it at all, and "$0.00" reads as "this is free" rather than
+            // "nobody has priced it yet" -- which is what a purchaser is about
+            // to do. A partly priced order still totals what is known.
+            boolean anyPriced = order.getLineItems().stream()
+                    .anyMatch(item -> item.getUnitPrice() != null);
+            view.put("total", !anyPriced ? null : order.getLineItems().stream()
                     .map(item -> item.getUnitPrice() == null ? BigDecimal.ZERO
                             : item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantityOrdered())))
                     .reduce(BigDecimal.ZERO, BigDecimal::add));
