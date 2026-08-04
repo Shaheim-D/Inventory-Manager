@@ -195,7 +195,9 @@ export function AssetDetailPage() {
                   />
                 )}
                 {uses('vendor') && <Field label={label('vendor')} value={data.vendor} />}
-                {'invoiceNumber' in data && <Field label="Invoice number" value={data.invoiceNumber} />}
+                {'invoiceNumber' in data && (
+                  <Field label={label('invoice_number')} value={data.invoiceNumber} />
+                )}
                 {'purchaseLink' in data && <Field label="Purchase link" value={data.purchaseLink} />}
                 {uses('warranty_start') && <Field label={label('warranty_start')} value={data.warrantyStart} />}
                 {uses('warranty_start') && data.warrantyTermMonths != null && (

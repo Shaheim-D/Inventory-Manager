@@ -134,7 +134,10 @@ public class CategoryFieldService {
         labels.put("purchase_price", "Purchase price");
         labels.put("vendor", "Vendor");
         labels.put("purchase_link", "Purchase link");
-        labels.put("invoice_number", "Invoice number");
+        // The column is still invoice_number; what it holds is the purchase
+        // order's number, filled in automatically for anything received against
+        // one, so the label says that rather than making someone translate.
+        labels.put("invoice_number", "Order number");
         labels.put("warranty_start", "Warranty start");
         labels.put("warranty_expiration", "Warranty expiration");
         labels.put("license_information", "License information");

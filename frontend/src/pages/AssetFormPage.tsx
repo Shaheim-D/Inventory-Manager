@@ -411,7 +411,13 @@ export function AssetFormPage() {
             </Grid>
           )}
           {uses('invoice_number') && !hiddenCore.has('invoice_number') && (
-            <Field label="Invoice number" field="invoiceNumber" form={form} set={set} sm={6} />
+            <Field
+              label={label('invoice_number', 'Order number')}
+              field="invoiceNumber"
+              form={form}
+              set={set}
+              sm={6}
+            />
           )}
           {uses('purchase_link') && !hiddenCore.has('purchase_link') && (
             <Field label="Purchase link" field="purchaseLink" form={form} set={set} sm={6} />

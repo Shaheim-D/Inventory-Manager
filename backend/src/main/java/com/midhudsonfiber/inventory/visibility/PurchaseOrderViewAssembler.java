@@ -45,9 +45,12 @@ public class PurchaseOrderViewAssembler {
         view.put("notes", order.getNotes());
         view.put("orderNumber", order.getOrderNumber());
         view.put("vendor", order.getVendor());
+        view.put("purchaseLink", order.getPurchaseLink());
 
         view.put("requestedBy", username(order.getRequestedBy()));
         view.put("requestedAt", order.getRequestedAt());
+        view.put("approvedBy", username(order.getApprovedBy()));
+        view.put("approvedAt", order.getApprovedAt());
         view.put("orderedBy", username(order.getOrderedBy()));
         view.put("orderedAt", order.getOrderedAt());
         view.put("rejectedBy", username(order.getRejectedBy()));
@@ -97,6 +100,10 @@ public class PurchaseOrderViewAssembler {
         view.put("categoryId", item.getCategory().getId());
         view.put("categoryName", item.getCategory().getName());
         view.put("serialized", item.getCategory().isSerialized());
+        view.put("deviceModelId", item.getDeviceModel() == null ? null : item.getDeviceModel().getId());
+        view.put("deviceLabel", item.getDeviceModel() == null ? null
+                : "%s - %s".formatted(item.getDeviceModel().getManufacturer(),
+                        item.getDeviceModel().getModel()));
         view.put("description", item.getDescription());
         view.put("quantityOrdered", item.getQuantityOrdered());
         view.put("quantityReceived", item.getQuantityReceived());

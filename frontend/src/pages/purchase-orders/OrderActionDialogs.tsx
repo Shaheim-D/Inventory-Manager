@@ -38,10 +38,9 @@ function useOrderAction(order: PurchaseOrder | null, onDone: () => void, setErro
 }
 
 /**
- * Approving is placing the order, so it captures the vendor's order number in
- * the same breath. A CHECK constraint insists on one for any status past this
- * point, which is why the field is required here rather than optional with a
- * reminder later.
+ * Approving agrees to the request and nothing more. It asks for no order number
+ * because there is nothing to number yet — the thing has not been bought.
+ * Requiring one here only ever meant somebody invented it.
  */
 export function ApproveDialog({
   order,
@@ -52,21 +51,73 @@ export function ApproveDialog({
   open: boolean;
   onClose: () => void;
 }) {
-  const [orderNumber, setOrderNumber] = useState('');
-  const [vendor, setVendor] = useState('');
   const [error, setError] = useState<string | null>(null);
   const approve = useOrderAction(order, onClose, setError);
+
+  useEffect(() => {
+    if (open) setError(null);
+  }, [open]);
+
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle>Approve {order ? orderLabel(order) : 'this request'}</DialogTitle>
+      <DialogContent dividers>
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+        <DialogContentText>
+          This agrees to the request. It moves to Purchasing, where someone records the order number
+          and the price once it has actually been bought.
+        </DialogContentText>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button
+          variant="contained"
+          disabled={approve.isPending}
+          onClick={() => approve.mutate({ action: 'approve', body: {} })}
+        >
+          Approve
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+/**
+ * Recording that it has been bought. This is where the vendor's order number
+ * comes from, and where the vendor and link may change — a requester says where
+ * they think it should come from, and the purchaser knows where it actually came
+ * from. Whatever this ends up saying is what the received assets record.
+ */
+export function PurchaseDialog({
+  order,
+  open,
+  onClose,
+}: {
+  order: PurchaseOrder | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [orderNumber, setOrderNumber] = useState('');
+  const [vendor, setVendor] = useState('');
+  const [purchaseLink, setPurchaseLink] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const purchase = useOrderAction(order, onClose, setError);
 
   useEffect(() => {
     if (!open) return;
     setOrderNumber(order?.orderNumber ?? '');
     setVendor(order?.vendor ?? '');
+    setPurchaseLink(order?.purchaseLink ?? '');
     setError(null);
   }, [open, order]);
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>Approve and place {order ? orderLabel(order) : 'this order'}</DialogTitle>
+      <DialogTitle>Mark {order ? orderLabel(order) : 'this order'} purchased</DialogTitle>
       <DialogContent dividers>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -74,22 +125,28 @@ export function ApproveDialog({
           </Alert>
         )}
         <DialogContentText sx={{ mb: 2 }}>
-          Approving records that this order has actually been placed with a vendor. It becomes
+          Today becomes the purchase date of everything this order delivers, and it becomes
           receivable straight away.
         </DialogContentText>
         <Stack spacing={2}>
           <TextField
-            label="Vendor order number"
+            label="Order number"
             required
             autoFocus
             value={orderNumber}
             onChange={(event) => setOrderNumber(event.target.value)}
-            helperText="How the vendor identifies this order — it is what a delivery gets matched against."
+            helperText="How the vendor identifies this order. It is copied onto every asset it delivers."
           />
           <TextField
             label="Vendor"
             value={vendor}
             onChange={(event) => setVendor(event.target.value)}
+            helperText="Where it was actually bought, which need not be where the requester suggested."
+          />
+          <TextField
+            label="Purchase link"
+            value={purchaseLink}
+            onChange={(event) => setPurchaseLink(event.target.value)}
           />
         </Stack>
       </DialogContent>
@@ -97,22 +154,26 @@ export function ApproveDialog({
         <Button onClick={onClose}>Cancel</Button>
         <Button
           variant="contained"
-          disabled={!orderNumber.trim() || approve.isPending}
+          disabled={!orderNumber.trim() || purchase.isPending}
           onClick={() =>
-            approve.mutate({
-              action: 'approve',
-              body: { orderNumber: orderNumber.trim(), vendor: vendor.trim() || null },
+            purchase.mutate({
+              action: 'purchase',
+              body: {
+                orderNumber: orderNumber.trim(),
+                vendor: vendor.trim() || null,
+                purchaseLink: purchaseLink.trim() || null,
+              },
             })
           }
         >
-          Approve and place
+          Mark purchased
         </Button>
       </DialogActions>
     </Dialog>
   );
 }
 
-/** Reject and cancel differ only in whether the reason is compulsory. */
+/** Deny and cancel differ only in whether the reason is compulsory. */
 export function ReasonDialog({
   order,
   open,
@@ -139,7 +200,7 @@ export function ReasonDialog({
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle>
-        {rejecting ? 'Reject' : 'Cancel'} {order ? orderLabel(order) : 'this order'}
+        {rejecting ? 'Deny' : 'Cancel'} {order ? orderLabel(order) : 'this order'}
       </DialogTitle>
       <DialogContent dividers>
         {error && (
@@ -149,7 +210,7 @@ export function ReasonDialog({
         )}
         <DialogContentText sx={{ mb: 2 }}>
           {rejecting
-            ? 'The person who raised this will see the reason, so say enough that they know whether to ask again differently.'
+            ? 'The reason is shown to the person who raised this and to anyone else who can see the order, so say enough that they know whether to ask again differently.'
             : 'Cancelling closes the order for good. Anything already received against it stays where it is.'}
         </DialogContentText>
         <TextField
@@ -170,7 +231,7 @@ export function ReasonDialog({
           disabled={(rejecting && !reason.trim()) || run.isPending}
           onClick={() => run.mutate({ action, body: { reason: reason.trim() || null } })}
         >
-          {rejecting ? 'Reject request' : 'Cancel order'}
+          {rejecting ? 'Deny request' : 'Cancel order'}
         </Button>
       </DialogActions>
     </Dialog>

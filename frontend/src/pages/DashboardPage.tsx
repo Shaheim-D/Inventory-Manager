@@ -15,12 +15,9 @@ interface DashboardSummary {
   totalAssets?: number;
   assetsByCategory?: Bucket[];
   assetsByLifecycleState?: Bucket[];
-  staleAssetCount?: number;
   warrantyExpiringSoon?: number;
   recentAuditCount?: number;
   purchaseOrdersByStatus?: Bucket[];
-  purchaseOrdersAwaitingApproval?: number;
-  purchaseOrdersAwaitingDelivery?: number;
 }
 
 /**
@@ -45,27 +42,6 @@ export function DashboardPage() {
         )}
         {summary.warrantyExpiringSoon !== undefined && (
           <Stat label="Warranties expiring within 90 days" value={summary.warrantyExpiringSoon} />
-        )}
-        {summary.staleAssetCount !== undefined && (
-          <Stat
-            label="Bulk items due for verification"
-            value={summary.staleAssetCount}
-            to="/verification"
-          />
-        )}
-        {summary.purchaseOrdersAwaitingApproval !== undefined && (
-          <Stat
-            label="Purchase requests awaiting approval"
-            value={summary.purchaseOrdersAwaitingApproval}
-            to="/purchase-orders/approvals"
-          />
-        )}
-        {summary.purchaseOrdersAwaitingDelivery !== undefined && (
-          <Stat
-            label="Orders waiting to be received"
-            value={summary.purchaseOrdersAwaitingDelivery}
-            to="/purchase-orders/receiving"
-          />
         )}
         {summary.recentAuditCount !== undefined && (
           <Stat label="Recorded changes this week" value={summary.recentAuditCount} to="/audit" />

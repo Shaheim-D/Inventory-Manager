@@ -23,15 +23,21 @@ public class PurchaseOrder {
         DRAFT,
         /** Waiting on a purchaser. */
         SUBMITTED,
+        /** Agreed to, but not bought yet. */
+        APPROVED,
         /** Turned down, with a reason. */
         REJECTED,
-        /** Approved and placed with a vendor. */
+        /**
+         * Bought. The client calls this "purchased" and the UI says so; the
+         * stored name is unchanged because it is the same state the receiving
+         * trigger and every existing row already mean by it.
+         */
         ORDERED,
         /** Some of it has arrived. */
         PARTIALLY_RECEIVED,
         /** All of it has arrived. */
         RECEIVED,
-        /** Abandoned after ordering. */
+        /** Abandoned. */
         CANCELLED
     }
 
@@ -60,9 +66,20 @@ public class PurchaseOrder {
     @Column(name = "rejection_reason")
     private String rejectionReason;
 
+    @Column(name = "approved_by")
+    private Long approvedBy;
+
+    @Column(name = "approved_at")
+    private Instant approvedAt;
+
     @Column(name = "ordered_by")
     private Long orderedBy;
 
+    /**
+     * When it was actually bought — and therefore the purchase date of every
+     * asset it delivers, which is why this is operational data rather than a
+     * timestamp kept for the record.
+     */
     @Column(name = "ordered_at")
     private Instant orderedAt;
 
@@ -74,7 +91,16 @@ public class PurchaseOrder {
     @Column(name = "order_number")
     private String orderNumber;
 
+    /**
+     * Who this is being bought from. Set on the draft as a suggestion and
+     * confirmed by the purchaser, who may buy it somewhere else entirely.
+     * Whatever it says at receipt is what the resulting assets record.
+     */
     private String vendor;
+
+    /** Where to buy it — otherwise the URL ends up in the justification. */
+    @Column(name = "purchase_link")
+    private String purchaseLink;
 
     private String notes;
 
@@ -108,6 +134,10 @@ public class PurchaseOrder {
     public void setRejectedAt(Instant rejectedAt) { this.rejectedAt = rejectedAt; }
     public String getRejectionReason() { return rejectionReason; }
     public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }
+    public Long getApprovedBy() { return approvedBy; }
+    public void setApprovedBy(Long approvedBy) { this.approvedBy = approvedBy; }
+    public Instant getApprovedAt() { return approvedAt; }
+    public void setApprovedAt(Instant approvedAt) { this.approvedAt = approvedAt; }
     public Long getOrderedBy() { return orderedBy; }
     public void setOrderedBy(Long orderedBy) { this.orderedBy = orderedBy; }
     public Instant getOrderedAt() { return orderedAt; }
@@ -116,6 +146,8 @@ public class PurchaseOrder {
     public void setOrderNumber(String orderNumber) { this.orderNumber = orderNumber; }
     public String getVendor() { return vendor; }
     public void setVendor(String vendor) { this.vendor = vendor; }
+    public String getPurchaseLink() { return purchaseLink; }
+    public void setPurchaseLink(String purchaseLink) { this.purchaseLink = purchaseLink; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
     public List<PurchaseOrderLineItem> getLineItems() { return lineItems; }

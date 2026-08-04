@@ -11,8 +11,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -28,11 +29,18 @@ import java.util.Map;
 @Service
 public class PurchaseOrderService {
 
-    /** What an order can become from where it is. Anything absent is refused. */
+    /**
+     * What an order can become from where it is. Anything absent is refused.
+     *
+     * <p>Approving and buying are separate steps because they happen days apart:
+     * a request is agreed to, and then somebody actually goes and buys it, which
+     * is when the vendor's order number and the real price exist.
+     */
     private static final Map<PurchaseOrder.Status, List<PurchaseOrder.Status>> ALLOWED = Map.of(
             PurchaseOrder.Status.DRAFT, List.of(PurchaseOrder.Status.SUBMITTED, PurchaseOrder.Status.CANCELLED),
-            PurchaseOrder.Status.SUBMITTED, List.of(PurchaseOrder.Status.ORDERED, PurchaseOrder.Status.REJECTED,
+            PurchaseOrder.Status.SUBMITTED, List.of(PurchaseOrder.Status.APPROVED, PurchaseOrder.Status.REJECTED,
                     PurchaseOrder.Status.CANCELLED),
+            PurchaseOrder.Status.APPROVED, List.of(PurchaseOrder.Status.ORDERED, PurchaseOrder.Status.CANCELLED),
             PurchaseOrder.Status.ORDERED, List.of(PurchaseOrder.Status.CANCELLED),
             PurchaseOrder.Status.PARTIALLY_RECEIVED, List.of(PurchaseOrder.Status.CANCELLED));
 
@@ -40,6 +48,7 @@ public class PurchaseOrderService {
     private final PurchaseOrderLineItemRepository lineItems;
     private final PurchaseOrderReceiptRepository receipts;
     private final AssetCategoryRepository categories;
+    private final DeviceModelRepository deviceModels;
     private final LocationRepository locations;
     private final LifecycleStateRepository lifecycleStates;
     private final AssetRepository assets;
@@ -50,6 +59,7 @@ public class PurchaseOrderService {
                                 PurchaseOrderLineItemRepository lineItems,
                                 PurchaseOrderReceiptRepository receipts,
                                 AssetCategoryRepository categories,
+                                DeviceModelRepository deviceModels,
                                 LocationRepository locations,
                                 LifecycleStateRepository lifecycleStates,
                                 AssetRepository assets,
@@ -59,6 +69,7 @@ public class PurchaseOrderService {
         this.lineItems = lineItems;
         this.receipts = receipts;
         this.categories = categories;
+        this.deviceModels = deviceModels;
         this.locations = locations;
         this.lifecycleStates = lifecycleStates;
         this.assets = assets;
@@ -66,10 +77,14 @@ public class PurchaseOrderService {
         this.currentUser = currentUser;
     }
 
-    public record LineItemRequest(Long categoryId, String description, Integer quantityOrdered,
-                                  BigDecimal unitPrice, String notes) {}
+    public record LineItemRequest(Long categoryId, Long deviceModelId, String description,
+                                  Integer quantityOrdered, BigDecimal unitPrice, String notes) {}
 
-    public record OrderRequest(String justification, String notes, List<LineItemRequest> lineItems) {}
+    public record OrderRequest(String justification, String notes, String vendor, String purchaseLink,
+                               List<LineItemRequest> lineItems) {}
+
+    /** What the purchaser fills in at the moment they actually buy it. */
+    public record PurchaseRequest(String orderNumber, String vendor, String purchaseLink) {}
 
     public record ReceiptLineRequest(Long lineItemId, Integer quantityReceived) {}
 
@@ -101,6 +116,8 @@ public class PurchaseOrderService {
         order.setRequestedBy(currentUser.idOrNull());
         order.setJustification(blankToNull(request.justification()));
         order.setNotes(blankToNull(request.notes()));
+        order.setVendor(blankToNull(request.vendor()));
+        order.setPurchaseLink(blankToNull(request.purchaseLink()));
         order.setStatus(PurchaseOrder.Status.DRAFT);
         applyLineItems(order, request.lineItems());
 
@@ -121,6 +138,8 @@ public class PurchaseOrderService {
         }
         order.setJustification(blankToNull(request.justification()));
         order.setNotes(blankToNull(request.notes()));
+        order.setVendor(blankToNull(request.vendor()));
+        order.setPurchaseLink(blankToNull(request.purchaseLink()));
         order.getLineItems().clear();
         applyLineItems(order, request.lineItems());
         return orders.save(order);
@@ -141,16 +160,35 @@ public class PurchaseOrderService {
     }
 
     /**
-     * Approves and places the order in one step, because that is one act: a
-     * purchaser approves by actually ordering the thing. The order number and
-     * vendor are captured here, and a CHECK constraint insists on them for any
-     * status past this point.
+     * Agrees to the request. Nothing has been bought yet, which is why no order
+     * number is asked for — an approved order that has not been placed cannot
+     * have one, and demanding it here only ever meant inventing it.
      */
     @Transactional
-    public PurchaseOrder approve(Long id, String orderNumber, String vendor) {
+    public PurchaseOrder approve(Long id) {
+        PurchaseOrder order = get(id);
+        requireTransition(order, PurchaseOrder.Status.APPROVED);
+
+        order.setStatus(PurchaseOrder.Status.APPROVED);
+        order.setApprovedBy(currentUser.idOrNull());
+        order.setApprovedAt(Instant.now());
+        return recordStatus(order, "Approved", null);
+    }
+
+    /**
+     * Records that the order has actually been bought. This is the step that
+     * makes it receivable, and its timestamp becomes the purchase date of every
+     * asset the order eventually delivers.
+     *
+     * <p>The vendor and link may change here. A requester says where they think
+     * it should come from; the purchaser is the one who knows where it actually
+     * came from, and that is what the assets should end up recording.
+     */
+    @Transactional
+    public PurchaseOrder purchase(Long id, PurchaseRequest request) {
         PurchaseOrder order = get(id);
         requireTransition(order, PurchaseOrder.Status.ORDERED);
-        if (orderNumber == null || orderNumber.isBlank()) {
+        if (request.orderNumber() == null || request.orderNumber().isBlank()) {
             throw new ApiExceptions.BadRequestException(
                     "An order number is required — it is how this order is identified to the vendor.");
         }
@@ -158,11 +196,17 @@ public class PurchaseOrderService {
         order.setStatus(PurchaseOrder.Status.ORDERED);
         order.setOrderedBy(currentUser.idOrNull());
         order.setOrderedAt(Instant.now());
-        order.setOrderNumber(orderNumber.trim());
-        order.setVendor(blankToNull(vendor));
-        return recordStatus(order, "Approved and ordered as " + order.getOrderNumber(), null);
+        order.setOrderNumber(request.orderNumber().trim());
+        if (blankToNull(request.vendor()) != null) order.setVendor(request.vendor().trim());
+        if (blankToNull(request.purchaseLink()) != null) order.setPurchaseLink(request.purchaseLink().trim());
+        return recordStatus(order, "Purchased as " + order.getOrderNumber(), null);
     }
 
+    /**
+     * Denies the request. The reason is compulsory and is shown to anyone who
+     * can see the order — the person who asked most of all, since without it
+     * they cannot tell whether to ask again differently.
+     */
     @Transactional
     public PurchaseOrder reject(Long id, String reason) {
         PurchaseOrder order = get(id);
@@ -176,7 +220,7 @@ public class PurchaseOrderService {
         order.setRejectedBy(currentUser.idOrNull());
         order.setRejectedAt(Instant.now());
         order.setRejectionReason(reason.trim());
-        return recordStatus(order, "Rejected", reason.trim());
+        return recordStatus(order, "Denied", reason.trim());
     }
 
     @Transactional
@@ -228,12 +272,6 @@ public class PurchaseOrderService {
         receipt.setNotes(blankToNull(request.notes()));
 
         List<Asset> created = new ArrayList<>();
-        // How many of each line have already landed, so the units this delivery
-        // creates are numbered from where the last one left off. Seeded from the
-        // stored count -- the trigger has not run yet at this point, so it still
-        // reads as it did before this receipt -- and carried forward within the
-        // request in case one call names the same line twice.
-        Map<Long, Integer> alreadyReceived = new HashMap<>();
         for (ReceiptLineRequest line : request.lines()) {
             if (line.quantityReceived() == null || line.quantityReceived() < 1) continue;
 
@@ -249,9 +287,7 @@ public class PurchaseOrderService {
             receiptLine.setQuantityReceived(line.quantityReceived());
             receipt.getLines().add(receiptLine);
 
-            int offset = alreadyReceived.computeIfAbsent(item.getId(), key -> item.getQuantityReceived());
-            created.addAll(assetsFor(item, line.quantityReceived(), offset, location, order));
-            alreadyReceived.put(item.getId(), offset + line.quantityReceived());
+            created.addAll(assetsFor(item, line.quantityReceived(), location, order));
         }
 
         if (receipt.getLines().isEmpty()) {
@@ -283,12 +319,7 @@ public class PurchaseOrderService {
     // internals
     // ------------------------------------------------------------------
 
-    /**
-     * @param offset how many of this line arrived on earlier deliveries, so a
-     *               four-unit line split across two shipments numbers its assets
-     *               1..4 rather than 1..2 twice
-     */
-    private List<Asset> assetsFor(PurchaseOrderLineItem item, int quantity, int offset,
+    private List<Asset> assetsFor(PurchaseOrderLineItem item, int quantity,
                                   Location location, PurchaseOrder order) {
         AssetCategory category = item.getCategory();
         LifecycleState received = lifecycleStates.findAll().stream()
@@ -300,25 +331,45 @@ public class PurchaseOrderService {
                         .orElseThrow(() -> new ApiExceptions.BadRequestException(
                                 "No lifecycle state to receive into.")));
 
+        DeviceModel device = item.getDeviceModel();
+        // "Manufacturer - Model" when the line names a catalogue entry, because
+        // that is what the thing is. Four identical switches get four identical
+        // names, which is correct until someone tells them apart by serial or
+        // asset tag -- the counter they used to carry read like a distinguishing
+        // fact and was not one.
+        String name = device != null
+                ? "%s - %s".formatted(device.getManufacturer(), device.getModel())
+                : item.getDescription();
+
+        // The purchase date is the day the order was bought, not the day the box
+        // turned up -- a warranty starts from the former.
+        LocalDate purchased = order.getOrderedAt() == null ? null
+                : order.getOrderedAt().atZone(ZoneOffset.UTC).toLocalDate();
+
         List<Asset> created = new ArrayList<>();
         // One row per unit when each unit is individually identifiable, one row
         // carrying the count when they are not.
         int rows = category.isSerialized() ? quantity : 1;
-        // Numbered against the whole line, not this delivery: two shipments of
-        // two against a line of four produced "1 of 2" twice, and a warehouse
-        // holding four boxes could not tell which row was which.
-        int ordered = item.getQuantityOrdered();
         for (int index = 0; index < rows; index++) {
             Asset asset = new Asset();
             asset.setCategory(category);
             asset.setLocation(location);
             asset.setLifecycleState(received);
-            asset.setName(category.isSerialized() && ordered > 1
-                    ? "%s (%d of %d)".formatted(item.getDescription(), offset + index + 1, ordered)
-                    : item.getDescription());
+            asset.setName(name);
             asset.setQuantity(category.isSerialized() ? 1 : quantity);
+            if (device != null) {
+                asset.setManufacturer(device.getManufacturer());
+                asset.setModel(device.getModel());
+                asset.setDeviceRole(device.getDeviceRole());
+            }
+            // Everything the order already knows, so nobody re-types it. What is
+            // left for a human is what only the box can tell them: the serial,
+            // the asset tag, and where it ends up.
             asset.setPurchasePrice(item.getUnitPrice());
             asset.setVendor(order.getVendor());
+            asset.setPurchaseLink(order.getPurchaseLink());
+            asset.setInvoiceNumber(order.getOrderNumber());
+            asset.setPurchaseDate(purchased);
             asset.setPurchaseOrderId(order.getId());
             asset.setPurchaseOrderLineItemId(item.getId());
             asset.setLastVerifiedAt(Instant.now());
@@ -345,6 +396,10 @@ public class PurchaseOrderService {
             item.setPurchaseOrder(order);
             item.setCategory(categories.findById(line.categoryId())
                     .orElseThrow(() -> new ApiExceptions.NotFoundException("Category not found")));
+            if (line.deviceModelId() != null) {
+                item.setDeviceModel(deviceModels.findById(line.deviceModelId())
+                        .orElseThrow(() -> new ApiExceptions.NotFoundException("Device model not found")));
+            }
             item.setDescription(line.description().trim());
             item.setQuantityOrdered(line.quantityOrdered());
             item.setUnitPrice(line.unitPrice());

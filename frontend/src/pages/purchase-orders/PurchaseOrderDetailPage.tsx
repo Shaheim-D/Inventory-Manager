@@ -20,7 +20,7 @@ import type { Asset, AuditEvent, Page, PurchaseOrder } from '../../api/types';
 import { EntityTable } from '../../components/EntityTable';
 import { PageHeader } from '../../components/PageHeader';
 import { useAuth } from '../../auth/AuthContext';
-import { ApproveDialog, ReasonDialog } from './OrderActionDialogs';
+import { ApproveDialog, PurchaseDialog, ReasonDialog } from './OrderActionDialogs';
 import { ReceiveDialog } from './ReceiveDialog';
 import { money, orderLabel, RECEIVABLE, StatusChip, when } from './shared';
 
@@ -39,6 +39,7 @@ export function PurchaseOrderDetailPage() {
   const { has, user } = useAuth();
 
   const [approving, setApproving] = useState(false);
+  const [purchasing, setPurchasing] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [receiving, setReceiving] = useState(false);
@@ -85,7 +86,7 @@ export function PurchaseOrderDetailPage() {
   const actions: React.ReactNode[] = [];
   if (data.status === 'DRAFT' && isAuthor) {
     actions.push(
-      <Button key="edit" onClick={() => navigate(`/purchase-orders/${id}/edit`)}>
+      <Button key="edit" onClick={() => navigate(`/purchase-orders/order/${id}/edit`)}>
         Edit
       </Button>,
       <Button key="submit" variant="contained" onClick={() => submit.mutate()}>
@@ -96,10 +97,24 @@ export function PurchaseOrderDetailPage() {
   if (data.status === 'SUBMITTED' && has('purchase_order:approve')) {
     actions.push(
       <Button key="reject" color="error" onClick={() => setRejecting(true)}>
-        Reject
+        Deny
       </Button>,
       <Button key="approve" variant="contained" onClick={() => setApproving(true)}>
         Approve
+      </Button>,
+    );
+  }
+  if (data.status === 'APPROVED' && has('purchase_order:approve')) {
+    actions.push(
+      <Button key="purchase" variant="contained" onClick={() => setPurchasing(true)}>
+        Mark purchased
+      </Button>,
+    );
+  }
+  if (data.quantityReceived > 0 && has('asset:read')) {
+    actions.push(
+      <Button key="items" onClick={() => navigate(`/assets?purchaseOrderId=${id}`)}>
+        Show items
       </Button>,
     );
   }
@@ -113,7 +128,7 @@ export function PurchaseOrderDetailPage() {
   // The service works out whether this particular person may cancel this
   // particular order; the button only asks whether cancelling is possible at all.
   if (
-    ['DRAFT', 'SUBMITTED', 'ORDERED', 'PARTIALLY_RECEIVED'].includes(data.status) &&
+    ['DRAFT', 'SUBMITTED', 'APPROVED', 'ORDERED', 'PARTIALLY_RECEIVED'].includes(data.status) &&
     (isAuthor || has('purchase_order:approve'))
   ) {
     actions.push(
@@ -145,9 +160,12 @@ export function PurchaseOrderDetailPage() {
         </Alert>
       )}
 
+      {/* The reason is the whole point of a denial, so it is the first thing on
+          the screen rather than a field further down. */}
       {data.status === 'REJECTED' && (
         <Alert severity="error" sx={{ mb: 2 }}>
-          Rejected by {data.rejectedBy ?? 'a purchaser'} on {when(data.rejectedAt)} —{' '}
+          <strong>Denied</strong> by {data.rejectedBy ?? 'a purchaser'} on {when(data.rejectedAt)}
+          {' — '}
           {data.rejectionReason}
         </Alert>
       )}
@@ -172,10 +190,15 @@ export function PurchaseOrderDetailPage() {
               <Typography variant="subtitle1" gutterBottom>
                 The order
               </Typography>
-              <Field label="Order number" value={data.orderNumber ?? 'Not yet placed'} />
+              <Field label="Order number" value={data.orderNumber ?? 'Not bought yet'} />
               <Field label="Vendor" value={data.vendor ?? '—'} />
-              <Field label="Placed by" value={data.orderedBy ?? '—'} />
-              <Field label="Placed" value={when(data.orderedAt)} />
+              <Field label="Purchase link" value={data.purchaseLink ?? '—'} />
+              <Field label="Approved by" value={data.approvedBy ?? '—'} />
+              <Field label="Approved" value={when(data.approvedAt)} />
+              <Field label="Purchased by" value={data.orderedBy ?? '—'} />
+              {/* Labelled "Purchased" rather than "Ordered" because this date is
+                  copied onto every asset the order delivers as its purchase date. */}
+              <Field label="Purchased" value={when(data.orderedAt)} />
               {costVisible && <Field label="Total" value={money(data.total)} />}
               <Field
                 label="Received"
@@ -194,8 +217,9 @@ export function PurchaseOrderDetailPage() {
           columns={[
             // Column 0 is the card heading in narrow mode, so it stays a plain
             // string; the line's own notes get a column of their own rather
-            // than being tucked under it.
-            { header: 'Item', render: (line) => line.description },
+            // than being tucked under it. The catalogue name wins when there is
+            // one, because it is what the received assets are called.
+            { header: 'Item', render: (line) => line.deviceLabel ?? line.description },
             {
               header: 'Category',
               render: (line) => (
@@ -336,6 +360,7 @@ export function PurchaseOrderDetailPage() {
       )}
 
       <ApproveDialog open={approving} order={data} onClose={() => setApproving(false)} />
+      <PurchaseDialog open={purchasing} order={data} onClose={() => setPurchasing(false)} />
       <ReasonDialog
         open={rejecting}
         order={data}
