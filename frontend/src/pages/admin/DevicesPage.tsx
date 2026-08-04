@@ -20,6 +20,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { Category, DeviceModel } from '../../api/types';
+import { CategoryPicker } from '../../components/CategoryPicker';
 import { EntityTable } from '../../components/EntityTable';
 import { PageHeader } from '../../components/PageHeader';
 
@@ -196,25 +197,17 @@ export function DevicesPage() {
               InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
               helperText="Copied onto a new asset as a starting point, and editable there."
             />
-            <TextField
-              select
-              label="Category"
-              value={editing?.categoryId ?? ''}
-              onChange={(event) =>
-                setEditing({
-                  ...editing,
-                  categoryId: event.target.value === '' ? null : Number(event.target.value),
-                })
-              }
-              helperText="Leave blank to offer this device for every category."
-            >
-              <MenuItem value="">Any category</MenuItem>
-              {(categories.data ?? []).map((category) => (
-                <MenuItem key={category.id} value={category.id}>
-                  {category.name}
-                </MenuItem>
-              ))}
-            </TextField>
+            {/*
+              Creatable, because the reason somebody is adding a device is
+              often that they have started stocking a kind of hardware nothing
+              covers yet. Leaving the page to make the category and coming back
+              would lose what they had already typed here.
+            */}
+            <CategoryPicker
+              value={editing?.categoryId ?? null}
+              onChange={(categoryId) => setEditing({ ...editing, categoryId })}
+              helperText="Leave as Any category to offer this device everywhere. Type a name that does not exist yet to create the category here."
+            />
             <TextField
               label="Notes"
               multiline
