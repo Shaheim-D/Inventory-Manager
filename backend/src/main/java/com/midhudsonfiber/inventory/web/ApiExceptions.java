@@ -11,6 +11,15 @@ public final class ApiExceptions {
         public BadRequestException(String message) { super(message); }
     }
 
+    /**
+     * Authenticated, but not allowed to do this particular thing. Distinct from
+     * a permission check: this is "that request belongs to someone else", which
+     * no permission key can express because it depends on the row.
+     */
+    public static class ForbiddenException extends RuntimeException {
+        public ForbiddenException(String message) { super(message); }
+    }
+
     public static class ConflictException extends RuntimeException {
         public ConflictException(String message) { super(message); }
     }

@@ -24,6 +24,11 @@ public class ApiExceptionHandler {
         return body(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
+    @ExceptionHandler(ApiExceptions.ForbiddenException.class)
+    public ResponseEntity<?> forbidden(ApiExceptions.ForbiddenException ex) {
+        return body(HttpStatus.FORBIDDEN, ex.getMessage());
+    }
+
     @ExceptionHandler(ApiExceptions.BadRequestException.class)
     public ResponseEntity<?> badRequest(ApiExceptions.BadRequestException ex) {
         return body(HttpStatus.BAD_REQUEST, ex.getMessage());

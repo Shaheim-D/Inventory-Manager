@@ -24,6 +24,7 @@ public class AuditService {
     public static final String ENTITY_APP_USER = "APP_USER";
     public static final String ENTITY_ROLE = "ROLE";
     public static final String ENTITY_BRANDING = "BRANDING";
+    public static final String ENTITY_PURCHASE_ORDER = "PURCHASE_ORDER";
 
     public static final String ACTION_CREATE = "CREATE";
     public static final String ACTION_UPDATE = "UPDATE";

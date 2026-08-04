@@ -1,0 +1,126 @@
+package com.midhudsonfiber.inventory.web;
+
+import com.midhudsonfiber.inventory.domain.FieldVisibilityRule;
+import com.midhudsonfiber.inventory.domain.PurchaseOrder;
+import com.midhudsonfiber.inventory.security.CurrentUser;
+import com.midhudsonfiber.inventory.security.PermissionKeys;
+import com.midhudsonfiber.inventory.service.PurchaseOrderService;
+import com.midhudsonfiber.inventory.visibility.FieldVisibilityService;
+import com.midhudsonfiber.inventory.visibility.PurchaseOrderViewAssembler;
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Purchase orders: request, approve, order, receive.
+ *
+ * <p>Four permissions divide the work, and they are deliberately separable —
+ * an Asset Manager raises requests like anyone else but has no purchasing
+ * authority, and a Purchaser can receive a shipment without being able to edit
+ * unrelated assets.
+ */
+@RestController
+@RequestMapping("/api/purchase-orders")
+public class PurchaseOrderController {
+
+    private final PurchaseOrderService orders;
+    private final PurchaseOrderViewAssembler assembler;
+    private final FieldVisibilityService fieldVisibility;
+    private final CurrentUser currentUser;
+
+    public PurchaseOrderController(PurchaseOrderService orders,
+                                   PurchaseOrderViewAssembler assembler,
+                                   FieldVisibilityService fieldVisibility,
+                                   CurrentUser currentUser) {
+        this.orders = orders;
+        this.assembler = assembler;
+        this.fieldVisibility = fieldVisibility;
+        this.currentUser = currentUser;
+    }
+
+    public record ApproveRequest(String orderNumber, String vendor) {}
+
+    public record ReasonRequest(String reason) {}
+
+    @GetMapping
+    @PreAuthorize("hasAuthority('" + PermissionKeys.PURCHASE_ORDER_VIEW + "')")
+    public List<Map<String, Object>> list(@RequestParam(required = false) PurchaseOrder.Status status,
+                                          @RequestParam(defaultValue = "false") boolean mine) {
+        var decision = decision();
+        return orders.list(status, mine).stream()
+                .map(order -> assembler.toView(order, decision, null))
+                .toList();
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.PURCHASE_ORDER_VIEW + "')")
+    public Map<String, Object> detail(@PathVariable Long id) {
+        PurchaseOrder order = orders.get(id);
+        return assembler.toView(order, decision(), orders.receiptsFor(id));
+    }
+
+    @PostMapping
+    @PreAuthorize("hasAuthority('" + PermissionKeys.PURCHASE_ORDER_CREATE + "')")
+    public Map<String, Object> create(@Valid @RequestBody PurchaseOrderService.OrderRequest request,
+                                      @RequestParam(defaultValue = "false") boolean submit) {
+        return assembler.toView(orders.create(request, submit), decision(), null);
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.PURCHASE_ORDER_CREATE + "')")
+    public Map<String, Object> update(@PathVariable Long id,
+                                      @Valid @RequestBody PurchaseOrderService.OrderRequest request) {
+        return assembler.toView(orders.update(id, request), decision(), null);
+    }
+
+    @PostMapping("/{id}/submit")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.PURCHASE_ORDER_CREATE + "')")
+    public Map<String, Object> submit(@PathVariable Long id) {
+        return assembler.toView(orders.submit(id), decision(), null);
+    }
+
+    /** Approving is placing the order, which is why it captures the order number. */
+    @PostMapping("/{id}/approve")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.PURCHASE_ORDER_APPROVE + "')")
+    public Map<String, Object> approve(@PathVariable Long id, @RequestBody ApproveRequest request) {
+        return assembler.toView(
+                orders.approve(id, request.orderNumber(), request.vendor()), decision(), null);
+    }
+
+    @PostMapping("/{id}/reject")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.PURCHASE_ORDER_APPROVE + "')")
+    public Map<String, Object> reject(@PathVariable Long id, @RequestBody ReasonRequest request) {
+        return assembler.toView(orders.reject(id, request.reason()), decision(), null);
+    }
+
+    /**
+     * Cancelling is gated only on being able to see the order: the service
+     * decides whether this particular person may cancel this particular one,
+     * because an author abandoning their own draft and a purchaser cancelling a
+     * placed order are different acts that no single permission key separates.
+     */
+    @PostMapping("/{id}/cancel")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.PURCHASE_ORDER_VIEW + "')")
+    public Map<String, Object> cancel(@PathVariable Long id, @RequestBody ReasonRequest request) {
+        return assembler.toView(orders.cancel(id, request.reason()), decision(), null);
+    }
+
+    @PostMapping("/{id}/receipts")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.PURCHASE_ORDER_RECEIVE + "')")
+    public ResponseEntity<Map<String, Object>> receive(
+            @PathVariable Long id, @RequestBody PurchaseOrderService.ReceiptRequest request) {
+        orders.receive(id, request);
+        // The order afterwards, since the receipt changed its status and every
+        // line's outstanding count -- which is what the screen needs next.
+        return ResponseEntity.ok(assembler.toView(orders.get(id), decision(), orders.receiptsFor(id)));
+    }
+
+    private FieldVisibilityService.Decision decision() {
+        return fieldVisibility.decisionFor(
+                FieldVisibilityRule.EntityType.PURCHASE_ORDER_LINE_ITEM, currentUser.permissions());
+    }
+}
