@@ -19,11 +19,16 @@ import { ReceivingPage } from './ReceivingPage';
  * rendered otherwise, the same rule the nav itself follows. The tab lives in the
  * URL so a link to the receiving queue is still a link to the receiving queue.
  */
+// Named for what is sitting in them rather than for the act performed there.
+// "Approvals" and "Purchasing" read as filing cabinets; "Awaiting approval"
+// says there is something in it waiting on you.
 const TABS = [
+  // Not "All orders" — the scope filter inside this tab already offers that,
+  // and two controls with the same words mean different things.
   { key: 'orders', label: 'Orders', permission: 'purchase_order:view' },
-  { key: 'approvals', label: 'Approvals', permission: 'purchase_order:approve' },
-  { key: 'purchasing', label: 'Purchasing', permission: 'purchase_order:approve' },
-  { key: 'receiving', label: 'Receiving', permission: 'purchase_order:receive' },
+  { key: 'approvals', label: 'Awaiting approval', permission: 'purchase_order:approve' },
+  { key: 'purchasing', label: 'Awaiting purchase', permission: 'purchase_order:approve' },
+  { key: 'receiving', label: 'Awaiting delivery', permission: 'purchase_order:receive' },
 ] as const;
 
 export function PurchaseOrdersPage() {

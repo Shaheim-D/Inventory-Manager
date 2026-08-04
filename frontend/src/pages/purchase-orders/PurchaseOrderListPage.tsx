@@ -75,7 +75,7 @@ export function PurchaseOrderListPage() {
       ),
     },
     ...(costVisible
-      ? [{ header: 'Total', align: 'right' as const, render: (order: PurchaseOrder) => money(order.total) }]
+      ? [{ header: 'Pre-tax total', align: 'right' as const, render: (order: PurchaseOrder) => money(order.total) }]
       : []),
     {
       header: 'Raised',

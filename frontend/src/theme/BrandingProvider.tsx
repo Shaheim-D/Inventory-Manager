@@ -15,6 +15,17 @@ import type { Branding } from '../api/types';
 const DEFAULT_PRIMARY = '#1f2a44';
 const DEFAULT_SECONDARY = '#4a5a7a';
 
+/**
+ * Links are hyperlink blue rather than the brand colour, deliberately.
+ *
+ * MUI points links at `primary.main`, and this platform's primary is a near
+ * black navy — which renders a link as bold text and nothing else. Blue is what
+ * people have been taught to click for thirty years, and an installation that
+ * brands itself dark green or maroon should not lose that signal. So links keep
+ * their own colour and do not follow the palette.
+ */
+const LINK_BLUE = '#1565c0';
+
 interface BrandingValue {
   branding: Branding | undefined;
   organizationName: string;
@@ -64,6 +75,16 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
           },
           MuiTextField: { defaultProps: { size: 'small', fullWidth: true } },
           MuiCard: { defaultProps: { variant: 'outlined' } },
+          MuiLink: {
+            styleOverrides: {
+              root: {
+                color: LINK_BLUE,
+                textDecorationColor: 'currentColor',
+                fontWeight: 500,
+                '&:hover': { color: '#0d47a1' },
+              },
+            },
+          },
         },
       }),
     [data?.primaryColor, data?.secondaryColor],

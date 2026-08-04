@@ -597,4 +597,63 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
         assertThat(get(purchaser, "/api/purchase-orders/" + orderId + "/audit").getStatusCode())
                 .isEqualTo(HttpStatus.FORBIDDEN);
     }
+
+    @Test
+    @DisplayName("a purchaser can file the vendor's invoice against the order")
+    void vendorPaperworkAttachesToTheOrder() {
+        Session admin = admin();
+        Session purchaser = userWithRole(admin, "Purchaser");
+        Long orderId = draft(admin, unique("router"), 1, "Router");
+        post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
+        post(purchaser, "/api/purchase-orders/" + orderId + "/approve", "{}");
+        post(purchaser, "/api/purchase-orders/" + orderId + "/purchase", """
+                {"orderNumber":"%s","vendor":"CDW"}
+                """.formatted(unique("PO")));
+
+        byte[] pdf = "%PDF-1.7 pretend invoice".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        // V21 granted attachment:upload to Purchaser. Before it, the person who
+        // actually receives an invoice had nowhere to put one.
+        JsonNode uploaded = postMultipart(purchaser,
+                "/api/purchase-orders/" + orderId + "/attachments?fileCategory=INVOICE",
+                "invoice-88213.pdf", "application/pdf", pdf).getBody();
+        assertThat(uploaded.get("fileCategory").asText()).isEqualTo("INVOICE");
+        assertThat(uploaded.get("uploadedBy").asText()).isNotEqualTo("admin");
+        // The stored path stays server-side, as it does for asset attachments.
+        assertThat(uploaded.has("filePath")).isFalse();
+
+        assertThat(get(purchaser, "/api/purchase-orders/" + orderId + "/attachments").getBody())
+                .hasSize(1);
+        assertThat(getBytes(purchaser,
+                "/api/purchase-orders/" + orderId + "/attachments/" + uploaded.get("id").asLong()))
+                .isEqualTo(pdf);
+
+        // It hangs off the order and nothing else -- the CHECK refuses a row
+        // that names both owners or neither.
+        assertThat(jdbc.queryForObject("""
+                SELECT asset_id IS NULL AND purchase_order_id = ?
+                FROM attachment WHERE id = ?
+                """, Boolean.class, orderId, uploaded.get("id").asLong())).isTrue();
+    }
+
+    @Test
+    @DisplayName("an order's attachment id is not usable through the asset door")
+    void attachmentsDoNotCrossBetweenOwners() {
+        Session admin = admin();
+        Long orderId = draft(admin, unique("router"), 1, "Router");
+        Long attachmentId = postMultipart(admin,
+                "/api/purchase-orders/" + orderId + "/attachments?fileCategory=PURCHASE_ORDER",
+                "confirmation.pdf", "application/pdf", "x".getBytes())
+                .getBody().get("id").asLong();
+
+        Long assetId = jdbc.queryForObject(
+                "SELECT id FROM asset WHERE is_deleted = FALSE ORDER BY id LIMIT 1", Long.class);
+
+        // Naming a real asset and a real attachment does not make the pair real.
+        assertThat(rawGet(admin, "/api/assets/" + assetId + "/attachments/" + attachmentId)
+                .getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        // Nor does naming another order.
+        Long otherOrderId = draft(admin, unique("router"), 1, "Router");
+        assertThat(rawGet(admin, "/api/purchase-orders/" + otherOrderId + "/attachments/" + attachmentId)
+                .getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
 }
