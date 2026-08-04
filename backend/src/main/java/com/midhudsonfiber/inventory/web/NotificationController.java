@@ -45,7 +45,7 @@ public class NotificationController {
         Long me = currentUser.idOrNull();
         if (me == null) return Map.of("content", java.util.List.of(), "unread", 0, "totalElements", 0);
 
-        Page<NotificationLog> found = logs.findByRecipientUserIdOrderByCreatedAtDesc(
+        Page<NotificationLog> found = logs.findByRecipientUserIdAndClearedAtIsNullOrderByCreatedAtDesc(
                 me, PageRequest.of(page, Math.min(size, 100)));
         return Map.of(
                 "content", found.getContent().stream().map(NotificationController::toView).toList(),
@@ -70,7 +70,7 @@ public class NotificationController {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("unread", notifications.unreadCount(me));
         view.put("latestId", me == null ? 0L
-                : logs.findByRecipientUserIdOrderByCreatedAtDesc(me, PageRequest.of(0, 1))
+                : logs.findByRecipientUserIdAndClearedAtIsNullOrderByCreatedAtDesc(me, PageRequest.of(0, 1))
                         .getContent().stream().findFirst().map(NotificationLog::getId).orElse(0L));
         return view;
     }
@@ -80,7 +80,7 @@ public class NotificationController {
     public List<Map<String, Object>> since(@PathVariable Long afterId) {
         Long me = currentUser.idOrNull();
         if (me == null) return List.of();
-        return logs.findByRecipientUserIdAndIdGreaterThanOrderByIdAsc(me, afterId).stream()
+        return logs.findByRecipientUserIdAndClearedAtIsNullAndIdGreaterThanOrderByIdAsc(me, afterId).stream()
                 .map(NotificationController::toView)
                 .toList();
     }
@@ -118,6 +118,39 @@ public class NotificationController {
         entry.setReadAt(null);
         logs.save(entry);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Empties the notification centre.
+     *
+     * <p>Cleared rather than deleted, and only from this person's view: the row
+     * is also the record that stops a scheduled check raising the same alert
+     * again, so deleting it would bring the warranty notice somebody just
+     * dismissed straight back on the next sweep.
+     */
+    @PostMapping("/{id}/clear")
+    @Transactional
+    public ResponseEntity<Void> clear(@PathVariable Long id) {
+        NotificationLog entry = logs.findById(id)
+                .orElseThrow(() -> new ApiExceptions.NotFoundException("Notification not found"));
+        if (!java.util.Objects.equals(entry.getRecipientUserId(), currentUser.idOrNull())) {
+            throw new ApiExceptions.NotFoundException("Notification not found");
+        }
+        Instant now = Instant.now();
+        entry.setClearedAt(now);
+        // Cleared and still counting towards the badge would be a number nobody
+        // can act on: there would be nothing on screen to read.
+        if (entry.getReadAt() == null) entry.setReadAt(now);
+        logs.save(entry);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/clear-all")
+    @Transactional
+    public Map<String, Object> clearAll() {
+        Long me = currentUser.idOrNull();
+        int cleared = me == null ? 0 : logs.clearAll(me, Instant.now());
+        return Map.of("cleared", cleared);
     }
 
     @PostMapping("/read-all")

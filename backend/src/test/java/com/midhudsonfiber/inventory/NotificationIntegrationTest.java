@@ -400,6 +400,80 @@ class NotificationIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("clearing empties the centre without letting a scheduled check say it again")
+    void clearingHidesWithoutForgetting() {
+        Session admin = admin();
+        Session manager = userWithRole(admin, "Asset Manager", unique("clear") + "@example.test");
+        String managerName = usernameOf(manager);
+
+        Long categoryId = categoryId("Router");
+        Integer threshold = jdbc.queryForObject("""
+                SELECT min(days_before_expiration) FROM warranty_alert_threshold
+                WHERE asset_category_id = ?
+                """, Integer.class, categoryId);
+        Long assetId = assetExpiringIn(admin, "Router", threshold - 1);
+        warrantyAlerts.sweep();
+
+        JsonNode raised = notificationAbout(manager, assetId, "WARRANTY_EXPIRATION");
+        assertThat(raised).isNotNull();
+        long id = raised.get("id").asLong();
+        assertThat(get(manager, "/api/notifications").getBody().get("unread").asInt()).isPositive();
+
+        assertThat(post(manager, "/api/notifications/" + id + "/clear", "{}")
+                .getStatusCode().is2xxSuccessful()).isTrue();
+
+        // Gone from the inbox, gone from the badge, and gone from what the
+        // popup would offer.
+        assertThat(notificationAbout(manager, assetId, "WARRANTY_EXPIRATION")).isNull();
+        assertThat(get(manager, "/api/notifications").getBody().get("unread").asInt()).isZero();
+        assertThat(get(manager, "/api/notifications/since/0").getBody().size()).isZero();
+
+        // But the row is still the de-duplication record. If clearing deleted
+        // it, the next sweep -- an hour later -- would raise the same warranty
+        // notice again, and again, until the warranty finally ran out.
+        warrantyAlerts.sweep();
+        assertThat(notificationAbout(manager, assetId, "WARRANTY_EXPIRATION"))
+                .as("a cleared alert does not come back on the next sweep").isNull();
+        Integer rows = jdbc.queryForObject("""
+                SELECT count(*) FROM notification_log n JOIN app_user u ON u.id = n.recipient_user_id
+                WHERE n.entity_id = ? AND u.username = ?
+                """, Integer.class, assetId, managerName);
+        assertThat(rows).as("still exactly one row, cleared rather than deleted").isEqualTo(1);
+
+        // Somebody else cannot clear what is not theirs, however the id is guessed.
+        Session other = userWithRole(admin, "Customer Service", unique("cs") + "@example.test");
+        assertThat(post(other, "/api/notifications/" + id + "/clear", "{}").getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("clear all empties one person's centre and nobody else's")
+    void clearAllIsScopedToTheCaller() {
+        Session admin = admin();
+        Session purchaser = userWithRole(admin, "Purchaser", unique("buyer") + "@example.test");
+        Session bystander = userWithRole(admin, "Purchaser", unique("other") + "@example.test");
+
+        Long orderId = post(admin, "/api/purchase-orders", """
+                {"justification":"%s","lineItems":[
+                  {"categoryId":%d,"description":"%s","quantityOrdered":1}]}
+                """.formatted(unique("because"), categoryId("Router"), unique("router")))
+                .getBody().get("id").asLong();
+        post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
+
+        assertThat(notificationAbout(purchaser, orderId, "PURCHASE_ORDER_SUBMITTED")).isNotNull();
+        assertThat(notificationAbout(bystander, orderId, "PURCHASE_ORDER_SUBMITTED")).isNotNull();
+
+        JsonNode result = post(purchaser, "/api/notifications/clear-all", "{}").getBody();
+        assertThat(result.get("cleared").asInt()).isPositive();
+
+        assertThat(get(purchaser, "/api/notifications").getBody().get("content")).isEmpty();
+        assertThat(get(purchaser, "/api/notifications").getBody().get("unread").asInt()).isZero();
+        // The other purchaser holds the same role and was told the same thing.
+        // One person tidying their own inbox must not tidy anybody else's.
+        assertThat(notificationAbout(bystander, orderId, "PURCHASE_ORDER_SUBMITTED")).isNotNull();
+    }
+
+    @Test
     @DisplayName("only what arrived after the mark is offered for the on-screen popup")
     void popupOnlyOffersWhatArrivedWhileYouWereThere() {
         Session admin = admin();

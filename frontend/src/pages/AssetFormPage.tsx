@@ -28,6 +28,7 @@ import type {
   Location,
 } from '../api/types';
 import { PageHeader } from '../components/PageHeader';
+import { CategoryPicker } from '../components/CategoryPicker';
 import { DynamicFieldForm } from '../components/DynamicFieldForm';
 import { locationOptions, locationOptionSx, locationPath } from '../components/locationTree';
 
@@ -241,19 +242,18 @@ export function AssetFormPage() {
       <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 } }}>
         <Grid container spacing={2}>
           <Grid item xs={12} sm={6}>
-            <TextField
-              select
+            {/*
+              Creatable here too: the asset in front of somebody is often the
+              first of a kind nothing covers yet, and stopping to go and define
+              the category means abandoning a half-filled form.
+            */}
+            <CategoryPicker
               required
-              label="Category"
-              value={form.categoryId ?? ''}
-              onChange={(event) => set('categoryId', event.target.value)}
-            >
-              {(categories.data ?? []).map((entry) => (
-                <MenuItem key={entry.id} value={entry.id}>
-                  {entry.name}
-                </MenuItem>
-              ))}
-            </TextField>
+              value={form.categoryId ? Number(form.categoryId) : null}
+              onChange={(categoryId) => set('categoryId', categoryId == null ? '' : String(categoryId))}
+              emptyLabel="Choose a category"
+              helperText="Decides which fields, custom fields and lifecycle apply."
+            />
           </Grid>
           <Grid item xs={12} sm={6}>
             <TextField

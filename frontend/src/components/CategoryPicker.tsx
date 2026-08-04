@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -20,118 +20,139 @@ import type { Category } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 
 interface Option {
-  key: string;
-  id: number | null;
+  id: number;
   label: string;
   /** Set on the synthetic "Add …" row, carrying what was typed. */
   create?: string;
 }
+
+/** The synthetic row's id. Negative so it can never collide with a real one. */
+const CREATE_ID = -1;
 
 const filter = createFilterOptions<Option>();
 
 /**
  * Picking a category, with the option of making one on the spot.
  *
- * <p>The category a device belongs to is often the reason somebody is on this
+ * <p>The category something belongs to is often the reason somebody is on the
  * screen at all — they have just started stocking a kind of hardware nothing
  * else covers. Sending them to Categories & Fields to create it and back again
  * loses whatever they had half-typed, so typing a name that does not exist
  * offers to create it here instead.
  *
- * <p>It asks one question when it does: whether each unit is tracked separately
- * or the category is bulk stock. That is not a detail worth defaulting
- * silently — it decides whether receiving ten of something makes ten asset rows
- * or one row of ten, and it is the difference between an SFP module and a
- * router. Everything else a category can carry has a sensible default and is
- * editable afterwards; that one is worth a click.
+ * <p>Creating asks one question: whether each unit is tracked separately or the
+ * category is bulk stock. That is not a detail worth defaulting silently — it
+ * decides whether receiving ten of something makes ten asset rows or one row of
+ * ten, and it is the difference between an SFP module and a router. Everything
+ * else has a sensible default and is editable afterwards.
  *
- * <p>Creating is offered only to somebody who holds `category:manage`. This
- * screen is readable by anyone who can read assets, and the button that would
- * fail server-side is better absent than present.
+ * <p>"No category" is a genuinely empty field with a placeholder, never a
+ * selected option reading "Any category". A placeholder can be typed over and
+ * the clear button empties it; an option that means nothing cannot be deleted,
+ * which is the difference between a field that behaves and one that argues.
+ *
+ * <p>Creating is offered only to somebody who holds `category:manage` — some of
+ * these screens are readable far more widely, and a control that would be
+ * refused server-side is better absent than present.
  */
 export function CategoryPicker({
   value,
   onChange,
   label = 'Category',
   helperText,
-  anyLabel = 'Any category',
+  required = false,
+  emptyLabel = 'Any category',
+  disabled = false,
 }: {
   value: number | null;
   onChange: (categoryId: number | null) => void;
   label?: string;
   helperText?: string;
-  /** What the "no particular category" row is called. */
-  anyLabel?: string;
+  /** Refuses to look empty: the label gets its asterisk and nothing is pre-picked. */
+  required?: boolean;
+  /** The placeholder shown when nothing is picked. */
+  emptyLabel?: string;
+  disabled?: boolean;
 }) {
   const { has } = useAuth();
   const canCreate = has('category:manage');
 
   // The same key every screen uses, so this shares one request with whatever
-  // is already on the page rather than fetching the list twice.
+  // is already on the page rather than fetching the list twice. Left possibly
+  // undefined rather than defaulted to [] here: a fresh empty array every
+  // render would defeat the memoisation below, which is load-bearing.
   const categories = useQuery({
     queryKey: ['categories'],
     queryFn: () => api.get<Category[]>('/api/categories'),
-  }).data ?? [];
+  }).data;
+
   // A category created here is usable before the list refetches, so the field
   // does not go blank for the moment in between.
   const [created, setCreated] = useState<Category[]>([]);
   const [drafting, setDrafting] = useState<string | null>(null);
 
-  const known = [...categories, ...created.filter((c) => !categories.some((k) => k.id === c.id))];
+  const known = useMemo(() => {
+    const listed = categories ?? [];
+    return [...listed, ...created.filter((extra) => !listed.some((c) => c.id === extra.id))];
+  }, [categories, created]);
 
-  const options: Option[] = [
-    { key: 'any', id: null, label: anyLabel },
-    ...known.map((category) => ({
-      key: String(category.id),
-      id: category.id,
-      label: category.name,
-    })),
-  ];
+  // Memoised so the option objects keep their identity between renders. Without
+  // that, every keystroke hands Autocomplete a value it considers new, and it
+  // answers by resetting the text you are in the middle of typing.
+  const options = useMemo<Option[]>(
+    () => known.map((category) => ({ id: category.id, label: category.name })),
+    [known],
+  );
 
-  const selected = options.find((option) => option.id === value) ?? options[0];
+  const selected = useMemo(
+    () => options.find((option) => option.id === value) ?? null,
+    [options, value],
+  );
 
   return (
     <>
       <Autocomplete
         options={options}
         value={selected}
+        disabled={disabled}
         onChange={(_event, option) => {
-          if (option && option.create) setDrafting(option.create);
+          if (option?.create) setDrafting(option.create);
           else onChange(option?.id ?? null);
         }}
         getOptionLabel={(option) => option.label}
-        isOptionEqualToValue={(option, current) => option.key === current.key}
+        isOptionEqualToValue={(option, current) => option.id === current.id}
         filterOptions={(available, params) => {
           const filtered = filter(available, params);
           const typed = params.inputValue.trim();
           const exists = known.some((category) => category.name.toLowerCase() === typed.toLowerCase());
           if (canCreate && typed && !exists) {
-            filtered.push({ key: 'create', id: null, label: `Add “${typed}”`, create: typed });
+            filtered.push({ id: CREATE_ID, label: `Add “${typed}”`, create: typed });
           }
           return filtered;
         }}
-        renderOption={(props, option) => (
-          <li {...props} key={option.key}>
-            {option.create ? <strong>{option.label}</strong> : option.label}
-          </li>
-        )}
+        renderOption={(props, option) => {
+          const { key, ...rest } = props as typeof props & { key: string };
+          return (
+            <li key={key} {...rest}>
+              {option.create ? <strong>{option.label}</strong> : option.label}
+            </li>
+          );
+        }}
         renderInput={(params) => (
           <TextField
             {...params}
             label={label}
+            required={required}
+            // The placeholder, not a fake option: an empty field says "nothing
+            // chosen" and can be typed straight into.
+            placeholder={selected ? undefined : emptyLabel}
             helperText={
               helperText ??
-              (canCreate
-                ? 'Type a name that does not exist yet to create the category here.'
-                : undefined)
+              (canCreate ? 'Type a name that does not exist yet to create the category here.' : undefined)
             }
           />
         )}
-        // Freshly typed text is not itself a value -- only the "Add …" row is,
-        // so a half-typed name can never be saved as a category by accident.
-        selectOnFocus
         handleHomeEndKeys
-        clearOnBlur
       />
 
       {drafting !== null && (

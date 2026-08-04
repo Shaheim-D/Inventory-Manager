@@ -11,7 +11,6 @@ import {
   Grid,
   IconButton,
   LinearProgress,
-  MenuItem,
   Paper,
   Stack,
   TextField,
@@ -24,6 +23,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { Category, DeviceModel, PurchaseOrder } from '../../api/types';
 import { PageHeader } from '../../components/PageHeader';
+import { CategoryPicker } from '../../components/CategoryPicker';
 import { useAuth } from '../../auth/AuthContext';
 import { money } from './shared';
 
@@ -306,12 +306,19 @@ export function PurchaseOrderFormPage() {
                     />
                   </Grid>
                   <Grid item xs={12} md={3}>
-                    <TextField
-                      select
-                      label="Category"
+                    {/*
+                      A picker rather than a select: the list opens beneath the
+                      field instead of over it, it can be typed into, and a
+                      category that does not exist yet can be made here rather
+                      than by abandoning a half-written request.
+                    */}
+                    <CategoryPicker
                       required
-                      value={line.categoryId}
-                      onChange={(event) => setLine(line.key, { categoryId: event.target.value })}
+                      value={line.categoryId ? Number(line.categoryId) : null}
+                      onChange={(categoryId) =>
+                        setLine(line.key, { categoryId: categoryId == null ? '' : String(categoryId) })
+                      }
+                      emptyLabel="Choose a category"
                       helperText={
                         // Receiving behaves differently for the two kinds, and
                         // this is the moment that gets decided.
@@ -321,13 +328,7 @@ export function PurchaseOrderFormPage() {
                             ? 'Received as a single counted row'
                             : ' '
                       }
-                    >
-                      {(categories.data ?? []).map((entry) => (
-                        <MenuItem key={entry.id} value={String(entry.id)}>
-                          {entry.name}
-                        </MenuItem>
-                      ))}
-                    </TextField>
+                    />
                   </Grid>
                   <Grid item xs={6} md={2}>
                     <TextField

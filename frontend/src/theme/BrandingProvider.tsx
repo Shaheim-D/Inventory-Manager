@@ -74,6 +74,21 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
             styleOverrides: { root: { textTransform: 'none', minHeight: 40 } },
           },
           MuiTextField: { defaultProps: { size: 'small', fullWidth: true } },
+          // Dropdowns open beneath the field they belong to. MUI's default is
+          // to lay the menu over the input, centred on whichever option is
+          // selected -- which hides the very field you are choosing for, and
+          // reads as the page having broken rather than as a list opening.
+          MuiSelect: {
+            defaultProps: {
+              MenuProps: {
+                anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
+                transformOrigin: { vertical: 'top', horizontal: 'left' },
+                // Otherwise the menu is laid out from the selected item and
+                // still creeps upward over the field on a long list.
+                slotProps: { paper: { sx: { maxHeight: 360 } } },
+              },
+            },
+          },
           MuiCard: { defaultProps: { variant: 'outlined' } },
           MuiLink: {
             styleOverrides: {
