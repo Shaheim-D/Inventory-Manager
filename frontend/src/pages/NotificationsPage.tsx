@@ -12,24 +12,18 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import DoneAllIcon from '@mui/icons-material/DoneAll';
+import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import MarkEmailUnreadOutlinedIcon from '@mui/icons-material/MarkEmailUnreadOutlined';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { AppNotification, NotificationPage, NotificationTrigger } from '../api/types';
+import type { AppNotification, NotificationPage } from '../api/types';
 import { PageHeader } from '../components/PageHeader';
-
-const TRIGGER_LABELS: Record<NotificationTrigger, string> = {
-  WARRANTY_EXPIRATION: 'Warranty',
-  PURCHASE_ORDER_SUBMITTED: 'Purchase request',
-  INVENTORY_STALENESS_CHECK: 'Verification',
-};
-
-/** Where a notification's subject actually lives, when it has one. */
-function linkFor(entry: AppNotification): string | null {
-  if (entry.entityId == null) return null;
-  if (entry.entityType === 'ASSET') return `/assets/${entry.entityId}`;
-  if (entry.entityType === 'PURCHASE_ORDER') return `/purchase-orders/order/${entry.entityId}`;
-  return null;
-}
+import {
+  notificationLink,
+  notificationLinkLabel,
+  triggerChip,
+} from '../components/notificationLabels';
 
 /**
  * What the system has told this person.
@@ -38,6 +32,11 @@ function linkFor(entry: AppNotification): string | null {
  * and the useful action is going to the thing it is about. Reading one marks it
  * read, because clicking through to an asset and coming back to find it still
  * bold is the sort of thing that makes a badge worthless.
+ *
+ * Read and unread are told apart four ways over — the left edge, the weight of
+ * the subject, a dot against a tick, and the card's own background. One signal
+ * is easy to miss when skimming, and the difference between "I have dealt with
+ * this" and "I have not" is the entire point of the screen.
  */
 export function NotificationsPage() {
   const navigate = useNavigate();
@@ -58,6 +57,11 @@ export function NotificationsPage() {
     onSuccess: refresh,
   });
 
+  const markUnread = useMutation({
+    mutationFn: (id: number) => api.post(`/api/notifications/${id}/unread`),
+    onSuccess: refresh,
+  });
+
   const markAllRead = useMutation({
     mutationFn: () => api.post('/api/notifications/read-all'),
     onSuccess: refresh,
@@ -68,7 +72,7 @@ export function NotificationsPage() {
 
   const open = (entry: AppNotification) => {
     if (entry.readAt == null) markRead.mutate(entry.id);
-    const to = linkFor(entry);
+    const to = notificationLink(entry);
     if (to) navigate(to);
   };
 
@@ -100,17 +104,20 @@ export function NotificationsPage() {
 
       <Stack spacing={1.5}>
         {rows.map((entry) => {
-          const to = linkFor(entry);
+          const to = notificationLink(entry);
           const isUnread = entry.readAt == null;
           return (
             <Card
               key={entry.id}
               variant="outlined"
               sx={{
-                // Unread is carried by a left edge rather than a background
-                // wash, so a long list does not read as a wall of colour.
+                // Unread keeps the paper background and a coloured left edge;
+                // read recedes into a shaded card with no edge, so the two are
+                // distinguishable at a glance down a long list rather than only
+                // by reading each subject.
                 borderLeft: 4,
                 borderLeftColor: isUnread ? 'primary.main' : 'transparent',
+                bgcolor: isUnread ? 'background.paper' : 'action.hover',
               }}
             >
               <CardContent>
@@ -121,8 +128,21 @@ export function NotificationsPage() {
                   spacing={1}
                 >
                   <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                    <Chip size="small" variant="outlined" label={TRIGGER_LABELS[entry.triggerType]} />
-                    <Typography variant="subtitle1" fontWeight={isUnread ? 600 : 400}>
+                    {isUnread ? (
+                      <Tooltip title="Unread">
+                        <FiberManualRecordIcon color="primary" sx={{ fontSize: 12 }} />
+                      </Tooltip>
+                    ) : (
+                      <Tooltip title={`Read ${new Date(entry.readAt as string).toLocaleString()}`}>
+                        <DoneAllIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
+                      </Tooltip>
+                    )}
+                    <Chip size="small" variant="outlined" label={triggerChip(entry.triggerType)} />
+                    <Typography
+                      variant="subtitle1"
+                      fontWeight={isUnread ? 600 : 400}
+                      color={isUnread ? 'text.primary' : 'text.secondary'}
+                    >
                       {entry.subject}
                     </Typography>
                   </Stack>
@@ -142,12 +162,23 @@ export function NotificationsPage() {
                 <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1.5 }} flexWrap="wrap" useFlexGap>
                   {to && (
                     <Button size="small" variant="outlined" onClick={() => open(entry)}>
-                      {entry.entityType === 'ASSET' ? 'Open the asset' : 'Open the order'}
+                      {notificationLinkLabel(entry)}
                     </Button>
                   )}
-                  {isUnread && (
+                  {isUnread ? (
                     <Button size="small" onClick={() => markRead.mutate(entry.id)}>
                       Mark read
+                    </Button>
+                  ) : (
+                    // Somebody clears the badge, then realises they have not
+                    // actually dealt with one. Without this the only way to keep
+                    // track of it is to remember.
+                    <Button
+                      size="small"
+                      startIcon={<MarkEmailUnreadOutlinedIcon fontSize="small" />}
+                      onClick={() => markUnread.mutate(entry.id)}
+                    >
+                      Mark unread
                     </Button>
                   )}
                   <Box sx={{ flexGrow: 1 }} />
@@ -160,6 +191,11 @@ export function NotificationsPage() {
                   )}
                   {entry.emailStatus === 'SENT' && (
                     <Chip size="small" color="success" variant="outlined" label="Emailed" />
+                  )}
+                  {entry.emailStatus === 'DEFERRED' && (
+                    <Tooltip title="This rule sends its emails on a summary rather than one at a time.">
+                      <Chip size="small" variant="outlined" label="Emailing on a summary" />
+                    </Tooltip>
                   )}
                 </Stack>
               </CardContent>

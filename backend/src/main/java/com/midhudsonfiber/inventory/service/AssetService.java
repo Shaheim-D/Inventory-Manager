@@ -2,6 +2,7 @@ package com.midhudsonfiber.inventory.service;
 
 import com.midhudsonfiber.inventory.audit.AuditService;
 import com.midhudsonfiber.inventory.domain.*;
+import com.midhudsonfiber.inventory.notify.NotificationService;
 import com.midhudsonfiber.inventory.repo.*;
 import com.midhudsonfiber.inventory.security.CurrentUser;
 import com.midhudsonfiber.inventory.visibility.FieldVisibilityService;
@@ -33,6 +34,8 @@ public class AssetService {
     private final CustomFieldValidator customFieldValidator;
     private final FieldVisibilityService fieldVisibility;
     private final AuditService audit;
+    private final NotificationService notifications;
+    private final AppUserRepository users;
     private final CurrentUser currentUser;
 
     public AssetService(AssetRepository assets,
@@ -44,6 +47,8 @@ public class AssetService {
                         CustomFieldValidator customFieldValidator,
                         FieldVisibilityService fieldVisibility,
                         AuditService audit,
+                        NotificationService notifications,
+                        AppUserRepository users,
                         CurrentUser currentUser) {
         this.assets = assets;
         this.categories = categories;
@@ -54,6 +59,8 @@ public class AssetService {
         this.customFieldValidator = customFieldValidator;
         this.fieldVisibility = fieldVisibility;
         this.audit = audit;
+        this.notifications = notifications;
+        this.users = users;
         this.currentUser = currentUser;
     }
 
@@ -153,6 +160,10 @@ public class AssetService {
 
         Asset saved = assets.save(asset);
         audit.recordCreate(AuditService.ENTITY_ASSET, saved.getId(), saved.displayLabel());
+        announce(saved, NotificationRule.TriggerType.ASSET_CREATED,
+                "New asset: " + saved.displayLabel(),
+                "%s was added to %s.".formatted(saved.displayLabel(), saved.getLocation().getName()),
+                "once");
         return saved;
     }
 
@@ -176,8 +187,51 @@ public class AssetService {
                 category.getId(), request.customFields(), retainedCustomFields(asset, category.getId())));
 
         Asset saved = assets.save(asset);
-        audit.recordFieldChanges(AuditService.ENTITY_ASSET, saved.getId(), diff(before, snapshot(saved)));
+        Map<String, Object> after = snapshot(saved);
+        audit.recordFieldChanges(AuditService.ENTITY_ASSET, saved.getId(), diff(before, after));
+        announceAssignment(saved, before, after);
         return saved;
+    }
+
+    /**
+     * Handing a laptop to somebody is a different event from editing its notes,
+     * even though both arrive as an edit. Raised only when the assignment
+     * actually moved -- saving the form again with the same person on it is not
+     * news, and a rule that fired on every edit would be ignored within a week.
+     *
+     * <p>Unassignment counts. "Who has that spare handset now" is answered by
+     * hearing that it came back, not only by hearing that it went out.
+     */
+    private void announceAssignment(Asset saved, Map<String, Object> before, Map<String, Object> after) {
+        boolean moved = !java.util.Objects.equals(before.get("assignee_type"), after.get("assignee_type"))
+                || !java.util.Objects.equals(before.get("assignee_text"), after.get("assignee_text"))
+                || !java.util.Objects.equals(before.get("assignee_user_id"), after.get("assignee_user_id"));
+        if (!moved) return;
+
+        String now = assigneeDescription(saved);
+        announce(saved, NotificationRule.TriggerType.ASSET_ASSIGNED,
+                now == null
+                        ? "%s is unassigned".formatted(saved.displayLabel())
+                        : "%s assigned to %s".formatted(saved.displayLabel(), now),
+                now == null
+                        ? "%s is no longer assigned to anybody.".formatted(saved.displayLabel())
+                        : "%s is now assigned to %s.".formatted(saved.displayLabel(), now),
+                // Every reassignment is its own thing to hear about, including
+                // handing something back to the person who had it before.
+                "assigned@" + System.currentTimeMillis());
+    }
+
+    /** Who an asset is with, however the assignment was recorded. Null for nobody. */
+    private String assigneeDescription(Asset asset) {
+        return switch (asset.getAssigneeType()) {
+            case NONE -> null;
+            case EMPLOYEE, CUSTOMER -> asset.getAssigneeText();
+            case USER -> asset.getAssigneeUserId() == null ? null
+                    : users.findById(asset.getAssigneeUserId())
+                        .map(AppUser::getUsername)
+                        // The account may since have gone; the assignment happened.
+                        .orElse("user #" + asset.getAssigneeUserId());
+        };
     }
 
     /**
@@ -191,6 +245,11 @@ public class AssetService {
         asset.setDeletedAt(Instant.now());
         assets.save(asset);
         audit.recordDelete(AuditService.ENTITY_ASSET, id, reason);
+        announce(asset, NotificationRule.TriggerType.ASSET_DELETED,
+                "Asset deleted: " + asset.displayLabel(),
+                "%s was deleted.%s".formatted(asset.displayLabel(),
+                        reason == null || reason.isBlank() ? "" : "\n\nReason: " + reason),
+                "once");
     }
 
     /** The transitions actually legal from this asset's current state, read from the graph. */
@@ -235,7 +294,25 @@ public class AssetService {
                 ? reason
                 : join("Skipped ahead: not a step in the " + asset.getCategory().getName() + " lifecycle", reason);
         audit.recordLifecycleTransition(assetId, from.getName(), to.getName(), note);
+        announce(saved, NotificationRule.TriggerType.ASSET_LIFECYCLE_CHANGED,
+                "%s moved to %s".formatted(saved.displayLabel(), to.getName()),
+                "%s went from %s to %s.%s".formatted(saved.displayLabel(), from.getName(), to.getName(),
+                        note == null || note.isBlank() ? "" : "\n\n" + note),
+                // Each move is its own thing to hear about, including moving back.
+                "%s->%s@%d".formatted(from.getName(), to.getName(), System.currentTimeMillis()));
         return saved;
+    }
+
+    /**
+     * Announces something that happened to an asset. Raised unconditionally; the
+     * rules decide who, if anyone, is listening.
+     */
+    private void announce(Asset asset, NotificationRule.TriggerType trigger,
+                          String subject, String body, String dedupeSuffix) {
+        notifications.publish(new NotificationService.Event(
+                trigger, asset.getCategory().getId(), subject, body,
+                AuditService.ENTITY_ASSET, asset.getId(),
+                "%s:%d:%s".formatted(trigger.name(), asset.getId(), dedupeSuffix)));
     }
 
     private static String join(String prefix, String reason) {

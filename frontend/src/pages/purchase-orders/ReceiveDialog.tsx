@@ -23,6 +23,7 @@ import RemoveIcon from '@mui/icons-material/Remove';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { Location, PurchaseOrder } from '../../api/types';
+import { locationOptions, locationOptionSx, locationPath } from '../../components/locationTree';
 import { orderLabel } from './shared';
 
 /**
@@ -115,12 +116,20 @@ export function ReceiveDialog({
           onChange={(event) => setLocationId(event.target.value)}
           sx={{ mb: 2 }}
           helperText="Everything in this delivery is booked into that location."
+          // The same hierarchy the assets screen shows: a delivery goes to a
+          // rack inside a site far more often than to the site itself, and
+          // "Rack 4" on its own does not say which one.
+          SelectProps={{ renderValue: (value) => locationPath(locations.data, Number(value)) }}
         >
-          {(locations.data ?? [])
-            .filter((location) => location.active)
-            .map((location) => (
-              <MenuItem key={location.id} value={String(location.id)}>
-                {location.name}
+          {locationOptions(locations.data)
+            .filter((option) => option.location.active)
+            .map((option) => (
+              <MenuItem
+                key={option.location.id}
+                value={String(option.location.id)}
+                sx={locationOptionSx(option.depth)}
+              >
+                {option.location.name}
               </MenuItem>
             ))}
         </TextField>

@@ -1,3 +1,4 @@
+import { alpha, type SxProps, type Theme } from '@mui/material/styles';
 import type { Location } from '../api/types';
 
 /**
@@ -72,4 +73,28 @@ export function locationOptions(locations: Location[] | undefined): LocationOpti
     options.push({ location: orphan, depth: 0, path: orphan.name });
   }
   return options;
+}
+
+/**
+ * How a row in a location dropdown is drawn at its depth.
+ *
+ * <p>A child is a shaded band rather than a dash in front of its name: the
+ * shading is the whole row, so the grouping is legible at a glance and down the
+ * left edge of a long list, where a punctuation mark buried in the text is not.
+ * Depth deepens the shade to a limit — past the third level the difference stops
+ * being distinguishable, and pretending otherwise just makes deep rows dark.
+ *
+ * <p>Shared by every location picker so they all read the same way. Left as a
+ * style rather than a component because each caller renders its own MenuItem
+ * with its own value and key handling.
+ */
+export function locationOptionSx(depth: number): SxProps<Theme> {
+  if (depth === 0) return { pl: 2 };
+  return {
+    pl: 2 + depth * 2,
+    // Derived from the text colour, so it shades correctly in either theme
+    // instead of being a grey that disappears against a dark background.
+    bgcolor: (theme: Theme) =>
+      alpha(theme.palette.text.primary, 0.03 + 0.03 * Math.min(depth, 3)),
+  };
 }

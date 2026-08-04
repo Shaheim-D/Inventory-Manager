@@ -3,6 +3,7 @@ package com.midhudsonfiber.inventory.web;
 import com.midhudsonfiber.inventory.audit.AuditService;
 import com.midhudsonfiber.inventory.domain.DistributionTarget;
 import com.midhudsonfiber.inventory.domain.NotificationRule;
+import com.midhudsonfiber.inventory.notify.StalenessAlertJob;
 import com.midhudsonfiber.inventory.notify.WarrantyAlertJob;
 import com.midhudsonfiber.inventory.repo.AssetCategoryRepository;
 import com.midhudsonfiber.inventory.repo.NotificationRuleRepository;
@@ -34,15 +35,18 @@ public class NotificationRuleController {
     private final RoleRepository roles;
     private final AssetCategoryRepository categories;
     private final WarrantyAlertJob warrantyAlerts;
+    private final StalenessAlertJob stalenessAlerts;
     private final AuditService audit;
 
     public NotificationRuleController(NotificationRuleRepository rules, RoleRepository roles,
                                       AssetCategoryRepository categories,
-                                      WarrantyAlertJob warrantyAlerts, AuditService audit) {
+                                      WarrantyAlertJob warrantyAlerts,
+                                      StalenessAlertJob stalenessAlerts, AuditService audit) {
         this.rules = rules;
         this.roles = roles;
         this.categories = categories;
         this.warrantyAlerts = warrantyAlerts;
+        this.stalenessAlerts = stalenessAlerts;
         this.audit = audit;
     }
 
@@ -53,6 +57,7 @@ public class NotificationRuleController {
                               @NotNull NotificationRule.TriggerType triggerType,
                               Long assetCategoryId,
                               boolean active,
+                              NotificationRule.Frequency frequency,
                               List<TargetRequest> targets) {}
 
     @GetMapping
@@ -64,11 +69,22 @@ public class NotificationRuleController {
                 .toList();
     }
 
-    /** The trigger vocabulary, so the UI never hardcodes a copy of the enum. */
-    @GetMapping("/trigger-types")
+    /**
+     * The vocabulary, so the UI never hardcodes a copy of either enum. Triggers
+     * carry whether they are scheduled, because that changes what a frequency
+     * means and the screen says so.
+     */
+    @GetMapping("/vocabulary")
     @PreAuthorize("hasAuthority('" + PermissionKeys.NOTIFICATION_RULE_MANAGE + "')")
-    public List<String> triggerTypes() {
-        return Arrays.stream(NotificationRule.TriggerType.values()).map(Enum::name).toList();
+    public Map<String, Object> vocabulary() {
+        return Map.of(
+                "triggerTypes", Arrays.stream(NotificationRule.TriggerType.values())
+                        .map(trigger -> Map.<String, Object>of(
+                                "name", trigger.name(),
+                                "scheduled", trigger.isScheduled()))
+                        .toList(),
+                "frequencies", Arrays.stream(NotificationRule.Frequency.values())
+                        .map(Enum::name).toList());
     }
 
     @PostMapping
@@ -121,6 +137,16 @@ public class NotificationRuleController {
                 : "Raised " + raised + " notification(s).");
     }
 
+    /** The same courtesy for the other sweep, for the same reason. */
+    @PostMapping("/run-staleness-check")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.NOTIFICATION_RULE_MANAGE + "')")
+    public Map<String, Object> runStalenessCheck() {
+        int raised = stalenessAlerts.sweep();
+        return Map.of("raised", raised, "message", raised == 0
+                ? "Nothing is overdue for verification that has not already been notified this week."
+                : "Raised " + raised + " notification(s).");
+    }
+
     private void apply(NotificationRule rule, RuleRequest request) {
         if (request.name() == null || request.name().isBlank()) {
             throw new ApiExceptions.BadRequestException("A rule needs a name.");
@@ -128,6 +154,8 @@ public class NotificationRuleController {
         rule.setName(request.name().trim());
         rule.setTriggerType(request.triggerType());
         rule.setActive(request.active());
+        rule.setFrequency(request.frequency() == null
+                ? NotificationRule.Frequency.IMMEDIATE : request.frequency());
         rule.setCategory(request.assetCategoryId() == null ? null
                 : categories.findById(request.assetCategoryId())
                     .orElseThrow(() -> new ApiExceptions.NotFoundException("Category not found")));
@@ -168,6 +196,9 @@ public class NotificationRuleController {
         view.put("assetCategoryId", rule.getCategory() == null ? null : rule.getCategory().getId());
         view.put("assetCategoryName", rule.getCategory() == null ? null : rule.getCategory().getName());
         view.put("active", rule.isActive());
+        view.put("frequency", rule.getFrequency().name());
+        view.put("scheduled", rule.getTriggerType().isScheduled());
+        view.put("lastRunAt", rule.getLastRunAt());
         view.put("targets", rule.getTargets().stream().map(target -> {
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("id", target.getId());

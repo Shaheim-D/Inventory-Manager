@@ -23,8 +23,8 @@ Against the roadmap's ten milestones:
 | 1 | Core domain, auth, baseline admin, field visibility | **Done** |
 | 2 | Search, relationships, attachments, audit, bulk import | **Done** |
 | 3 | Purchase Orders | **Done** — request, approve/place, partial receiving, receipts create assets |
-| 4 | Notifications & warranty alerts | **Done** — in-app + email, dynamic role targets, warranty and PO triggers |
-| 5 | Inventory staleness & verification | Schema (V7), the queue screen, and the three resolution actions are in; the scheduled notification is not |
+| 4 | Notifications & warranty alerts | **Done** — in-app with an on-screen popup, plus email; dynamic role targets, per-rule email frequency, fourteen triggers across assets, purchase orders, imports and the two scheduled sweeps |
+| 5 | Inventory staleness & verification | Schema (V7), the queue screen, the three resolution actions, and the scheduled notification are in |
 | 6 | Plugin Framework | Schema only (V8); no plugins |
 | 7 | Reporting | Schema only (V9); no reports |
 | 8 | Deployment hardening | Compose stack, scripts, and runbook written; **the restore rehearsal has not been performed** |

@@ -354,8 +354,28 @@ export interface PurchaseOrder {
 
 export type NotificationTrigger =
   | 'WARRANTY_EXPIRATION'
+  | 'INVENTORY_STALENESS_CHECK'
   | 'PURCHASE_ORDER_SUBMITTED'
-  | 'INVENTORY_STALENESS_CHECK';
+  | 'PURCHASE_ORDER_APPROVED'
+  | 'PURCHASE_ORDER_DENIED'
+  | 'PURCHASE_ORDER_PURCHASED'
+  | 'PURCHASE_ORDER_PARTIALLY_RECEIVED'
+  | 'PURCHASE_ORDER_RECEIVED'
+  | 'PURCHASE_ORDER_CANCELLED'
+  | 'ASSET_CREATED'
+  | 'ASSET_LIFECYCLE_CHANGED'
+  | 'ASSET_ASSIGNED'
+  | 'ASSET_DELETED'
+  | 'IMPORT_COMPLETED';
+
+/** How often the emails for a rule go out. The notice itself is never delayed. */
+export type NotificationFrequency = 'IMMEDIATE' | 'HOURLY' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
+
+/** The server's own list, so the UI never keeps a second copy of either enum. */
+export interface NotificationVocabulary {
+  triggerTypes: { name: NotificationTrigger; scheduled: boolean }[];
+  frequencies: NotificationFrequency[];
+}
 
 /** One notification addressed to the signed-in user. */
 export interface AppNotification {
@@ -368,8 +388,11 @@ export interface AppNotification {
   entityId: number | null;
   createdAt: string;
   readAt: string | null;
-  /** SKIPPED means no relay is configured — not a failure. */
-  emailStatus: 'SKIPPED' | 'PENDING' | 'SENT' | 'FAILED';
+  /**
+   * SKIPPED means no relay is configured — not a failure. DEFERRED means the
+   * rule sends its emails on a digest rather than one at a time.
+   */
+  emailStatus: 'SKIPPED' | 'PENDING' | 'DEFERRED' | 'SENT' | 'FAILED';
   emailError: string | null;
 }
 
@@ -396,6 +419,10 @@ export interface NotificationRuleView {
   assetCategoryId: number | null;
   assetCategoryName: string | null;
   active: boolean;
+  frequency: NotificationFrequency;
+  /** Whether the trigger is a periodic sweep rather than something a person did. */
+  scheduled: boolean;
+  lastRunAt: string | null;
   targets: DistributionTargetView[];
 }
 
