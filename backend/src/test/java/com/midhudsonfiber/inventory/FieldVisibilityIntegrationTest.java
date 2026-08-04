@@ -163,6 +163,50 @@ class FieldVisibilityIntegrationTest extends AbstractIntegrationTest {
         return username;
     }
 
+    @Test
+    @DisplayName("a purchase order cost rule can be recreated after it is deleted")
+    void purchaseOrderRulesAreCreatableThroughTheApi() {
+        Session admin = signIn("admin", "BootstrapAdmin123");
+        Long permissionId = jdbc.queryForObject(
+                "SELECT id FROM permission WHERE permission_key = 'purchase_order:cost:view'", Long.class);
+
+        // The gateable list is per entity: unit_price is not an asset column and
+        // never appears among them.
+        assertThat(get(admin, "/api/admin/field-visibility-rules/gateable-core-fields").getBody().toString())
+                .doesNotContain("unit_price");
+        assertThat(get(admin,
+                "/api/admin/field-visibility-rules/gateable-core-fields?entityType=PURCHASE_ORDER_LINE_ITEM")
+                .getBody().toString()).contains("unit_price");
+
+        // The rule that hides unit prices is seeded, and the admin screen can
+        // delete it. Until this was fixed it could not be put back through the
+        // API at all, so deleting it exposed every price for good.
+        Long seeded = jdbc.queryForObject("""
+                SELECT id FROM field_visibility_rule
+                WHERE entity_type = 'PURCHASE_ORDER_LINE_ITEM' AND core_field_name = 'unit_price'
+                """, Long.class);
+        assertThat(delete(admin, "/api/admin/field-visibility-rules/" + seeded).getStatusCode().is2xxSuccessful())
+                .isTrue();
+
+        Long recreated = post(admin, "/api/admin/field-visibility-rules", """
+                {"entityType":"PURCHASE_ORDER_LINE_ITEM","coreFieldName":"unit_price",
+                 "requiredPermissionId":%d}
+                """.formatted(permissionId)).getBody().get("id").asLong();
+        assertThat(recreated).isNotNull();
+
+        // An asset column is still refused on a purchase order line, and a
+        // category scope is meaningless there.
+        assertThat(post(admin, "/api/admin/field-visibility-rules", """
+                {"entityType":"PURCHASE_ORDER_LINE_ITEM","coreFieldName":"purchase_price",
+                 "requiredPermissionId":%d}
+                """.formatted(permissionId)).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(post(admin, "/api/admin/field-visibility-rules", """
+                {"entityType":"PURCHASE_ORDER_LINE_ITEM","coreFieldName":"unit_price",
+                 "requiredPermissionId":%d,"assetCategoryId":%d}
+                """.formatted(permissionId, categoryId("Router"))).getStatusCode())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
     private Long warehouseTypeId() {
         return jdbc.queryForObject("SELECT id FROM location_type WHERE name = 'Warehouse'", Long.class);
     }
