@@ -78,8 +78,14 @@ class MigrationValidationTest extends AbstractIntegrationTest {
                 """, Integer.class);
         // 31 from the V1-V9 chain, plus branding (V10), location_type (V12),
         // device_model (V14), category_core_field (V15), asset_subcategory (V16),
-        // import_batch_row (V17).
-        assertThat(tables).isEqualTo(37);
+        // import_batch_row (V17), then notification_log and mail_settings (V22).
+        //
+        // V22's two are the only tables Milestone 4 needed. The rules and their
+        // targets already existed; what was missing was the record of what was
+        // actually sent — which no existing table answers, and without which a
+        // nightly check re-sends the same alert forever — and somewhere to keep
+        // the SMTP relay the client asked to configure from the UI.
+        assertThat(tables).isEqualTo(39);
     }
 
     @Test

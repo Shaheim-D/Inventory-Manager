@@ -351,3 +351,63 @@ export interface PurchaseOrder {
   receipts?: PurchaseOrderReceipt[];
   hiddenFields: string[];
 }
+
+export type NotificationTrigger =
+  | 'WARRANTY_EXPIRATION'
+  | 'PURCHASE_ORDER_SUBMITTED'
+  | 'INVENTORY_STALENESS_CHECK';
+
+/** One notification addressed to the signed-in user. */
+export interface AppNotification {
+  id: number;
+  triggerType: NotificationTrigger;
+  subject: string;
+  body: string;
+  /** What it is about, so the UI can link through. Not a foreign key server-side. */
+  entityType: string | null;
+  entityId: number | null;
+  createdAt: string;
+  readAt: string | null;
+  /** SKIPPED means no relay is configured — not a failure. */
+  emailStatus: 'SKIPPED' | 'PENDING' | 'SENT' | 'FAILED';
+  emailError: string | null;
+}
+
+export interface NotificationPage {
+  content: AppNotification[];
+  page: number;
+  totalElements: number;
+  totalPages: number;
+  unread: number;
+}
+
+export interface DistributionTargetView {
+  id: number | null;
+  targetType: 'ROLE' | 'EMAIL';
+  emailAddress: string | null;
+  roleId: number | null;
+  roleName: string | null;
+}
+
+export interface NotificationRuleView {
+  id: number;
+  name: string;
+  triggerType: NotificationTrigger;
+  assetCategoryId: number | null;
+  assetCategoryName: string | null;
+  active: boolean;
+  targets: DistributionTargetView[];
+}
+
+/** The SMTP relay. The password is never returned — only whether one is set. */
+export interface MailSettings {
+  enabled: boolean;
+  host: string | null;
+  port: number | null;
+  username: string | null;
+  fromAddress: string | null;
+  startTls: boolean;
+  passwordSet: boolean;
+  usable: boolean;
+  updatedAt: string | null;
+}

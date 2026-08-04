@@ -131,7 +131,10 @@ public class CategoryFieldService {
         labels.put("software_version", "Software version");
         labels.put("device_role", "Device role");
         labels.put("purchase_date", "Purchase date");
-        labels.put("purchase_price", "Purchase price");
+        // "Retail price" at the client's request. The column is still
+        // purchase_price and still means what this unit cost; the word they use
+        // for it is retail.
+        labels.put("purchase_price", "Retail price");
         labels.put("vendor", "Vendor");
         labels.put("purchase_link", "Purchase link");
         // The column is still invoice_number; what it holds is the purchase

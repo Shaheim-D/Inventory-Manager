@@ -29,6 +29,7 @@ import type {
 } from '../api/types';
 import { PageHeader } from '../components/PageHeader';
 import { DynamicFieldForm } from '../components/DynamicFieldForm';
+import { locationOptions, locationPath } from '../components/locationTree';
 
 type FormState = Record<string, unknown>;
 
@@ -261,12 +262,32 @@ export function AssetFormPage() {
               label="Location"
               value={form.locationId ?? ''}
               onChange={(event) => set('locationId', event.target.value)}
+              // Closed, it shows the full path: "Rack 4" alone is ambiguous when
+              // three sites have one, and the whole point of picking a
+              // sub-location is knowing which parent it is under.
+              SelectProps={{
+                renderValue: (value) => locationPath(locations.data, Number(value)),
+              }}
             >
-              {(locations.data ?? [])
-                .filter((entry) => entry.active)
-                .map((entry) => (
-                  <MenuItem key={entry.id} value={entry.id}>
-                    {entry.name}
+              {locationOptions(locations.data)
+                .filter((option) => option.location.active)
+                .map((option) => (
+                  <MenuItem
+                    key={option.location.id}
+                    value={option.location.id}
+                    sx={{
+                      // Indented and dimmed by depth, so the shape of the
+                      // hierarchy is visible in a flat list of options.
+                      pl: 2 + option.depth * 2,
+                      color: option.depth > 0 ? 'text.secondary' : 'text.primary',
+                    }}
+                  >
+                    {option.depth > 0 && (
+                      <Box component="span" sx={{ mr: 1, opacity: 0.6 }}>
+                        {'–'.repeat(1)}
+                      </Box>
+                    )}
+                    {option.location.name}
                   </MenuItem>
                 ))}
             </TextField>
@@ -323,6 +344,10 @@ export function AssetFormPage() {
                   // catalog row, so retiring a device later never rewrites history.
                   set('manufacturer', device.manufacturer);
                   set('model', device.model);
+                  // The same name receiving gives an asset bought through a
+                  // purchase order, so a unit entered by hand and one that
+                  // arrived on an order are called the same thing.
+                  set('name', `${device.manufacturer} - ${device.model}`);
                   if (device.deviceRole) set('deviceRole', device.deviceRole);
                   // A starting point, not a price list — still editable below.
                   if (device.defaultPrice != null) set('purchasePrice', device.defaultPrice);
@@ -331,7 +356,7 @@ export function AssetFormPage() {
                   <TextField
                     {...params}
                     label="Start from a known device"
-                    helperText="Optional — fills in manufacturer, model, and device role. Everything stays editable."
+                    helperText="Optional — fills in the name, manufacturer, model, and device role. Everything stays editable."
                   />
                 )}
               />
@@ -402,7 +427,7 @@ export function AssetFormPage() {
                   for a price somebody reads off an invoice, and a stray scroll
                   over the field silently changes it. */}
               <TextField
-                label="Purchase price"
+                label={label('purchase_price', 'Retail price')}
                 value={form.purchasePrice ?? ''}
                 onChange={(event) => set('purchasePrice', event.target.value.replace(/[^0-9.]/g, ''))}
                 inputProps={{ inputMode: 'decimal' }}

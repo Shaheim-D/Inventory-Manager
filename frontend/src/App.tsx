@@ -10,6 +10,9 @@ import { AssetFormPage } from './pages/AssetFormPage';
 import { LocationsPage } from './pages/LocationsPage';
 import { AuditPage } from './pages/AuditPage';
 import { VerificationPage } from './pages/VerificationPage';
+import { NotificationsPage } from './pages/NotificationsPage';
+import { NotificationRulesPage } from './pages/settings/NotificationRulesPage';
+import { EmailSettingsPage } from './pages/settings/EmailSettingsPage';
 import { PurchaseOrdersPage } from './pages/purchase-orders/PurchaseOrdersPage';
 import { PurchaseOrderFormPage } from './pages/purchase-orders/PurchaseOrderFormPage';
 import { PurchaseOrderDetailPage } from './pages/purchase-orders/PurchaseOrderDetailPage';
@@ -70,6 +73,18 @@ export function App() {
         <Route path="/locations" element={guard(['location:read'], <LocationsPage />)} />
         <Route path="/verification" element={guard(['asset:write'], <VerificationPage />)} />
         <Route path="/audit" element={guard(['audit:view'], <AuditPage />)} />
+        {/* No permission: these rows are addressed to the caller, and every
+            query behind them is scoped to whoever is signed in. */}
+        <Route path="/notifications" element={<NotificationsPage />} />
+
+        <Route
+          path="/settings/notification-rules"
+          element={guard(['notification_rule:manage'], <NotificationRulesPage />)}
+        />
+        <Route
+          path="/settings/email"
+          element={guard(['notification_rule:manage'], <EmailSettingsPage />)}
+        />
 
         <Route path="/admin/categories" element={guard(['category:manage'], <CategoriesPage />)} />
         <Route path="/admin/devices" element={guard(['asset:read'], <DevicesPage />)} />
