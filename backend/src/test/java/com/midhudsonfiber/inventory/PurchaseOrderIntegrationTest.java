@@ -98,8 +98,8 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
     void serializedReceivingCreatesOneAssetPerUnit() {
         Session admin = admin();
         Long locationId = newLocation(admin);
-        String description = unique("SFP module");
-        Long orderId = draft(admin, description, 5, "SFP/Transceiver Module");
+        String description = unique("access switch");
+        Long orderId = draft(admin, description, 5, "Switch");
 
         post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
         post(admin, "/api/purchase-orders/" + orderId + "/approve", """
@@ -112,14 +112,43 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
                 {"locationId":%d,"lines":[{"lineItemId":%d,"quantityReceived":5}]}
                 """.formatted(locationId, lineItemId));
 
-        // An SFP is ordered in bulk but each one is individually serialized, so
-        // five arriving is five things to track, not one row saying five.
+        // Five switches arriving is five things to track, each with its own
+        // serial and its own history, not one row saying five.
         assertThat(jdbc.queryForObject(
                 "SELECT count(*) FROM asset WHERE purchase_order_id = ?", Integer.class, orderId))
                 .isEqualTo(5);
         assertThat(jdbc.queryForObject(
                 "SELECT DISTINCT quantity FROM asset WHERE purchase_order_id = ?", Integer.class, orderId))
                 .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("SFP modules receive as bulk stock, not one row per optic")
+    void sfpModulesReceiveAsBulk() {
+        Session admin = admin();
+        Long locationId = newLocation(admin);
+        Long orderId = draft(admin, unique("SFP+ 10G LR"), 50, "SFP/Transceiver Module");
+
+        post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/approve", """
+                {"orderNumber":"%s","vendor":"CDW"}
+                """.formatted(unique("PO")));
+        Long lineItemId = get(admin, "/api/purchase-orders/" + orderId).getBody()
+                .get("lineItems").get(0).get("id").asLong();
+
+        post(admin, "/api/purchase-orders/" + orderId + "/receipts", """
+                {"locationId":%d,"lines":[{"lineItemId":%d,"quantityReceived":50}]}
+                """.formatted(locationId, lineItemId));
+
+        // Reversing Phase 8 §12 at the client's request: nobody reads the serial
+        // off an optic until it goes into a switch, so fifty rows distinguished
+        // only by their position in a box recorded nothing worth having.
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM asset WHERE purchase_order_id = ?", Integer.class, orderId))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT quantity FROM asset WHERE purchase_order_id = ?", Integer.class, orderId))
+                .isEqualTo(50);
     }
 
     @Test

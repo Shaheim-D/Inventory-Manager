@@ -41,8 +41,11 @@ class RelationshipIntegrationTest extends AbstractIntegrationTest {
 
     /** {@code customFields} carries whatever the category requires. */
     private Long newAsset(Session admin, String category, String name, String customFields) {
+        // Quantity is harmless on a serialized category, where it is forced to
+        // 1, and required on a bulk one -- SFP modules became bulk in V19.
         JsonNode body = post(admin, "/api/assets", """
-                {"categoryId":%d,"locationId":%d,"name":"%s","serialNumber":"%s","customFields":%s}
+                {"categoryId":%d,"locationId":%d,"name":"%s","serialNumber":"%s",
+                 "quantity":1,"customFields":%s}
                 """.formatted(categoryId(category), newLocation(admin), name, unique("SN"), customFields))
                 .getBody();
         assertThat(body.has("id")).as("could not create %s: %s", category, body).isTrue();
@@ -55,7 +58,7 @@ class RelationshipIntegrationTest extends AbstractIntegrationTest {
         Session admin = admin();
         String sfpName = unique("sfp");
         String switchName = unique("switch");
-        // An SFP has a required SFP Type, so this is what creating one really takes.
+        // An SFP has a required SFP Type, and since V19 it is bulk stock.
         Long sfp = newAsset(admin, "SFP/Transceiver Module", sfpName, "{\"SFP Type\":\"SFP+\"}");
         Long networkSwitch = newAsset(admin, "Switch", switchName);
 
