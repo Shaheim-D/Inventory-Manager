@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useState, type ReactNode } from 'react';
+import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -12,6 +12,7 @@ import {
   DialogTitle,
   Divider,
   Grid,
+  Link,
   MenuItem,
   Paper,
   Stack,
@@ -196,9 +197,43 @@ export function AssetDetailPage() {
                 )}
                 {uses('vendor') && <Field label={label('vendor')} value={data.vendor} />}
                 {'invoiceNumber' in data && (
-                  <Field label={label('invoice_number')} value={data.invoiceNumber} />
+                  <Field
+                    label={label('invoice_number')}
+                    // A link only when this asset actually came from an order.
+                    // The same field can be typed in by hand on an asset nobody
+                    // bought through here, and a link to nowhere is worse than
+                    // plain text.
+                    value={
+                      data.invoiceNumber && data.purchaseOrderId != null ? (
+                        <Link
+                          component={RouterLink}
+                          to={`/purchase-orders/order/${data.purchaseOrderId}`}
+                        >
+                          {data.invoiceNumber}
+                        </Link>
+                      ) : (
+                        data.invoiceNumber
+                      )
+                    }
+                  />
                 )}
-                {'purchaseLink' in data && <Field label="Purchase link" value={data.purchaseLink} />}
+                {'purchaseLink' in data && (
+                  <Field
+                    label={label('purchase_link')}
+                    // A URL sitting as plain text is a URL somebody has to
+                    // select and copy. Only http(s) is linked — the column is
+                    // free text and could hold anything.
+                    value={
+                      /^https?:\/\//i.test(data.purchaseLink ?? '') ? (
+                        <Link href={data.purchaseLink!} target="_blank" rel="noopener noreferrer">
+                          {data.purchaseLink}
+                        </Link>
+                      ) : (
+                        data.purchaseLink
+                      )
+                    }
+                  />
+                )}
                 {uses('warranty_start') && <Field label={label('warranty_start')} value={data.warrantyStart} />}
                 {uses('warranty_start') && data.warrantyTermMonths != null && (
                   <Field label="Warranty term" value={formatTerm(data.warrantyTermMonths)} />
@@ -367,14 +402,15 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Field({ label, value }: { label: string; value?: string | null }) {
+function Field({ label, value }: { label: string; value?: ReactNode }) {
+  const empty = value == null || value === '';
   return (
     <Box sx={{ display: 'flex', gap: 2 }}>
       <Typography variant="body2" color="text.secondary" sx={{ minWidth: 150 }}>
         {label}
       </Typography>
-      <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>
-        {value == null || value === '' ? '—' : value}
+      <Typography variant="body2" component="div" sx={{ wordBreak: 'break-word' }}>
+        {empty ? '—' : value}
       </Typography>
     </Box>
   );
