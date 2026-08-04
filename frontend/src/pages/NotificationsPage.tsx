@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Alert,
@@ -7,11 +8,19 @@ import {
   CardContent,
   Chip,
   LinearProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  IconButton,
   Paper,
   Stack,
   Tooltip,
   Typography,
 } from '@mui/material';
+import ClearAllIcon from '@mui/icons-material/ClearAll';
+import CloseIcon from '@mui/icons-material/Close';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import MarkEmailUnreadOutlinedIcon from '@mui/icons-material/MarkEmailUnreadOutlined';
@@ -67,6 +76,23 @@ export function NotificationsPage() {
     onSuccess: refresh,
   });
 
+  // Clearing empties the centre. Server-side it hides rather than deletes,
+  // because the same row is what stops a scheduled check raising the alert
+  // again -- but from here it is gone, which is what "clear" should mean.
+  const clearOne = useMutation({
+    mutationFn: (id: number) => api.post(`/api/notifications/${id}/clear`),
+    onSuccess: refresh,
+  });
+
+  const clearAll = useMutation({
+    mutationFn: () => api.post('/api/notifications/clear-all'),
+    onSuccess: () => {
+      setConfirmingClear(false);
+      refresh();
+    },
+  });
+
+  const [confirmingClear, setConfirmingClear] = useState(false);
   const rows = notifications.data?.content ?? [];
   const unread = notifications.data?.unread ?? 0;
 
@@ -84,11 +110,23 @@ export function NotificationsPage() {
           unread > 0 ? `${unread} unread` : 'Everything here has been read.'
         }
         actions={
-          unread > 0 ? (
-            <Button onClick={() => markAllRead.mutate()} disabled={markAllRead.isPending}>
-              Mark all read
-            </Button>
-          ) : undefined
+          <Stack direction="row" spacing={1}>
+            {unread > 0 && (
+              <Button onClick={() => markAllRead.mutate()} disabled={markAllRead.isPending}>
+                Mark all read
+              </Button>
+            )}
+            {rows.length > 0 && (
+              <Button
+                startIcon={<ClearAllIcon />}
+                color="error"
+                onClick={() => setConfirmingClear(true)}
+                disabled={clearAll.isPending}
+              >
+                Clear all
+              </Button>
+            )}
+          </Stack>
         }
       />
 
@@ -146,9 +184,22 @@ export function NotificationsPage() {
                       {entry.subject}
                     </Typography>
                   </Stack>
-                  <Typography variant="caption" color="text.secondary">
-                    {new Date(entry.createdAt).toLocaleString()}
-                  </Typography>
+                  <Stack direction="row" spacing={0.5} alignItems="center">
+                    <Typography variant="caption" color="text.secondary">
+                      {new Date(entry.createdAt).toLocaleString()}
+                    </Typography>
+                    {/* One at a time, for the ones already dealt with, without
+                        emptying everything else along with them. */}
+                    <Tooltip title="Clear this notification">
+                      <IconButton
+                        size="small"
+                        onClick={() => clearOne.mutate(entry.id)}
+                        disabled={clearOne.isPending}
+                      >
+                        <CloseIcon fontSize="inherit" />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
                 </Stack>
 
                 <Typography
@@ -209,6 +260,29 @@ export function NotificationsPage() {
           Notifications are also emailed when an SMTP relay is configured under Settings.
         </Alert>
       )}
+
+      {/* Asked first, because it takes unread ones with it and there is no
+          undo on this screen. */}
+      <Dialog open={confirmingClear} onClose={() => setConfirmingClear(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Clear all notifications?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This empties your notification centre, including {unread > 0 ? `the ${unread} you have not read yet` : 'anything unread'}.
+            It only affects your own view — nobody else's, and no email already sent.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmingClear(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={() => clearAll.mutate()}
+            disabled={clearAll.isPending}
+          >
+            Clear all
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }

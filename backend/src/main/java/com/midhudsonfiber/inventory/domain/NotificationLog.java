@@ -61,6 +61,16 @@ public class NotificationLog {
     @Column(name = "read_at")
     private Instant readAt;
 
+    /**
+     * When the recipient cleared this out of their notification centre.
+     *
+     * <p>Cleared, not deleted. The row is also the de-duplication record for
+     * scheduled checks, so removing it would let the same warranty notice be
+     * raised again the next time the sweep runs.
+     */
+    @Column(name = "cleared_at")
+    private Instant clearedAt;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "email_status", nullable = false)
     private EmailStatus emailStatus = EmailStatus.SKIPPED;
@@ -99,6 +109,9 @@ public class NotificationLog {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getReadAt() { return readAt; }
     public void setReadAt(Instant readAt) { this.readAt = readAt; }
+
+    public Instant getClearedAt() { return clearedAt; }
+    public void setClearedAt(Instant clearedAt) { this.clearedAt = clearedAt; }
     public EmailStatus getEmailStatus() { return emailStatus; }
     public void setEmailStatus(EmailStatus emailStatus) { this.emailStatus = emailStatus; }
     public String getEmailError() { return emailError; }

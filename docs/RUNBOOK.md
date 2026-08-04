@@ -189,6 +189,13 @@ to a summary rather than "as it happens" holds its email for the digest — the
 in-app notice still appeared immediately, which is why the two can look out of
 step.
 
+**Somebody cleared a notification and wants it back.** They cannot, and that is
+the only thing clearing does not undo — "mark unread" is reversible, clearing is
+not. What it does *not* do is delete anything: the row survives, because it is
+also the record that stops a scheduled check raising the same alert on its next
+run. So a cleared warranty notice will not reappear tomorrow, and the audit
+trail of what was sent is intact regardless of what anyone tidied away.
+
 **The scheduled checks.** Two sweeps run hourly and decide for themselves
 whether they have anything new to say: warranty expiry, and bulk stock overdue
 for verification. Both can be run on demand from **Settings → Notification
