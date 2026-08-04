@@ -36,11 +36,29 @@ function formatDate(value?: string | null) {
 }
 
 /**
- * Files held against an asset. Downloads go through the API rather than a
- * direct link so the server can keep serving them as attachments — an uploaded
- * page rendered inline under this origin would run as whoever opened it.
+ * Files held against an asset or a purchase order. Downloads go through the API
+ * rather than a direct link so the server can keep serving them as attachments —
+ * an uploaded page rendered inline under this origin would run as whoever opened
+ * it.
+ *
+ * One component for both because the two are the same job over the same table;
+ * the caller supplies the endpoint and the words that differ.
  */
-export function AttachmentsTab({ assetId }: { assetId: string }) {
+export function AttachmentsTab({
+  basePath,
+  queryKey,
+  invalidateKeys = [],
+  defaultCategory = 'MISCELLANEOUS',
+  emptyMessage = 'No files yet. Photos, invoices, manuals, and config backups all belong here.',
+}: {
+  /** e.g. `/api/assets/12/attachments` — list, upload, download and delete hang off it. */
+  basePath: string;
+  queryKey: unknown[];
+  /** Anything else stale once a file lands, such as that entity's audit feed. */
+  invalidateKeys?: unknown[][];
+  defaultCategory?: string;
+  emptyMessage?: string;
+}) {
   const queryClient = useQueryClient();
   const { has } = useAuth();
   const canUpload = has('attachment:upload');
@@ -48,13 +66,18 @@ export function AttachmentsTab({ assetId }: { assetId: string }) {
 
   const fileInput = useRef<HTMLInputElement>(null);
   const [adding, setAdding] = useState(false);
-  const [category, setCategory] = useState('MISCELLANEOUS');
+  const [category, setCategory] = useState(defaultCategory);
   const [chosen, setChosen] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey });
+    invalidateKeys.forEach((key) => void queryClient.invalidateQueries({ queryKey: key }));
+  };
+
   const files = useQuery({
-    queryKey: ['asset-attachments', assetId],
-    queryFn: () => api.get<Attachment[]>(`/api/assets/${assetId}/attachments`),
+    queryKey,
+    queryFn: () => api.get<Attachment[]>(basePath),
   });
 
   const enums = useQuery({
@@ -65,25 +88,18 @@ export function AttachmentsTab({ assetId }: { assetId: string }) {
 
   const upload = useMutation({
     mutationFn: () =>
-      api.upload(
-        `/api/assets/${assetId}/attachments?fileCategory=${encodeURIComponent(category)}`,
-        chosen!,
-      ),
+      api.upload(`${basePath}?fileCategory=${encodeURIComponent(category)}`, chosen!),
     onSuccess: () => {
       close();
-      void queryClient.invalidateQueries({ queryKey: ['asset-attachments', assetId] });
-      void queryClient.invalidateQueries({ queryKey: ['asset-audit', assetId] });
+      refresh();
     },
     onError: (caught) =>
       setError(caught instanceof ApiError ? caught.message : 'Could not upload that file.'),
   });
 
   const remove = useMutation({
-    mutationFn: (id: number) => api.del(`/api/assets/${assetId}/attachments/${id}`),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['asset-attachments', assetId] });
-      void queryClient.invalidateQueries({ queryKey: ['asset-audit', assetId] });
-    },
+    mutationFn: (id: number) => api.del(`${basePath}/${id}`),
+    onSuccess: refresh,
     onError: (caught) =>
       setError(caught instanceof ApiError ? caught.message : 'Could not remove that file.'),
   });
@@ -91,14 +107,14 @@ export function AttachmentsTab({ assetId }: { assetId: string }) {
   const close = () => {
     setAdding(false);
     setChosen(null);
-    setCategory('MISCELLANEOUS');
+    setCategory(defaultCategory);
     setError(null);
     if (fileInput.current) fileInput.current.value = '';
   };
 
   const download = async (attachment: Attachment) => {
     try {
-      const blob = await api.getBlob(`/api/assets/${assetId}/attachments/${attachment.id}`);
+      const blob = await api.getBlob(`${basePath}/${attachment.id}`);
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -146,8 +162,7 @@ export function AttachmentsTab({ assetId }: { assetId: string }) {
           rows={files.data ?? []}
           rowKey={(file) => file.id}
           loading={files.isLoading}
-          emptyMessage="No files yet. Photos, invoices, manuals, and config backups all belong here."
-          cardTitle={(file) => file.originalFilename}
+          emptyMessage={emptyMessage}
           rowActions={(file) => (
             <>
               <Button size="small" onClick={() => void download(file)}>

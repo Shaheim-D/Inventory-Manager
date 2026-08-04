@@ -147,7 +147,13 @@ export function AssetDetailPage() {
         {has('asset:write') && <Tab value="lifecycle" label="Lifecycle" />}
       </Tabs>
 
-      {tab === 'attachments' && <AttachmentsTab assetId={id!} />}
+      {tab === 'attachments' && (
+        <AttachmentsTab
+          basePath={`/api/assets/${id}/attachments`}
+          queryKey={['asset-attachments', id]}
+          invalidateKeys={[['asset-audit', id]]}
+        />
+      )}
 
       {tab === 'overview' && (
         <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 } }}>

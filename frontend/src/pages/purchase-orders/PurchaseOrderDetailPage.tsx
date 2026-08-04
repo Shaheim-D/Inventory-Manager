@@ -17,6 +17,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { Asset, AuditEvent, Page, PurchaseOrder } from '../../api/types';
+import { AttachmentsTab } from '../../components/AttachmentsTab';
 import { EntityTable } from '../../components/EntityTable';
 import { PageHeader } from '../../components/PageHeader';
 import { useAuth } from '../../auth/AuthContext';
@@ -199,7 +200,10 @@ export function PurchaseOrderDetailPage() {
               {/* Labelled "Purchased" rather than "Ordered" because this date is
                   copied onto every asset the order delivers as its purchase date. */}
               <Field label="Purchased" value={when(data.orderedAt)} />
-              {costVisible && <Field label="Total" value={money(data.total)} />}
+              {/* Pre-tax on purpose. What is recorded here is what was ordered
+                  at the price it was quoted at; the vendor's invoice adds tax,
+                  shipping and fees, and that document is attached below. */}
+              {costVisible && <Field label="Pre-tax total" value={money(data.total)} />}
               <Field
                 label="Received"
                 value={`${data.quantityReceived} of ${data.quantityOrdered} item(s)`}
@@ -209,9 +213,19 @@ export function PurchaseOrderDetailPage() {
         </Grid>
       </Grid>
 
-      <Typography variant="subtitle1" sx={{ mb: 1 }}>
-        Line items
-      </Typography>
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        justifyContent="space-between"
+        alignItems={{ xs: 'flex-start', sm: 'baseline' }}
+        sx={{ mb: 1 }}
+      >
+        <Typography variant="subtitle1">Line items</Typography>
+        {costVisible && (
+          <Typography variant="caption" color="text.secondary">
+            Pre-tax totals — the vendor's invoice is what carries tax, shipping and fees.
+          </Typography>
+        )}
+      </Stack>
       <Paper variant="outlined" sx={{ mb: 3 }}>
         <EntityTable
           columns={[
@@ -246,7 +260,7 @@ export function PurchaseOrderDetailPage() {
             ...(costVisible
               ? [
                   { header: 'Unit price', align: 'right' as const, render: (line: (typeof data.lineItems)[number]) => money(line.unitPrice) },
-                  { header: 'Line total', align: 'right' as const, render: (line: (typeof data.lineItems)[number]) => money(line.lineTotal) },
+                  { header: 'Pre-tax total', align: 'right' as const, render: (line: (typeof data.lineItems)[number]) => money(line.lineTotal) },
                 ]
               : []),
             { header: 'Notes', secondary: true, render: (line) => line.notes ?? '—' },
@@ -256,6 +270,25 @@ export function PurchaseOrderDetailPage() {
           emptyMessage="This request has no line items."
         />
       </Paper>
+
+      {/* Directly under the line items, because the reason to open it is
+          usually to check the pre-tax figure above against what was charged. */}
+      <Typography variant="subtitle1" sx={{ mb: 1 }}>
+        Vendor paperwork
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        The order confirmation and invoice the vendor sends back. These carry the real total,
+        including tax, shipping and any fees.
+      </Typography>
+      <Box sx={{ mb: 3 }}>
+        <AttachmentsTab
+          basePath={`/api/purchase-orders/${id}/attachments`}
+          queryKey={['purchase-order-attachments', id]}
+          invalidateKeys={[['purchase-order-audit', id]]}
+          defaultCategory="INVOICE"
+          emptyMessage="No paperwork filed yet. Attach the vendor's PO confirmation and invoice here."
+        />
+      </Box>
 
       <Typography variant="subtitle1" sx={{ mb: 1 }}>
         Deliveries

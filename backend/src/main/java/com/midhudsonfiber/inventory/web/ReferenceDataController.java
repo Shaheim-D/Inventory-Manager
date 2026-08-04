@@ -2,6 +2,7 @@ package com.midhudsonfiber.inventory.web;
 
 import com.midhudsonfiber.inventory.domain.Location;
 import com.midhudsonfiber.inventory.repo.LifecycleStateRepository;
+import com.midhudsonfiber.inventory.service.AttachmentService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -44,7 +45,7 @@ public class ReferenceDataController {
                 names(com.midhudsonfiber.inventory.domain.CustomFieldDefinition.FieldType.values()),
                 // Served from the one list the controller validates against, so
                 // the picker can never offer a value the CHECK constraint rejects.
-                "attachmentCategories", AttachmentController.FILE_CATEGORIES);
+                "attachmentCategories", AttachmentService.FILE_CATEGORIES);
     }
 
     private static List<String> names(Enum<?>[] values) {
