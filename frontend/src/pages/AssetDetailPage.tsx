@@ -23,11 +23,12 @@ import {
 } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
-import type { Asset, AuditEvent, Page, TransitionOptions } from '../api/types';
+import type { Asset, AuditEvent, Location, Page, TransitionOptions } from '../api/types';
 import { PageHeader } from '../components/PageHeader';
 import { EntityTable } from '../components/EntityTable';
 import { RelationshipsSection } from '../components/RelationshipsSection';
 import { AttachmentsTab } from '../components/AttachmentsTab';
+import { locationPath } from '../components/locationTree';
 import { useAuth } from '../auth/AuthContext';
 
 export function AssetDetailPage() {
@@ -47,6 +48,15 @@ export function AssetDetailPage() {
   const asset = useQuery({
     queryKey: ['asset', id],
     queryFn: () => api.get<Asset>(`/api/assets/${id}`),
+  });
+
+  // For the "Parent - Child" location path. Cached across the app and already
+  // fetched by the asset form, so this is normally free; without location:read
+  // it simply does not resolve and the plain name is shown instead.
+  const locations = useQuery({
+    queryKey: ['locations'],
+    queryFn: () => api.get<Location[]>('/api/locations'),
+    enabled: has('location:read'),
   });
 
   const transitions = useQuery({
@@ -114,7 +124,8 @@ export function AssetDetailPage() {
             ))}
             <Chip size="small" color={lifecycleColor(data.lifecycleStateName)} label={data.lifecycleStateName} />
             <Typography variant="body2" color="text.secondary">
-              <strong>Location:</strong> {data.locationName}
+              <strong>Location:</strong>{' '}
+              {locationPath(locations.data, data.locationId) || data.locationName}
             </Typography>
           </Stack>
         }
@@ -193,7 +204,7 @@ export function AssetDetailPage() {
                 {uses('purchase_date') && <Field label={label('purchase_date')} value={data.purchaseDate} />}
                 {'purchasePrice' in data && (
                   <Field
-                    label="Purchase price"
+                    label={label('purchase_price')}
                     value={
                       data.purchasePrice == null
                         ? null

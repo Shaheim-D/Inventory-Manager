@@ -11,7 +11,7 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  ListSubheader,
+  Collapse,
   Menu,
   MenuItem,
   Toolbar,
@@ -37,6 +37,9 @@ import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import PaletteIcon from '@mui/icons-material/Palette';
 import RuleIcon from '@mui/icons-material/Rule';
+import SettingsIcon from '@mui/icons-material/Settings';
+import ExpandLess from '@mui/icons-material/ExpandLess';
+import ExpandMore from '@mui/icons-material/ExpandMore';
 import MailIcon from '@mui/icons-material/Email';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
@@ -65,6 +68,9 @@ interface NavItem {
 interface NavSection {
   heading?: string;
   items: NavItem[];
+  /** Folds under one clickable heading instead of listing everything always. */
+  collapsible?: boolean;
+  icon?: React.ReactNode;
 }
 
 const NAV: NavSection[] = [
@@ -105,8 +111,19 @@ const NAV: NavSection[] = [
     ],
   },
   {
-    heading: 'Admin',
+    // One collapsible group rather than two flat sections. Everything here is
+    // configuration somebody sets up once and then rarely touches, so it earns
+    // a fold rather than nine permanent rows above the work.
+    heading: 'Settings',
+    icon: <SettingsIcon />,
+    collapsible: true,
     items: [
+      {
+        label: 'Categories & Fields',
+        to: '/admin/categories',
+        icon: <CategoryIcon />,
+        permissions: ['category:manage'],
+      },
       {
         label: 'Devices',
         to: '/admin/devices',
@@ -114,16 +131,6 @@ const NAV: NavSection[] = [
         permissions: ['asset:read'],
         createTo: '/admin/devices?new=1',
         createPermissions: ['category:manage'],
-      },
-      {
-        // "Categories & Custom Fields" truncated to "Categories & Custom Fi…".
-        // This is the same length as "Roles & Permissions", which already fits,
-        // and keeps both halves of what the page is for. The page itself still
-        // carries the full name in its heading.
-        label: 'Categories & Fields',
-        to: '/admin/categories',
-        icon: <CategoryIcon />,
-        permissions: ['category:manage'],
       },
       { label: 'Users', to: '/admin/users', icon: <PeopleIcon />, permissions: ['user:manage'] },
       {
@@ -138,14 +145,6 @@ const NAV: NavSection[] = [
         icon: <VisibilityOffIcon />,
         permissions: ['role:manage'],
       },
-      { label: 'Branding', to: '/admin/branding', icon: <PaletteIcon />, permissions: ['branding:manage'] },
-    ],
-  },
-  {
-    // Its own section rather than another Admin row: Admin is about who may do
-    // what and how records are shaped, while these are the system's own wiring.
-    heading: 'Settings',
-    items: [
       {
         label: 'Notification Rules',
         to: '/settings/notification-rules',
@@ -158,6 +157,7 @@ const NAV: NavSection[] = [
         icon: <MailIcon />,
         permissions: ['notification_rule:manage'],
       },
+      { label: 'Branding', to: '/admin/branding', icon: <PaletteIcon />, permissions: ['branding:manage'] },
     ],
   },
 ];
@@ -206,6 +206,61 @@ export function AppShell() {
 
   const isActive = (to: string) => to.split('?')[0] === activePath;
 
+  // Open when you are already inside it, so navigating to a settings page and
+  // then looking at the nav does not show the group you are standing in as shut.
+  const insideSettings = sections.some(
+    (section) => section.collapsible && section.items.some((item) => isActive(item.to)),
+  );
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const showSettings = settingsOpen || insideSettings;
+
+  const renderItem = (item: NavItem, indented: boolean) => {
+    const active = isActive(item.to);
+    const showCreate =
+      expanded && active && item.createTo && hasAny(...(item.createPermissions ?? []));
+
+    return (
+      <ListItemButton
+        key={item.to}
+        selected={active}
+        onClick={() => {
+          navigate(item.to);
+          setDrawerOpen(false);
+        }}
+        sx={{ minHeight: 44, px: expanded ? 2 : 1.5, pl: expanded && indented ? 4 : undefined }}
+      >
+        <Tooltip title={expanded ? '' : item.label} placement="right">
+          <ListItemIcon
+            sx={{ minWidth: expanded ? 40 : 'auto', color: active ? 'primary.main' : undefined }}
+          >
+            {item.icon}
+          </ListItemIcon>
+        </Tooltip>
+        {expanded && (
+          <ListItemText
+            primary={item.label}
+            primaryTypographyProps={{ noWrap: true, fontWeight: active ? 600 : 400 }}
+          />
+        )}
+        {showCreate && (
+          <Tooltip title={`New ${item.label.replace(/s$/, '').toLowerCase()}`}>
+            <IconButton
+              size="small"
+              edge="end"
+              onClick={(event) => {
+                event.stopPropagation();
+                navigate(item.createTo!);
+                setDrawerOpen(false);
+              }}
+            >
+              <AddIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
+      </ListItemButton>
+    );
+  };
+
   const drawerContent = (
     <Box
       role="navigation"
@@ -213,68 +268,59 @@ export function AppShell() {
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
     >
-      {sections.map((section, index) => (
-        <List
-          key={section.heading ?? index}
-          subheader={
-            section.heading && expanded ? (
-              <ListSubheader disableSticky>{section.heading}</ListSubheader>
-            ) : section.heading ? (
-              <Divider sx={{ my: 1 }} />
-            ) : undefined
-          }
-        >
-          {section.items.map((item) => {
-            const active = isActive(item.to);
-            const showCreate =
-              expanded && active && item.createTo && hasAny(...(item.createPermissions ?? []));
+      {sections.map((section, index) => {
+        if (!section.collapsible) {
+          return (
+            <List key={section.heading ?? index}>
+              {section.items.map((item) => renderItem(item, false))}
+            </List>
+          );
+        }
 
-            return (
-              <ListItemButton
-                key={item.to}
-                selected={active}
-                onClick={() => {
-                  navigate(item.to);
+        return (
+          <List key={section.heading ?? index}>
+            <Divider sx={{ my: 1 }} />
+            <ListItemButton
+              // In the rail there is nothing to reveal, so the icon goes
+              // straight to the first page rather than toggling a list nobody
+              // can see. Expanded, it folds.
+              onClick={() => {
+                if (expanded) setSettingsOpen((open) => !open);
+                else {
+                  navigate(section.items[0].to);
                   setDrawerOpen(false);
-                }}
-                sx={{ minHeight: 44, px: expanded ? 2 : 1.5 }}
-              >
-                <Tooltip title={expanded ? '' : item.label} placement="right">
-                  <ListItemIcon
-                    sx={{
-                      minWidth: expanded ? 40 : 'auto',
-                      color: active ? 'primary.main' : undefined,
-                    }}
-                  >
-                    {item.icon}
-                  </ListItemIcon>
-                </Tooltip>
-                {expanded && (
+                }
+              }}
+              selected={!expanded && insideSettings}
+              sx={{ minHeight: 44, px: expanded ? 2 : 1.5 }}
+            >
+              <Tooltip title={expanded ? '' : (section.heading ?? '')} placement="right">
+                <ListItemIcon
+                  sx={{
+                    minWidth: expanded ? 40 : 'auto',
+                    color: insideSettings ? 'primary.main' : undefined,
+                  }}
+                >
+                  {section.icon}
+                </ListItemIcon>
+              </Tooltip>
+              {expanded && (
+                <>
                   <ListItemText
-                    primary={item.label}
-                    primaryTypographyProps={{ noWrap: true, fontWeight: active ? 600 : 400 }}
+                    primary={section.heading}
+                    primaryTypographyProps={{ noWrap: true, fontWeight: insideSettings ? 600 : 400 }}
                   />
-                )}
-                {showCreate && (
-                  <Tooltip title={`New ${item.label.replace(/s$/, '').toLowerCase()}`}>
-                    <IconButton
-                      size="small"
-                      edge="end"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        navigate(item.createTo!);
-                        setDrawerOpen(false);
-                      }}
-                    >
-                      <AddIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                )}
-              </ListItemButton>
-            );
-          })}
-        </List>
-      ))}
+                  {showSettings ? <ExpandLess /> : <ExpandMore />}
+                </>
+              )}
+            </ListItemButton>
+
+            <Collapse in={expanded && showSettings} unmountOnExit>
+              {section.items.map((item) => renderItem(item, true))}
+            </Collapse>
+          </List>
+        );
+      })}
     </Box>
   );
 

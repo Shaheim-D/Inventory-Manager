@@ -26,6 +26,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import type { Location, LocationTypeOption, ReferenceEnums } from '../api/types';
 import { PageHeader } from '../components/PageHeader';
+import { locationOptions } from '../components/locationTree';
 import { useAuth } from '../auth/AuthContext';
 
 /** Reads better than the stored key, which is all the API deals in. */
@@ -106,6 +107,37 @@ export function LocationsPage() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['locations'] }),
     onError: (caught) => setError(caught instanceof ApiError ? caught.message : 'Could not remove.'),
   });
+
+  /**
+   * Choosing a parent for a new location copies down what a sub-location almost
+   * always shares with it: the type, who owns it, and where it physically is. A
+   * rack in a warehouse is at the warehouse's address, and re-typing that for
+   * every rack is how addresses end up inconsistent.
+   *
+   * Only for a location being created. Re-parenting an existing one leaves its
+   * own details alone -- silently overwriting a recorded address because
+   * somebody corrected the hierarchy would be a surprising way to lose data.
+   */
+  function chooseParent(raw: string) {
+    const parentId = raw === '' ? null : Number(raw);
+    const parent = parentId == null ? null : locations.data?.find((entry) => entry.id === parentId);
+
+    if (!parent || editing?.id) {
+      setEditing({ ...editing, parentLocationId: parentId });
+      return;
+    }
+    setEditing({
+      ...editing,
+      parentLocationId: parentId,
+      locationTypeId: parent.locationTypeId,
+      ownershipType: parent.ownershipType,
+      ownershipOtherDescription: parent.ownershipOtherDescription,
+      addressLine1: parent.addressLine1,
+      city: parent.city,
+      state: parent.state,
+      zip: parent.zip,
+    });
+  }
 
   function toggle(id: number) {
     setExpanded((current) => {
@@ -229,19 +261,31 @@ export function LocationsPage() {
               select
               label="Parent location"
               value={editing?.parentLocationId ?? ''}
-              onChange={(event) =>
-                setEditing({
-                  ...editing,
-                  parentLocationId: event.target.value === '' ? null : Number(event.target.value),
-                })
+              onChange={(event) => chooseParent(event.target.value)}
+              helperText={
+                editing?.id
+                  ? undefined
+                  : 'A new sub-location starts with its parent\u2019s type, ownership and address. Change anything below that differs.'
               }
             >
               <MenuItem value="">No parent (top level)</MenuItem>
-              {(locations.data ?? [])
-                .filter((entry) => entry.id !== editing?.id)
-                .map((entry) => (
-                  <MenuItem key={entry.id} value={entry.id}>
-                    {entry.name}
+              {locationOptions(locations.data)
+                .filter((option) => option.location.id !== editing?.id)
+                .map((option) => (
+                  <MenuItem
+                    key={option.location.id}
+                    value={option.location.id}
+                    sx={{
+                      pl: 2 + option.depth * 2,
+                      color: option.depth > 0 ? 'text.secondary' : 'text.primary',
+                    }}
+                  >
+                    {option.depth > 0 && (
+                      <Box component="span" sx={{ mr: 1, opacity: 0.6 }}>
+                        –
+                      </Box>
+                    )}
+                    {option.location.name}
                   </MenuItem>
                 ))}
             </TextField>

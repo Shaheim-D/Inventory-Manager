@@ -113,7 +113,7 @@ export function DevicesPage() {
             { header: 'Model', render: (d: DeviceModel) => d.model },
             { header: 'Device role', render: (d: DeviceModel) => d.deviceRole ?? '—' },
             {
-              header: 'Typical price',
+              header: 'Retail price',
               align: 'right',
               render: (d: DeviceModel) =>
                 d.defaultPrice == null
@@ -184,7 +184,7 @@ export function DevicesPage() {
               helperText="Optional — pre-filled onto the asset, e.g. Core Router, Edge Switch"
             />
             <TextField
-              label="Typical price"
+              label="Retail price"
               value={editing?.defaultPrice ?? ''}
               onChange={(event) =>
                 setEditing({

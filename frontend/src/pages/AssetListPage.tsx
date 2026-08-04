@@ -98,7 +98,7 @@ export function AssetListPage() {
     ...(costVisible
       ? [
           {
-            header: 'Purchase Price',
+            header: 'Retail Price',
             align: 'right' as const,
             render: (asset: Asset) =>
               asset.purchasePrice == null
