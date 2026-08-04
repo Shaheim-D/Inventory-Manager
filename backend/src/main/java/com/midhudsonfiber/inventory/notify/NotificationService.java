@@ -70,6 +70,13 @@ public class NotificationService {
      * whatever came after it, and never rolls back its caller: the point of a
      * purchase request being submitted is the request, not the alert.
      */
+    /*
+     * Frequency never throttles the notice itself. An event rule fires whenever
+     * its event happens -- dropping some because a cadence had not elapsed would
+     * mean silently losing things that occurred. The cadence batches the email
+     * and nothing else; a scheduled rule decides how often to go looking in the
+     * sweep that raises it.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public int publish(Event event) {
         List<NotificationLog> created = new ArrayList<>();
@@ -86,8 +93,9 @@ public class NotificationService {
 
         // Email after the rows exist, so an in-app notification is never lost to
         // a relay problem, and a crash between the two leaves something to retry.
+        // Deferred ones are left for the digest job.
         for (NotificationLog entry : created) {
-            mail.trySend(entry);
+            if (entry.getEmailStatus() == NotificationLog.EmailStatus.PENDING) mail.trySend(entry);
         }
         return created.size();
     }
@@ -137,9 +145,15 @@ public class NotificationService {
         entry.setEntityType(event.entityType());
         entry.setEntityId(event.entityId());
         entry.setDedupeKey(event.dedupeKey());
-        entry.setEmailStatus(mail.configured() && entry.getRecipientEmail() != null
-                ? NotificationLog.EmailStatus.PENDING
-                : NotificationLog.EmailStatus.SKIPPED);
+        // The in-app copy is written either way; only the email waits. A rule
+        // set to a digest holds its mail for the batch, which is the whole point
+        // of choosing a cadence -- but nobody's notification centre goes quiet
+        // because somebody preferred weekly email.
+        boolean emailable = mail.configured() && entry.getRecipientEmail() != null;
+        entry.setEmailStatus(!emailable ? NotificationLog.EmailStatus.SKIPPED
+                : rule.getFrequency() == NotificationRule.Frequency.IMMEDIATE
+                        ? NotificationLog.EmailStatus.PENDING
+                        : NotificationLog.EmailStatus.DEFERRED);
 
         try {
             return logs.saveAndFlush(entry);

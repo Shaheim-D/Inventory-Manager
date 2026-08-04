@@ -2,6 +2,7 @@ package com.midhudsonfiber.inventory.service;
 
 import com.midhudsonfiber.inventory.audit.AuditService;
 import com.midhudsonfiber.inventory.domain.*;
+import com.midhudsonfiber.inventory.notify.NotificationService;
 import com.midhudsonfiber.inventory.repo.*;
 import com.midhudsonfiber.inventory.security.CurrentUser;
 import com.midhudsonfiber.inventory.web.ApiExceptions;
@@ -58,6 +59,7 @@ public class ImportService {
     private final ImportRowCommitter rowCommitter;
     private final CustomFieldDefinitionRepository customFields;
     private final AuditService audit;
+    private final NotificationService notifications;
     private final CurrentUser currentUser;
 
     public ImportService(ImportBatchRepository batches, ImportBatchRowRepository rows,
@@ -65,7 +67,8 @@ public class ImportService {
                          AssetRepository assets,
                          ImportRowCommitter rowCommitter,
                          CustomFieldDefinitionRepository customFields,
-                         AuditService audit, CurrentUser currentUser) {
+                         AuditService audit, NotificationService notifications,
+                         CurrentUser currentUser) {
         this.batches = batches;
         this.rows = rows;
         this.categories = categories;
@@ -74,6 +77,7 @@ public class ImportService {
         this.rowCommitter = rowCommitter;
         this.customFields = customFields;
         this.audit = audit;
+        this.notifications = notifications;
         this.currentUser = currentUser;
     }
 
@@ -311,6 +315,19 @@ public class ImportService {
         if (!anythingLeft && imported > 0) {
             audit.recordCreate("IMPORT_BATCH", batch.getId(),
                     "%s: %d imported, %d skipped".formatted(batch.getFilename(), imported, invalid));
+
+            // Announced when the file is actually finished rather than per row.
+            // The failures are the reason to look, so the count leads with them.
+            notifications.publish(new NotificationService.Event(
+                    NotificationRule.TriggerType.IMPORT_COMPLETED,
+                    null,
+                    "Import finished: %s".formatted(batch.getFilename()),
+                    "%d asset(s) imported from %s.%s".formatted(imported, batch.getFilename(),
+                            invalid == 0 ? "" : " %d row(s) were skipped and need attention."
+                                    .formatted(invalid)),
+                    "IMPORT_BATCH",
+                    batch.getId(),
+                    "IMPORT_COMPLETED:%d".formatted(batch.getId())));
         }
         return saved;
     }

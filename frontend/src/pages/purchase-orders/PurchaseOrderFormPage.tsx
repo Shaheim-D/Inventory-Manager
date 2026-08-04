@@ -224,6 +224,32 @@ export function PurchaseOrderFormPage() {
       )}
 
       <Typography variant="subtitle1" sx={{ mb: 1 }}>
+        Where to buy it
+      </Typography>
+      <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
+        <Grid container spacing={2}>
+          <Grid item xs={12} md={4}>
+            <TextField
+              label="Vendor"
+              placeholder="Who to buy it from"
+              value={vendor}
+              onChange={(event) => setVendor(event.target.value)}
+              helperText="A suggestion. The purchaser confirms it, and may buy elsewhere."
+            />
+          </Grid>
+          <Grid item xs={12} md={8}>
+            <TextField
+              label="Purchase link"
+              placeholder="https://…"
+              value={purchaseLink}
+              onChange={(event) => setPurchaseLink(event.target.value)}
+              helperText="The page it should be bought from, so nobody has to go looking for it."
+            />
+          </Grid>
+        </Grid>
+      </Paper>
+
+      <Typography variant="subtitle1" sx={{ mb: 1 }}>
         What is being ordered
       </Typography>
 
@@ -362,32 +388,6 @@ export function PurchaseOrderFormPage() {
       >
         Add another line
       </Button>
-
-      <Typography variant="subtitle1" sx={{ mb: 1 }}>
-        Where to buy it
-      </Typography>
-      <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
-        <Grid container spacing={2}>
-          <Grid item xs={12} md={4}>
-            <TextField
-              label="Vendor"
-              placeholder="Who to buy it from"
-              value={vendor}
-              onChange={(event) => setVendor(event.target.value)}
-              helperText="A suggestion. The purchaser confirms it, and may buy elsewhere."
-            />
-          </Grid>
-          <Grid item xs={12} md={8}>
-            <TextField
-              label="Purchase link"
-              placeholder="https://…"
-              value={purchaseLink}
-              onChange={(event) => setPurchaseLink(event.target.value)}
-              helperText="The page it should be bought from, so nobody has to go looking for it."
-            />
-          </Grid>
-        </Grid>
-      </Paper>
 
       {/* At the bottom on purpose: the explanation reads better after the thing
           being explained, and an approver has the list in view while reading it. */}

@@ -7,6 +7,7 @@ import type { Asset, Category, LifecycleState, Location, Page } from '../api/typ
 import { EntityTable, type Column } from '../components/EntityTable';
 import { PageHeader } from '../components/PageHeader';
 import { ImportDialog } from '../components/ImportDialog';
+import { locationOptions, locationOptionSx, locationPath } from '../components/locationTree';
 import { useAuth } from '../auth/AuthContext';
 
 export function AssetListPage() {
@@ -89,7 +90,12 @@ export function AssetListPage() {
         </Stack>
       ),
     },
-    { header: 'Location', render: (asset) => asset.locationName },
+    {
+      // The path, not the leaf: a column of "Rack 4" three times over says
+      // nothing about where the three things actually are.
+      header: 'Location',
+      render: (asset) => locationPath(locations.data, asset.locationId) || asset.locationName,
+    },
     {
       header: 'Lifecycle',
       render: (asset) => <Chip size="small" label={asset.lifecycleStateName} variant="outlined" />,
@@ -220,11 +226,19 @@ export function AssetListPage() {
                 setPage(0);
               }}
               disabled={!has('location:read')}
+              SelectProps={{
+                renderValue: (value) =>
+                  value ? locationPath(locations.data, Number(value)) : 'All locations',
+              }}
             >
               <MenuItem value="">All locations</MenuItem>
-              {(locations.data ?? []).map((location) => (
-                <MenuItem key={location.id} value={String(location.id)}>
-                  {location.name}
+              {locationOptions(locations.data).map((option) => (
+                <MenuItem
+                  key={option.location.id}
+                  value={String(option.location.id)}
+                  sx={locationOptionSx(option.depth)}
+                >
+                  {option.location.name}
                 </MenuItem>
               ))}
             </TextField>

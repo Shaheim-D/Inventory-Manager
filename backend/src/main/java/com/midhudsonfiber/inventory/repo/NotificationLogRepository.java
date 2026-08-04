@@ -24,6 +24,13 @@ public interface NotificationLogRepository extends JpaRepository<NotificationLog
 
     List<NotificationLog> findTop200ByEmailStatusOrderByIdAsc(NotificationLog.EmailStatus status);
 
+    /** Everything a digest-frequency rule has been holding back. */
+    List<NotificationLog> findByNotificationRuleIdAndEmailStatusOrderByIdAsc(
+            Long notificationRuleId, NotificationLog.EmailStatus emailStatus);
+
+    /** New since the caller last looked — what the on-screen popup keys off. */
+    List<NotificationLog> findByRecipientUserIdAndIdGreaterThanOrderByIdAsc(Long userId, Long afterId);
+
     @Modifying
     @Query("""
             UPDATE NotificationLog n SET n.readAt = :now

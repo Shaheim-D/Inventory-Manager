@@ -29,7 +29,7 @@ import type {
 } from '../api/types';
 import { PageHeader } from '../components/PageHeader';
 import { DynamicFieldForm } from '../components/DynamicFieldForm';
-import { locationOptions, locationPath } from '../components/locationTree';
+import { locationOptions, locationOptionSx, locationPath } from '../components/locationTree';
 
 type FormState = Record<string, unknown>;
 
@@ -275,18 +275,10 @@ export function AssetFormPage() {
                   <MenuItem
                     key={option.location.id}
                     value={option.location.id}
-                    sx={{
-                      // Indented and dimmed by depth, so the shape of the
-                      // hierarchy is visible in a flat list of options.
-                      pl: 2 + option.depth * 2,
-                      color: option.depth > 0 ? 'text.secondary' : 'text.primary',
-                    }}
+                    // Indented and shaded by depth, so the shape of the
+                    // hierarchy is visible in a flat list of options.
+                    sx={locationOptionSx(option.depth)}
                   >
-                    {option.depth > 0 && (
-                      <Box component="span" sx={{ mr: 1, opacity: 0.6 }}>
-                        {'–'.repeat(1)}
-                      </Box>
-                    )}
                     {option.location.name}
                   </MenuItem>
                 ))}

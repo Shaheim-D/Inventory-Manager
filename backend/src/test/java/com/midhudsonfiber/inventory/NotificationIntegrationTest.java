@@ -1,6 +1,7 @@
 package com.midhudsonfiber.inventory;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.midhudsonfiber.inventory.notify.StalenessAlertJob;
 import com.midhudsonfiber.inventory.notify.WarrantyAlertJob;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -9,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -20,6 +22,9 @@ class NotificationIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private WarrantyAlertJob warrantyAlerts;
+
+    @Autowired
+    private StalenessAlertJob stalenessAlerts;
 
     private Session admin() {
         return signIn("admin", "BootstrapAdmin123");
@@ -231,6 +236,287 @@ class NotificationIntegrationTest extends AbstractIntegrationTest {
                 .isEqualTo("ops@example.test");
 
         delete(admin, "/api/admin/notification-rules/" + created.get("id").asLong());
+    }
+
+    /**
+     * A rule of my own rather than flipping a seeded one on. The seeded rules
+     * are shared by the whole suite, and switching one on for a test leaves
+     * every other test's assets and orders raising notifications behind it.
+     *
+     * @return the new rule's id, to be deleted when the test is done with it
+     */
+    private Long ruleFor(Session admin, String trigger, String frequency, String roleName) {
+        return post(admin, "/api/admin/notification-rules", """
+                {"name":"%s","triggerType":"%s","frequency":"%s","active":true,
+                 "targets":[{"targetType":"ROLE","roleId":%d}]}
+                """.formatted(unique(trigger.toLowerCase()), trigger, frequency, roleId(roleName)))
+                .getBody().get("id").asLong();
+    }
+
+    /** The one addressed to this person about this thing, or null. */
+    private JsonNode notificationAbout(Session who, long entityId, String trigger) {
+        for (JsonNode entry : get(who, "/api/notifications?size=100").getBody().get("content")) {
+            if (entry.get("entityId").asLong() == entityId
+                    && entry.get("triggerType").asText().equals(trigger)) {
+                return entry;
+            }
+        }
+        return null;
+    }
+
+    private Long categoryId(String name) {
+        return jdbc.queryForObject("SELECT id FROM asset_category WHERE name = ?", Long.class, name);
+    }
+
+    private Long newLocation(Session admin) {
+        Long locationType = jdbc.queryForObject(
+                "SELECT id FROM location_type WHERE name = 'Warehouse'", Long.class);
+        return post(admin, "/api/locations", """
+                {"name":"%s","locationTypeId":%d,"ownershipType":"COMPANY_OWNED"}
+                """.formatted(unique("notify-loc"), locationType)).getBody().get("id").asLong();
+    }
+
+    @Test
+    @DisplayName("every step of a purchase order can raise its own notification")
+    void everyPurchaseOrderStepCanBeNotifiedOn() {
+        Session admin = admin();
+        Session watcher = userWithRole(admin, "Management", unique("watch") + "@example.test");
+
+        Long approvedRule = ruleFor(admin, "PURCHASE_ORDER_APPROVED", "IMMEDIATE", "Management");
+        Long purchasedRule = ruleFor(admin, "PURCHASE_ORDER_PURCHASED", "IMMEDIATE", "Management");
+        Long receivedRule = ruleFor(admin, "PURCHASE_ORDER_RECEIVED", "IMMEDIATE", "Management");
+        Long partialRule = ruleFor(admin, "PURCHASE_ORDER_PARTIALLY_RECEIVED", "IMMEDIATE", "Management");
+        try {
+            Long locationId = newLocation(admin);
+            Long orderId = post(admin, "/api/purchase-orders", """
+                    {"justification":"%s","lineItems":[
+                      {"categoryId":%d,"description":"%s","quantityOrdered":2,"unitPrice":100.00}]}
+                    """.formatted(unique("need"), categoryId("Router"), unique("router")))
+                    .getBody().get("id").asLong();
+
+            post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
+            post(admin, "/api/purchase-orders/" + orderId + "/approve", "{}");
+            assertThat(notificationAbout(watcher, orderId, "PURCHASE_ORDER_APPROVED"))
+                    .as("approval is its own event, separate from submission").isNotNull();
+
+            post(admin, "/api/purchase-orders/" + orderId + "/purchase", """
+                    {"orderNumber":"%s","vendor":"Ingram Micro"}
+                    """.formatted(unique("PO")));
+            assertThat(notificationAbout(watcher, orderId, "PURCHASE_ORDER_PURCHASED")).isNotNull();
+
+            Long lineItemId = get(admin, "/api/purchase-orders/" + orderId).getBody()
+                    .get("lineItems").get(0).get("id").asLong();
+
+            // One of two. The status comes from the database trigger, and the
+            // notification has to follow whatever it decided rather than what
+            // the application assumed it would decide.
+            post(admin, "/api/purchase-orders/" + orderId + "/receipts", """
+                    {"locationId":%d,"lines":[{"lineItemId":%d,"quantityReceived":1}]}
+                    """.formatted(locationId, lineItemId));
+            assertThat(notificationAbout(watcher, orderId, "PURCHASE_ORDER_PARTIALLY_RECEIVED"))
+                    .as("a part delivery is not the same news as a complete one").isNotNull();
+            assertThat(notificationAbout(watcher, orderId, "PURCHASE_ORDER_RECEIVED")).isNull();
+
+            post(admin, "/api/purchase-orders/" + orderId + "/receipts", """
+                    {"locationId":%d,"lines":[{"lineItemId":%d,"quantityReceived":1}]}
+                    """.formatted(locationId, lineItemId));
+            JsonNode received = notificationAbout(watcher, orderId, "PURCHASE_ORDER_RECEIVED");
+            assertThat(received).isNotNull();
+            assertThat(received.get("entityType").asText()).isEqualTo("PURCHASE_ORDER");
+        } finally {
+            for (Long id : List.of(approvedRule, purchasedRule, receivedRule, partialRule)) {
+                delete(admin, "/api/admin/notification-rules/" + id);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("a digest frequency batches the email and never delays the notice")
+    void frequencyGovernsTheEmailAndNotTheNotification() {
+        Session admin = admin();
+        Session watcher = userWithRole(admin, "Management", unique("digest") + "@example.test");
+
+        // Weekly. If frequency throttled the notification itself, this would be
+        // silent for a week -- which is exactly what must not happen: the thing
+        // occurred, and the notification centre is the record that it did.
+        Long ruleId = ruleFor(admin, "ASSET_CREATED", "WEEKLY", "Management");
+        try {
+            JsonNode view = get(admin, "/api/admin/notification-rules").getBody();
+            JsonNode mine = null;
+            for (JsonNode rule : view) {
+                if (rule.get("id").asLong() == ruleId) mine = rule;
+            }
+            assertThat(mine).isNotNull();
+            assertThat(mine.get("frequency").asText()).isEqualTo("WEEKLY");
+            assertThat(mine.get("scheduled").asBoolean())
+                    .as("asset creation is something a person did, not a sweep").isFalse();
+
+            Long assetId = post(admin, "/api/assets", """
+                    {"categoryId":%d,"locationId":%d,"name":"%s","serialNumber":"%s"}
+                    """.formatted(categoryId("Router"), newLocation(admin), unique("fresh"), unique("SN")))
+                    .getBody().get("id").asLong();
+
+            assertThat(notificationAbout(watcher, assetId, "ASSET_CREATED"))
+                    .as("the notice is immediate however the email is batched").isNotNull();
+        } finally {
+            delete(admin, "/api/admin/notification-rules/" + ruleId);
+        }
+    }
+
+    @Test
+    @DisplayName("a notification can be put back to unread")
+    void readCanBeUndone() {
+        Session admin = admin();
+        Session purchaser = userWithRole(admin, "Purchaser", unique("buyer") + "@example.test");
+        Session other = userWithRole(admin, "Customer Service", unique("cs") + "@example.test");
+
+        Long orderId = post(admin, "/api/purchase-orders", """
+                {"justification":"%s","lineItems":[
+                  {"categoryId":%d,"description":"%s","quantityOrdered":1}]}
+                """.formatted(unique("because"), categoryId("Router"), unique("router")))
+                .getBody().get("id").asLong();
+        post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
+
+        JsonNode alert = notificationAbout(purchaser, orderId, "PURCHASE_ORDER_SUBMITTED");
+        assertThat(alert).isNotNull();
+        long id = alert.get("id").asLong();
+
+        post(purchaser, "/api/notifications/" + id + "/read", "{}");
+        assertThat(jdbc.queryForObject(
+                "SELECT read_at IS NOT NULL FROM notification_log WHERE id = ?", Boolean.class, id))
+                .isTrue();
+
+        // Somebody clears the badge and then realises they had not dealt with
+        // one. Scoped the same way reading is: another person cannot reach it.
+        assertThat(post(other, "/api/notifications/" + id + "/unread", "{}").getStatusCode())
+                .isEqualTo(HttpStatus.NOT_FOUND);
+
+        assertThat(post(purchaser, "/api/notifications/" + id + "/unread", "{}")
+                .getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(jdbc.queryForObject(
+                "SELECT read_at FROM notification_log WHERE id = ?", java.sql.Timestamp.class, id))
+                .isNull();
+        assertThat(get(purchaser, "/api/notifications").getBody().get("unread").asInt()).isPositive();
+    }
+
+    @Test
+    @DisplayName("only what arrived after the mark is offered for the on-screen popup")
+    void popupOnlyOffersWhatArrivedWhileYouWereThere() {
+        Session admin = admin();
+        Session purchaser = userWithRole(admin, "Purchaser", unique("buyer") + "@example.test");
+
+        // Something waiting before they got here. It belongs in the centre and
+        // must never be popped up when they sign in.
+        Long older = post(admin, "/api/purchase-orders", """
+                {"justification":"%s","lineItems":[
+                  {"categoryId":%d,"description":"%s","quantityOrdered":1}]}
+                """.formatted(unique("older"), categoryId("Router"), unique("router")))
+                .getBody().get("id").asLong();
+        post(admin, "/api/purchase-orders/" + older + "/submit", "{}");
+
+        // The mark the client records when the page loads.
+        long mark = get(purchaser, "/api/notifications/unread-count").getBody().get("latestId").asLong();
+        assertThat(mark).isPositive();
+
+        Long newer = post(admin, "/api/purchase-orders", """
+                {"justification":"%s","lineItems":[
+                  {"categoryId":%d,"description":"%s","quantityOrdered":1}]}
+                """.formatted(unique("newer"), categoryId("Router"), unique("router")))
+                .getBody().get("id").asLong();
+        post(admin, "/api/purchase-orders/" + newer + "/submit", "{}");
+
+        JsonNode since = get(purchaser, "/api/notifications/since/" + mark).getBody();
+        assertThat(since.size()).isPositive();
+        boolean sawNewer = false;
+        for (JsonNode entry : since) {
+            assertThat(entry.get("entityId").asLong())
+                    .as("nothing from before the mark is offered").isNotEqualTo(older);
+            if (entry.get("entityId").asLong() == newer) sawNewer = true;
+        }
+        assertThat(sawNewer).isTrue();
+
+        // And nobody else's, however the id is guessed.
+        Session other = userWithRole(admin, "Customer Service", unique("cs") + "@example.test");
+        assertThat(get(other, "/api/notifications/since/0").getBody().size()).isZero();
+    }
+
+    @Test
+    @DisplayName("overdue stock is raised once per category per week, not once per item")
+    void stalenessIsRaisedPerCategoryAndNotRepeated() {
+        Session admin = admin();
+        Session watcher = userWithRole(admin, "Management", unique("stale") + "@example.test");
+
+        Long ruleId = ruleFor(admin, "INVENTORY_STALENESS_CHECK", "DAILY", "Management");
+        Long categoryId = categoryId("Fiber Cable");
+        Integer interval = jdbc.queryForObject(
+                "SELECT verification_interval_days FROM asset_category WHERE id = ?",
+                Integer.class, categoryId);
+        assertThat(interval).as("a bulk category needs a seeded verification interval").isNotNull();
+        try {
+            Long locationId = newLocation(admin);
+            // Two overdue items in one category. One notification, not two: the
+            // categories that carry an interval are the bulk ones, and an alert
+            // per item would be a hundred copies of the same sentence.
+            for (int i = 0; i < 2; i++) {
+                Long assetId = post(admin, "/api/assets", """
+                        {"categoryId":%d,"locationId":%d,"name":"%s","quantity":25}
+                        """.formatted(categoryId, locationId, unique("spool")))
+                        .getBody().get("id").asLong();
+                jdbc.update("""
+                        UPDATE asset SET last_verified_at = now() - make_interval(days => ?)
+                        WHERE id = ?
+                        """, interval + 30, assetId);
+            }
+
+            assertThat(stalenessAlerts.sweep()).isPositive();
+            JsonNode raised = notificationAbout(watcher, categoryId, "INVENTORY_STALENESS_CHECK");
+            assertThat(raised).isNotNull();
+            assertThat(raised.get("entityType").asText()).isEqualTo("VERIFICATION_QUEUE");
+            assertThat(raised.get("subject").asText()).contains("overdue for verification");
+
+            // Hourly job, weekly de-duplication: running it again says nothing.
+            stalenessAlerts.sweep();
+            Integer copies = jdbc.queryForObject("""
+                    SELECT count(*) FROM notification_log n JOIN app_user u ON u.id = n.recipient_user_id
+                    WHERE n.trigger_type = 'INVENTORY_STALENESS_CHECK' AND n.entity_id = ?
+                      AND u.username = ?
+                    """, Integer.class, categoryId, usernameOf(watcher));
+            assertThat(copies).as("one notice a week per category, however often the job runs")
+                    .isEqualTo(1);
+        } finally {
+            delete(admin, "/api/admin/notification-rules/" + ruleId);
+        }
+    }
+
+    @Test
+    @DisplayName("the vocabulary is the server's, so the screen cannot offer a trigger that does nothing")
+    void vocabularyCoversEveryTriggerAndFrequency() {
+        JsonNode vocabulary = get(admin(), "/api/admin/notification-rules/vocabulary").getBody();
+
+        List<String> triggers = new java.util.ArrayList<>();
+        boolean warrantyIsScheduled = false;
+        for (JsonNode entry : vocabulary.get("triggerTypes")) {
+            triggers.add(entry.get("name").asText());
+            if (entry.get("name").asText().equals("WARRANTY_EXPIRATION")) {
+                warrantyIsScheduled = entry.get("scheduled").asBoolean();
+            }
+        }
+
+        // Every trigger the code can raise, and nothing it cannot: a trigger
+        // offered in the admin screen that nothing publishes is a rule somebody
+        // configures and then waits on forever.
+        assertThat(triggers).containsExactlyInAnyOrder(
+                "WARRANTY_EXPIRATION", "INVENTORY_STALENESS_CHECK",
+                "PURCHASE_ORDER_SUBMITTED", "PURCHASE_ORDER_APPROVED", "PURCHASE_ORDER_DENIED",
+                "PURCHASE_ORDER_PURCHASED", "PURCHASE_ORDER_PARTIALLY_RECEIVED",
+                "PURCHASE_ORDER_RECEIVED", "PURCHASE_ORDER_CANCELLED",
+                "ASSET_CREATED", "ASSET_LIFECYCLE_CHANGED", "ASSET_ASSIGNED", "ASSET_DELETED",
+                "IMPORT_COMPLETED");
+        assertThat(warrantyIsScheduled).isTrue();
+
+        List<String> frequencies = new java.util.ArrayList<>();
+        for (JsonNode entry : vocabulary.get("frequencies")) frequencies.add(entry.asText());
+        assertThat(frequencies).containsExactly("IMMEDIATE", "HOURLY", "DAILY", "WEEKLY", "MONTHLY");
     }
 
     @Test

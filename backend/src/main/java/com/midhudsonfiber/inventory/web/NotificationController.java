@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -54,10 +55,34 @@ public class NotificationController {
                 "unread", notifications.unreadCount(me));
     }
 
-    /** The bell's badge. Its own endpoint so it can be cheap and polled. */
+    /**
+     * The bell's badge, and what the on-screen popup keys off.
+     *
+     * <p>{@code latestId} is the newest notification this person has, whether
+     * read or not. The client records it on load and asks again as it polls;
+     * anything above the recorded mark arrived while they were sitting there and
+     * is worth showing on screen. Anything at or below it was already there when
+     * they arrived, and popping those up on every sign-in would be noise.
+     */
     @GetMapping("/unread-count")
     public Map<String, Object> unreadCount() {
-        return Map.of("unread", notifications.unreadCount(currentUser.idOrNull()));
+        Long me = currentUser.idOrNull();
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("unread", notifications.unreadCount(me));
+        view.put("latestId", me == null ? 0L
+                : logs.findByRecipientUserIdOrderByCreatedAtDesc(me, PageRequest.of(0, 1))
+                        .getContent().stream().findFirst().map(NotificationLog::getId).orElse(0L));
+        return view;
+    }
+
+    /** What has arrived since the caller last looked. Drives the popup. */
+    @GetMapping("/since/{afterId}")
+    public List<Map<String, Object>> since(@PathVariable Long afterId) {
+        Long me = currentUser.idOrNull();
+        if (me == null) return List.of();
+        return logs.findByRecipientUserIdAndIdGreaterThanOrderByIdAsc(me, afterId).stream()
+                .map(NotificationController::toView)
+                .toList();
     }
 
     @PostMapping("/{id}/read")
@@ -75,6 +100,23 @@ public class NotificationController {
             entry.setReadAt(Instant.now());
             logs.save(entry);
         }
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Back to unread. Somebody clears the badge, then realises they have not
+     * dealt with one — without this, the only way to keep track is to remember.
+     */
+    @PostMapping("/{id}/unread")
+    @Transactional
+    public ResponseEntity<Void> markUnread(@PathVariable Long id) {
+        NotificationLog entry = logs.findById(id)
+                .orElseThrow(() -> new ApiExceptions.NotFoundException("Notification not found"));
+        if (!java.util.Objects.equals(entry.getRecipientUserId(), currentUser.idOrNull())) {
+            throw new ApiExceptions.NotFoundException("Notification not found");
+        }
+        entry.setReadAt(null);
+        logs.save(entry);
         return ResponseEntity.noContent().build();
     }
 

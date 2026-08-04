@@ -43,7 +43,10 @@ public class WarrantyAlertJob {
      * daily because a threshold is crossed on a particular date and nothing
      * finer than a day is meaningful here.
      */
-    @Scheduled(cron = "${app.notifications.warranty-cron:0 15 6 * * *}")
+    // Hourly, with each rule deciding whether its own cadence has come round.
+    // One clock rather than one cron per frequency, so adding a frequency is an
+    // enum constant instead of another scheduled method.
+    @Scheduled(cron = "${app.notifications.warranty-cron:0 15 * * * *}")
     public void run() {
         int sent = sweep();
         if (sent > 0) log.info("Warranty alerts: {} notification(s) raised", sent);

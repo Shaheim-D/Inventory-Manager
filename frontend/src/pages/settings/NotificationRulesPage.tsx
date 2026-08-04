@@ -10,6 +10,7 @@ import {
   Divider,
   FormControlLabel,
   IconButton,
+  ListSubheader,
   MenuItem,
   Paper,
   Stack,
@@ -21,15 +22,22 @@ import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
-import type { Category, NotificationRuleView, NotificationTrigger, Role } from '../../api/types';
+import type {
+  Category,
+  NotificationFrequency,
+  NotificationRuleView,
+  NotificationTrigger,
+  NotificationVocabulary,
+  Role,
+} from '../../api/types';
 import { EntityTable } from '../../components/EntityTable';
 import { PageHeader } from '../../components/PageHeader';
-
-const TRIGGER_LABELS: Record<NotificationTrigger, string> = {
-  WARRANTY_EXPIRATION: 'Warranty expiring (nightly)',
-  PURCHASE_ORDER_SUBMITTED: 'Purchase request submitted',
-  INVENTORY_STALENESS_CHECK: 'Stock overdue for verification (nightly)',
-};
+import {
+  TRIGGER_GROUPS,
+  frequencyLabel,
+  triggerHasCategory,
+  triggerLabel,
+} from '../../components/notificationLabels';
 
 interface TargetDraft {
   key: string;
@@ -53,6 +61,12 @@ const newTarget = (): TargetDraft => ({
  * today", and nobody maintains a list. A fixed email address is offered
  * alongside it because a shared inbox or an external accountant is not a role,
  * which was the Phase 2 stakeholder decision.
+ *
+ * <p>Trigger and frequency are separate choices. What raises a notification and
+ * how often you want to hear about it are unrelated questions: a warranty sweep
+ * runs nightly but somebody may only want a weekly summary of it, and asset
+ * creation happens all day but a daily digest of it is perfectly reasonable.
+ * The in-app notice is never held back either way — frequency governs the email.
  */
 export function NotificationRulesPage() {
   const queryClient = useQueryClient();
@@ -70,9 +84,12 @@ export function NotificationRulesPage() {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['notification-rules'] }),
   });
 
-  const runWarranty = useMutation({
-    mutationFn: () =>
-      api.post<{ raised: number; message: string }>('/api/admin/notification-rules/run-warranty-check'),
+  // Both sweeps can be run on demand, because a scheduled job nobody can
+  // trigger is a scheduled job nobody can check. De-duplication makes running
+  // either one twice harmless.
+  const runSweep = useMutation({
+    mutationFn: (path: 'run-warranty-check' | 'run-staleness-check') =>
+      api.post<{ raised: number; message: string }>(`/api/admin/notification-rules/${path}`),
     onSuccess: (result) => {
       setBanner({ kind: 'success', text: result.message });
       void queryClient.invalidateQueries({ queryKey: ['notifications-unread'] });
@@ -88,11 +105,14 @@ export function NotificationRulesPage() {
     <>
       <PageHeader
         title="Notification rules"
-        subtitle="What raises a notification, and who is told. Role targets are resolved when it sends, so nobody maintains a recipient list."
+        subtitle="What raises a notification, who is told, and how often the email goes out. Role targets are resolved when it sends, so nobody maintains a recipient list."
         actions={
           <Stack direction="row" spacing={1}>
-            <Button onClick={() => runWarranty.mutate()} disabled={runWarranty.isPending}>
+            <Button onClick={() => runSweep.mutate('run-warranty-check')} disabled={runSweep.isPending}>
               Run warranty check now
+            </Button>
+            <Button onClick={() => runSweep.mutate('run-staleness-check')} disabled={runSweep.isPending}>
+              Run verification check now
             </Button>
             <Button variant="contained" onClick={() => setCreating(true)}>
               New rule
@@ -113,14 +133,25 @@ export function NotificationRulesPage() {
             { header: 'Rule', render: (rule: NotificationRuleView) => rule.name },
             {
               header: 'Raised by',
-              render: (rule: NotificationRuleView) => TRIGGER_LABELS[rule.triggerType] ?? rule.triggerType,
+              render: (rule: NotificationRuleView) => triggerLabel(rule.triggerType),
+            },
+            {
+              header: 'Email frequency',
+              render: (rule: NotificationRuleView) => (
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  color={rule.frequency === 'IMMEDIATE' ? 'primary' : 'default'}
+                  label={frequencyLabel(rule.frequency)}
+                />
+              ),
             },
             {
               header: 'Category',
               render: (rule: NotificationRuleView) => rule.assetCategoryName ?? 'Every category',
             },
             {
-              header: 'Tells',
+              header: 'Recipients',
               render: (rule: NotificationRuleView) => (
                 <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
                   {rule.targets.map((target) => (
@@ -195,8 +226,9 @@ function RuleDialog({
 }) {
   const [name, setName] = useState(rule?.name ?? '');
   const [triggerType, setTriggerType] = useState<NotificationTrigger>(
-    rule?.triggerType ?? 'WARRANTY_EXPIRATION',
+    rule?.triggerType ?? 'PURCHASE_ORDER_SUBMITTED',
   );
+  const [frequency, setFrequency] = useState<NotificationFrequency>(rule?.frequency ?? 'IMMEDIATE');
   const [categoryId, setCategoryId] = useState(
     rule?.assetCategoryId == null ? '' : String(rule.assetCategoryId),
   );
@@ -218,6 +250,28 @@ function RuleDialog({
     queryKey: ['categories'],
     queryFn: () => api.get<Category[]>('/api/categories'),
   });
+  // The server owns both enums. Asking for them means a trigger added backend
+  // side appears here without a second edit, and one removed stops being
+  // offered instead of failing on save.
+  const vocabulary = useQuery({
+    queryKey: ['notification-vocabulary'],
+    queryFn: () => api.get<NotificationVocabulary>('/api/admin/notification-rules/vocabulary'),
+  });
+
+  const known = new Set((vocabulary.data?.triggerTypes ?? []).map((entry) => entry.name));
+  const grouped = TRIGGER_GROUPS.map((group) => ({
+    heading: group.heading,
+    triggers: group.triggers.filter((trigger) => known.size === 0 || known.has(trigger)),
+  })).filter((group) => group.triggers.length > 0);
+  // Anything the server offers that this build has no group for still needs to
+  // be selectable, or an admin cannot use it at all.
+  const ungrouped = [...known].filter(
+    (trigger) => !TRIGGER_GROUPS.some((group) => group.triggers.includes(trigger)),
+  );
+
+  const scheduled =
+    vocabulary.data?.triggerTypes.find((entry) => entry.name === triggerType)?.scheduled ?? false;
+  const categoryApplies = triggerHasCategory(triggerType);
 
   const setTarget = (key: string, patch: Partial<TargetDraft>) =>
     setTargets((current) => current.map((t) => (t.key === key ? { ...t, ...patch } : t)));
@@ -227,7 +281,11 @@ function RuleDialog({
       const body = {
         name: name.trim(),
         triggerType,
-        assetCategoryId: categoryId ? Number(categoryId) : null,
+        frequency,
+        // A category on a trigger that has none would stop the rule matching
+        // anything, so it is dropped rather than carried over from whatever the
+        // trigger was before it was changed.
+        assetCategoryId: categoryApplies && categoryId ? Number(categoryId) : null,
         active,
         targets: targets
           .filter((t) => (t.targetType === 'ROLE' ? t.roleId : t.emailAddress.trim()))
@@ -265,21 +323,54 @@ function RuleDialog({
             label="Raised by"
             value={triggerType}
             onChange={(event) => setTriggerType(event.target.value as NotificationTrigger)}
+            helperText={
+              scheduled
+                ? 'A periodic sweep. It raises a notice the first time something crosses the line, not every time it runs.'
+                : 'Raised the moment somebody does this.'
+            }
           >
-            {Object.entries(TRIGGER_LABELS).map(([value, label]) => (
-              <MenuItem key={value} value={value}>
-                {label}
+            {grouped.flatMap((group) => [
+              <ListSubheader key={group.heading}>{group.heading}</ListSubheader>,
+              ...group.triggers.map((trigger) => (
+                <MenuItem key={trigger} value={trigger}>
+                  {triggerLabel(trigger)}
+                </MenuItem>
+              )),
+            ])}
+            {ungrouped.map((trigger) => (
+              <MenuItem key={trigger} value={trigger}>
+                {triggerLabel(trigger)}
               </MenuItem>
             ))}
           </TextField>
 
           <TextField
             select
+            label="Email frequency"
+            value={frequency}
+            onChange={(event) => setFrequency(event.target.value as NotificationFrequency)}
+            helperText="How often the emails go out. The in-app notification always appears straight away — a summary only batches the email."
+          >
+            {(vocabulary.data?.frequencies ?? ['IMMEDIATE', 'HOURLY', 'DAILY', 'WEEKLY', 'MONTHLY']).map(
+              (value) => (
+                <MenuItem key={value} value={value}>
+                  {frequencyLabel(value)}
+                </MenuItem>
+              ),
+            )}
+          </TextField>
+
+          <TextField
+            select
             label="Category"
-            value={categoryId}
+            value={categoryApplies ? categoryId : ''}
             onChange={(event) => setCategoryId(event.target.value)}
-            helperText="Narrows the rule to one category. Purchase request alerts are not about a category."
-            disabled={triggerType === 'PURCHASE_ORDER_SUBMITTED'}
+            helperText={
+              categoryApplies
+                ? 'Narrows the rule to one category.'
+                : 'This trigger is not about a category, so the rule covers all of them.'
+            }
+            disabled={!categoryApplies}
           >
             <MenuItem value="">Every category</MenuItem>
             {(categories.data ?? []).map((category) => (
@@ -295,7 +386,7 @@ function RuleDialog({
           />
 
           <Divider />
-          <Typography variant="subtitle2">Who is told</Typography>
+          <Typography variant="subtitle2">Recipients</Typography>
 
           {targets.map((target) => (
             <Stack key={target.key} direction="row" spacing={1} alignItems="flex-start">
@@ -306,10 +397,10 @@ function RuleDialog({
                 onChange={(event) =>
                   setTarget(target.key, { targetType: event.target.value as 'ROLE' | 'EMAIL' })
                 }
-                sx={{ maxWidth: 160 }}
+                sx={{ maxWidth: 180 }}
               >
                 <MenuItem value="ROLE">A role</MenuItem>
-                <MenuItem value="EMAIL">An address</MenuItem>
+                <MenuItem value="EMAIL">Email address</MenuItem>
               </TextField>
 
               {target.targetType === 'ROLE' ? (

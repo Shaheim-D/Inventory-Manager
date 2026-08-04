@@ -45,6 +45,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { useBranding } from '../theme/BrandingProvider';
+import { NotificationToaster } from './NotificationToaster';
 
 const DRAWER_WIDTH = 260;
 /** Wide enough for an icon and its hit area, and nothing else. */
@@ -178,8 +179,11 @@ export function AppShell() {
   // to import and sync progress.
   const unread = useQuery({
     queryKey: ['notifications-unread'],
-    queryFn: () => api.get<{ unread: number }>('/api/notifications/unread-count'),
-    refetchInterval: 60_000,
+    queryFn: () => api.get<{ unread: number; latestId: number }>('/api/notifications/unread-count'),
+    // Twenty seconds rather than sixty because the same answer drives the
+    // on-screen popup, and a notice that arrives a minute after the fact is not
+    // one anybody would call live.
+    refetchInterval: 20_000,
     refetchOnWindowFocus: true,
   });
 
@@ -433,6 +437,10 @@ export function AppShell() {
         <Toolbar />
         <Outlet />
       </Box>
+
+      {/* Outside the main column: it is fixed to the viewport, and nesting it in
+          a scrolling region would only make that a coincidence. */}
+      <NotificationToaster />
     </Box>
   );
 }

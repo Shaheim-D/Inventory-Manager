@@ -7,6 +7,7 @@ import com.midhudsonfiber.inventory.repo.*;
 import com.midhudsonfiber.inventory.security.CurrentUser;
 import com.midhudsonfiber.inventory.security.PermissionKeys;
 import com.midhudsonfiber.inventory.web.ApiExceptions;
+import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,6 +58,7 @@ public class PurchaseOrderService {
     private final NotificationService notifications;
     private final AppUserRepository users;
     private final CurrentUser currentUser;
+    private final EntityManager entityManager;
 
     public PurchaseOrderService(PurchaseOrderRepository orders,
                                 PurchaseOrderLineItemRepository lineItems,
@@ -69,7 +71,8 @@ public class PurchaseOrderService {
                                 AuditService audit,
                                 NotificationService notifications,
                                 AppUserRepository users,
-                                CurrentUser currentUser) {
+                                CurrentUser currentUser,
+                                EntityManager entityManager) {
         this.orders = orders;
         this.lineItems = lineItems;
         this.receipts = receipts;
@@ -82,6 +85,7 @@ public class PurchaseOrderService {
         this.notifications = notifications;
         this.users = users;
         this.currentUser = currentUser;
+        this.entityManager = entityManager;
     }
 
     public record LineItemRequest(Long categoryId, Long deviceModelId, String description,
@@ -190,6 +194,35 @@ public class PurchaseOrderService {
         return saved;
     }
 
+    /**
+     * Announces a step in the workflow.
+     *
+     * <p>Every step gets one, whether or not a rule is listening — the rules
+     * decide who cares, and a step that never announces itself cannot be
+     * notified on however the rules are configured later.
+     */
+    private void announce(PurchaseOrder order, NotificationRule.TriggerType trigger,
+                          String subject, String body, String dedupeSuffix) {
+        notifications.publish(new NotificationService.Event(
+                trigger, null, subject, body,
+                AuditService.ENTITY_PURCHASE_ORDER, order.getId(),
+                "%s:%d:%s".formatted(trigger.name(), order.getId(), dedupeSuffix)));
+    }
+
+    /** What to call an order in a notification: its vendor number once it has one. */
+    private static String label(PurchaseOrder order) {
+        return order.getOrderNumber() == null
+                ? "Purchase request #" + order.getId()
+                : "Order " + order.getOrderNumber();
+    }
+
+    /** Whoever is doing this, for a sentence that names them. */
+    private String actorName() {
+        Long me = currentUser.idOrNull();
+        return me == null ? "Someone"
+                : users.findById(me).map(AppUser::getUsername).orElse("Someone");
+    }
+
     private String requesterName(PurchaseOrder order) {
         return order.getRequestedBy() == null ? "Someone"
                 : users.findById(order.getRequestedBy()).map(AppUser::getUsername).orElse("Someone");
@@ -208,7 +241,14 @@ public class PurchaseOrderService {
         order.setStatus(PurchaseOrder.Status.APPROVED);
         order.setApprovedBy(currentUser.idOrNull());
         order.setApprovedAt(Instant.now());
-        return recordStatus(order, "Approved", null);
+        PurchaseOrder saved = recordStatus(order, "Approved", null);
+
+        announce(saved, NotificationRule.TriggerType.PURCHASE_ORDER_APPROVED,
+                "%s approved".formatted(label(saved)),
+                "%s agreed to the request %s raised. It is now waiting to be bought."
+                        .formatted(actorName(), requesterName(saved)),
+                "once");
+        return saved;
     }
 
     /**
@@ -235,7 +275,14 @@ public class PurchaseOrderService {
         order.setOrderNumber(request.orderNumber().trim());
         if (blankToNull(request.vendor()) != null) order.setVendor(request.vendor().trim());
         if (blankToNull(request.purchaseLink()) != null) order.setPurchaseLink(request.purchaseLink().trim());
-        return recordStatus(order, "Purchased as " + order.getOrderNumber(), null);
+        PurchaseOrder saved = recordStatus(order, "Purchased as " + order.getOrderNumber(), null);
+
+        announce(saved, NotificationRule.TriggerType.PURCHASE_ORDER_PURCHASED,
+                "%s has been bought".formatted(label(saved)),
+                "%s bought this from %s. It can be received against from now on."
+                        .formatted(actorName(), saved.getVendor() == null ? "the vendor" : saved.getVendor()),
+                "once");
+        return saved;
     }
 
     /**
@@ -256,7 +303,14 @@ public class PurchaseOrderService {
         order.setRejectedBy(currentUser.idOrNull());
         order.setRejectedAt(Instant.now());
         order.setRejectionReason(reason.trim());
-        return recordStatus(order, "Denied", reason.trim());
+        PurchaseOrder saved = recordStatus(order, "Denied", reason.trim());
+
+        announce(saved, NotificationRule.TriggerType.PURCHASE_ORDER_DENIED,
+                "%s was denied".formatted(label(saved)),
+                "%s denied the request %s raised.\n\nReason: %s"
+                        .formatted(actorName(), requesterName(saved), reason.trim()),
+                "once");
+        return saved;
     }
 
     @Transactional
@@ -273,7 +327,14 @@ public class PurchaseOrderService {
         }
 
         order.setStatus(PurchaseOrder.Status.CANCELLED);
-        return recordStatus(order, "Cancelled", blankToNull(reason));
+        PurchaseOrder saved = recordStatus(order, "Cancelled", blankToNull(reason));
+
+        announce(saved, NotificationRule.TriggerType.PURCHASE_ORDER_CANCELLED,
+                "%s was cancelled".formatted(label(saved)),
+                "%s cancelled it.%s".formatted(actorName(),
+                        blankToNull(reason) == null ? "" : "\n\nReason: " + reason.trim()),
+                "once");
+        return saved;
     }
 
     /**
@@ -343,6 +404,37 @@ public class PurchaseOrderService {
         audit.recordFieldChanges(AuditService.ENTITY_PURCHASE_ORDER, order.getId(), List.of(
                 AuditService.FieldChange.of("received", null,
                         "%d item(s) into %s".formatted(created.size(), location.getName()))));
+
+        // Re-read, because the trigger decided the new status: a delivery that
+        // completes an order is a different thing to announce than one that does
+        // not, and this application is not the one that works out which.
+        //
+        // Refreshed rather than fetched again. The order and its line items are
+        // already in this session, so asking the repository for them returns the
+        // very instances loaded before the trigger ran -- the status they carry
+        // is the status from the start of the request, and every delivery would
+        // be announced as a partial one.
+        entityManager.flush();
+        PurchaseOrder after = get(order.getId());
+        entityManager.refresh(after);
+        after.getLineItems().forEach(entityManager::refresh);
+        boolean complete = after.getStatus() == PurchaseOrder.Status.RECEIVED;
+        announce(after,
+                complete ? NotificationRule.TriggerType.PURCHASE_ORDER_RECEIVED
+                        : NotificationRule.TriggerType.PURCHASE_ORDER_PARTIALLY_RECEIVED,
+                complete ? "%s fully received".formatted(label(after))
+                        : "%s partly received".formatted(label(after)),
+                "%s booked %d item(s) into %s.%s".formatted(actorName(), created.size(),
+                        location.getName(),
+                        complete ? " That completes the order."
+                                : " %d of %d still outstanding.".formatted(
+                                        after.getLineItems().stream()
+                                                .mapToInt(PurchaseOrderLineItem::getQuantityOutstanding).sum(),
+                                        after.getLineItems().stream()
+                                                .mapToInt(PurchaseOrderLineItem::getQuantityOrdered).sum())),
+                // One per receipt, not one per order -- a second delivery is a
+                // second thing to hear about.
+                String.valueOf(savedReceipt.getId()));
         return savedReceipt;
     }
 

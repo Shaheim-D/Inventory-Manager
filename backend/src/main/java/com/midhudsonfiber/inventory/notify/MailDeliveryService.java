@@ -112,6 +112,23 @@ public class MailDeliveryService {
         senderFor(config).send(message);
     }
 
+    /**
+     * One message covering several notifications. Throws rather than swallowing,
+     * so the digest job can mark every row it was carrying as failed instead of
+     * quietly recording them as sent.
+     */
+    public void sendDigest(String to, String subject, String body) throws Exception {
+        MailSettings config = current();
+        if (!config.isUsable()) throw new IllegalStateException("No mail relay is configured.");
+
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(config.getFromAddress());
+        message.setTo(to);
+        message.setSubject(subject);
+        message.setText(body);
+        senderFor(config).send(message);
+    }
+
     private JavaMailSenderImpl senderFor(MailSettings config) {
         JavaMailSenderImpl sender = new JavaMailSenderImpl();
         sender.setHost(config.getHost());

@@ -26,7 +26,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 import type { Location, LocationTypeOption, ReferenceEnums } from '../api/types';
 import { PageHeader } from '../components/PageHeader';
-import { locationOptions } from '../components/locationTree';
+import { locationOptions, locationOptionSx } from '../components/locationTree';
 import { useAuth } from '../auth/AuthContext';
 
 /** Reads better than the stored key, which is all the API deals in. */
@@ -275,16 +275,8 @@ export function LocationsPage() {
                   <MenuItem
                     key={option.location.id}
                     value={option.location.id}
-                    sx={{
-                      pl: 2 + option.depth * 2,
-                      color: option.depth > 0 ? 'text.secondary' : 'text.primary',
-                    }}
+                    sx={locationOptionSx(option.depth)}
                   >
-                    {option.depth > 0 && (
-                      <Box component="span" sx={{ mr: 1, opacity: 0.6 }}>
-                        –
-                      </Box>
-                    )}
                     {option.location.name}
                   </MenuItem>
                 ))}

@@ -20,6 +20,8 @@ public class NotificationLog {
         /** No relay is configured. Not a failure — in-app delivery still happened. */
         SKIPPED,
         PENDING,
+        /** Waiting for its rule's digest to come round. */
+        DEFERRED,
         SENT,
         FAILED
     }

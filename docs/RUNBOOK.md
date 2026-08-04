@@ -171,5 +171,32 @@ gates the field, then confirm the user's role holds it. A restricted field is
 absent from the API response entirely, so "the field renders blank" is not a
 symptom this system produces — if a field looks blank, it is genuinely empty.
 
+**Nobody is being notified about something.** Three things have to line up, in
+this order. There must be an active rule for that trigger — **Settings →
+Notification Rules**, where every seeded rule beyond the three defaults ships
+switched off deliberately, so turning notifications on is a decision somebody
+made rather than a surprise. The rule must have a target that resolves to
+somebody: a role target is resolved to its members when the notification is
+sent, so a role nobody currently holds reaches nobody. And the notification
+itself always lands in the recipient's notification centre — if it is there but
+no email arrived, the problem is the relay, not the rule.
+
+**Email is not arriving but the notifications are.** Check **Settings → Email
+Delivery** first: with no relay configured every notification is recorded as
+*skipped*, which is not a failure. With one configured, a notification that
+failed to send says so on the notification itself, with the reason. A rule set
+to a summary rather than "as it happens" holds its email for the digest — the
+in-app notice still appeared immediately, which is why the two can look out of
+step.
+
+**The scheduled checks.** Two sweeps run hourly and decide for themselves
+whether they have anything new to say: warranty expiry, and bulk stock overdue
+for verification. Both can be run on demand from **Settings → Notification
+Rules** rather than waiting — running either twice is harmless, because
+de-duplication means the second run raises nothing. Their schedules are
+`app.notifications.warranty-cron`, `app.notifications.staleness-cron` and
+`app.notifications.digest-cron` (the email digest), all overridable as
+environment variables in the usual Spring way.
+
 **Logs.** `docker compose logs -f app`. Everything goes to stdout/stderr; there
 is deliberately no log aggregation stack at this size.
