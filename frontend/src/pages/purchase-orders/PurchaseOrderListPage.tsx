@@ -6,25 +6,24 @@ import {
   LinearProgress,
   MenuItem,
   Paper,
-  Tab,
-  Tabs,
+  Stack,
   TextField,
   Tooltip,
+  Typography,
 } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import type { PurchaseOrder } from '../../api/types';
 import { EntityTable, type Column } from '../../components/EntityTable';
-import { PageHeader } from '../../components/PageHeader';
 import { useAuth } from '../../auth/AuthContext';
 import { ALL_STATUSES, money, orderLabel, statusLabel, StatusChip } from './shared';
 
 /**
- * My Requests and All Orders are one screen with a scope switch rather than two
- * routes, because they answer the same question from two distances and the
- * columns do not differ. The server does the filtering either way — and it never
- * shows anyone else's draft, so All Orders is genuinely everything visible
- * rather than everything that exists.
+ * My Requests and All Orders are one view with a scope switch rather than two,
+ * because they answer the same question from two distances and the columns do
+ * not differ. The server does the filtering either way — and it never shows
+ * anyone else's draft, so All Orders is everything visible rather than
+ * everything that exists.
  */
 export function PurchaseOrderListPage() {
   const navigate = useNavigate();
@@ -54,8 +53,7 @@ export function PurchaseOrderListPage() {
     { header: 'Status', render: (order) => <StatusChip status={order.status} /> },
     {
       header: 'Vendor',
-      secondary: true,
-      render: (order) => (order.orderNumber ? (order.vendor ?? '—') : 'Not yet placed'),
+      render: (order) => order.vendor ?? '—',
     },
     { header: 'Requested by', render: (order) => order.requestedBy ?? '—' },
     {
@@ -89,24 +87,40 @@ export function PurchaseOrderListPage() {
 
   return (
     <>
-      <PageHeader
-        title="Purchase orders"
-        subtitle={orders.data ? `${rows.length} order${rows.length === 1 ? '' : 's'}` : 'Loading…'}
-        actions={
-          has('purchase_order:create') ? (
-            <Button variant="contained" onClick={() => navigate('/purchase-orders/new')}>
-              New request
-            </Button>
-          ) : undefined
-        }
-      />
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        justifyContent="space-between"
+        alignItems={{ xs: 'stretch', sm: 'center' }}
+        spacing={2}
+        sx={{ mb: 2 }}
+      >
+        <Typography variant="body2" color="text.secondary">
+          {orders.data ? `${rows.length} order${rows.length === 1 ? '' : 's'}` : 'Loading…'}
+        </Typography>
+        {has('purchase_order:create') && (
+          <Button variant="contained" onClick={() => navigate('/purchase-orders/new')}>
+            New request
+          </Button>
+        )}
+      </Stack>
 
-      <Paper variant="outlined" sx={{ mb: 2 }}>
-        <Tabs value={mine ? 0 : 1} onChange={(_, next) => setMine(next === 0)}>
-          <Tab label="My requests" />
-          <Tab label="All orders" />
-        </Tabs>
-        <Grid container spacing={2} sx={{ p: 2 }}>
+      {/* Scope sits beside status as a filter rather than as a second row of
+          tabs. The page already has one tab bar; a second one under it reads as
+          a hierarchy that is not there — these are two ways of narrowing the
+          same list. */}
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Grid container spacing={2}>
+          <Grid item xs={12} sm={6} md={4}>
+            <TextField
+              select
+              label="Show"
+              value={mine ? 'mine' : 'all'}
+              onChange={(event) => setMine(event.target.value === 'mine')}
+            >
+              <MenuItem value="mine">My requests</MenuItem>
+              <MenuItem value="all">All orders</MenuItem>
+            </TextField>
+          </Grid>
           <Grid item xs={12} sm={6} md={4}>
             <TextField
               select
@@ -138,7 +152,22 @@ export function PurchaseOrderListPage() {
               ? 'You have not raised any purchase requests yet.'
               : 'No purchase orders match this filter.'
           }
-          onRowClick={(order) => navigate(`/purchase-orders/${order.id}`)}
+          onRowClick={(order) => navigate(`/purchase-orders/order/${order.id}`)}
+          rowActions={(order) => (
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              {/* The point at which somebody names what arrived: straight from
+                  the order to the rows it created, ready to have serials and
+                  asset tags put on them. */}
+              {order.quantityReceived > 0 && has('asset:read') && (
+                <Button size="small" onClick={() => navigate(`/assets?purchaseOrderId=${order.id}`)}>
+                  Show items
+                </Button>
+              )}
+              <Button size="small" onClick={() => navigate(`/purchase-orders/order/${order.id}`)}>
+                Open
+              </Button>
+            </Stack>
+          )}
         />
       </Paper>
     </>

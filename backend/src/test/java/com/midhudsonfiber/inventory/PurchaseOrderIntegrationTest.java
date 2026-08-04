@@ -63,9 +63,10 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
         assertThat(get(admin, "/api/purchase-orders/" + orderId).getBody().get("status").asText())
                 .isEqualTo("SUBMITTED");
 
-        post(admin, "/api/purchase-orders/" + orderId + "/approve", """
-                {"orderNumber":"PO-9001","vendor":"Ingram Micro"}
-                """);
+        post(admin, "/api/purchase-orders/" + orderId + "/approve", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/purchase", """
+                {"orderNumber":"%s","vendor":"Ingram Micro"}
+                """.formatted("PO-9001"));
         JsonNode ordered = get(admin, "/api/purchase-orders/" + orderId).getBody();
         assertThat(ordered.get("status").asText()).isEqualTo("ORDERED");
         assertThat(ordered.get("orderNumber").asText()).isEqualTo("PO-9001");
@@ -102,7 +103,8 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
         Long orderId = draft(admin, description, 5, "Switch");
 
         post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
-        post(admin, "/api/purchase-orders/" + orderId + "/approve", """
+        post(admin, "/api/purchase-orders/" + orderId + "/approve", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/purchase", """
                 {"orderNumber":"%s","vendor":"CDW"}
                 """.formatted(unique("PO")));
         Long lineItemId = get(admin, "/api/purchase-orders/" + orderId).getBody()
@@ -130,7 +132,8 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
         Long orderId = draft(admin, unique("SFP+ 10G LR"), 50, "SFP/Transceiver Module");
 
         post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
-        post(admin, "/api/purchase-orders/" + orderId + "/approve", """
+        post(admin, "/api/purchase-orders/" + orderId + "/approve", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/purchase", """
                 {"orderNumber":"%s","vendor":"CDW"}
                 """.formatted(unique("PO")));
         Long lineItemId = get(admin, "/api/purchase-orders/" + orderId).getBody()
@@ -159,7 +162,8 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
         Long orderId = draft(admin, unique("fibre spool"), 12, "Fiber Cable");
 
         post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
-        post(admin, "/api/purchase-orders/" + orderId + "/approve", """
+        post(admin, "/api/purchase-orders/" + orderId + "/approve", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/purchase", """
                 {"orderNumber":"%s"}
                 """.formatted(unique("PO")));
         Long lineItemId = get(admin, "/api/purchase-orders/" + orderId).getBody()
@@ -185,7 +189,8 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
         Long orderId = draft(admin, unique("router"), 2, "Router");
 
         post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
-        post(admin, "/api/purchase-orders/" + orderId + "/approve", """
+        post(admin, "/api/purchase-orders/" + orderId + "/approve", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/purchase", """
                 {"orderNumber":"%s"}
                 """.formatted(unique("PO")));
         Long lineItemId = get(admin, "/api/purchase-orders/" + orderId).getBody()
@@ -224,17 +229,61 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("approving without an order number is refused")
-    void approvalNeedsAnOrderNumber() {
+    @DisplayName("approving asks for nothing; buying needs an order number")
+    void purchasingNeedsAnOrderNumber() {
         Session admin = admin();
         Long orderId = draft(admin, unique("router"), 1, "Router");
         post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
 
-        // A CHECK constraint requires it for any status past this point, so
-        // catching it here is the difference between an explanation and a 500.
-        assertThat(post(admin, "/api/purchase-orders/" + orderId + "/approve", """
+        // Approving is agreeing to it. There is nothing to number yet, and
+        // demanding one here only ever meant somebody invented it.
+        assertThat(post(admin, "/api/purchase-orders/" + orderId + "/approve", "{}").getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+        JsonNode approved = get(admin, "/api/purchase-orders/" + orderId).getBody();
+        assertThat(approved.get("status").asText()).isEqualTo("APPROVED");
+        assertThat(approved.get("orderNumber").isNull()).isTrue();
+        assertThat(approved.get("approvedBy").asText()).isEqualTo("admin");
+
+        // Buying it is where the number becomes real. A CHECK constraint
+        // requires it from here on, so catching it is the difference between an
+        // explanation and a 500.
+        assertThat(post(admin, "/api/purchase-orders/" + orderId + "/purchase", """
                 {"vendor":"Ingram Micro"}
                 """).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    @DisplayName("buying stamps the date every asset it delivers is purchased on")
+    void purchasingSetsThePurchaseDate() {
+        Session admin = admin();
+        Long locationId = newLocation(admin);
+        Long orderId = draft(admin, unique("router"), 1, "Router");
+        post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/approve", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/purchase", """
+                {"orderNumber":"%s","vendor":"CDW","purchaseLink":"https://example.test/switch"}
+                """.formatted(unique("PO")));
+
+        Long lineItemId = get(admin, "/api/purchase-orders/" + orderId).getBody()
+                .get("lineItems").get(0).get("id").asLong();
+        post(admin, "/api/purchase-orders/" + orderId + "/receipts", """
+                {"locationId":%d,"lines":[{"lineItemId":%d,"quantityReceived":1}]}
+                """.formatted(locationId, lineItemId));
+
+        // The day it was bought, not the day the box turned up -- a warranty
+        // runs from the former.
+        assertThat(jdbc.queryForObject("""
+                SELECT purchase_date = (SELECT ordered_at::date FROM purchase_order WHERE id = ?)
+                FROM asset WHERE purchase_order_id = ?
+                """, Boolean.class, orderId, orderId)).isTrue();
+        assertThat(jdbc.queryForObject(
+                "SELECT purchase_link FROM asset WHERE purchase_order_id = ?", String.class, orderId))
+                .isEqualTo("https://example.test/switch");
+        // The order's number, under the field the UI now calls "Order number".
+        assertThat(jdbc.queryForObject("""
+                SELECT invoice_number = (SELECT order_number FROM purchase_order WHERE id = ?)
+                FROM asset WHERE purchase_order_id = ?
+                """, Boolean.class, orderId, orderId)).isTrue();
     }
 
     @Test
@@ -243,12 +292,17 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
         Session admin = admin();
         Long orderId = draft(admin, unique("router"), 1, "Router");
 
-        // Straight from DRAFT to ORDERED would bypass the approval entirely.
-        assertThat(post(admin, "/api/purchase-orders/" + orderId + "/approve", """
+        // Straight from DRAFT to APPROVED would bypass submitting it.
+        assertThat(post(admin, "/api/purchase-orders/" + orderId + "/approve", "{}").getStatusCode())
+                .isEqualTo(HttpStatus.BAD_REQUEST);
+
+        // And buying something nobody has approved.
+        post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
+        assertThat(post(admin, "/api/purchase-orders/" + orderId + "/purchase", """
                 {"orderNumber":"PO-SKIP"}
                 """).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
 
-        // And receiving against something never ordered.
+        // And receiving against something never bought.
         assertThat(post(admin, "/api/purchase-orders/" + orderId + "/receipts", """
                 {"locationId":%d,"lines":[]}
                 """.formatted(newLocation(admin))).getStatusCode())
@@ -308,12 +362,13 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
 
         // An Asset Manager runs the inventory but holds no purchasing authority,
         // which is the whole reason Purchaser is a separate role.
-        assertThat(post(assetManager, "/api/purchase-orders/" + orderId + "/approve", """
-                {"orderNumber":"PO-NOPE"}
-                """).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(post(assetManager, "/api/purchase-orders/" + orderId + "/approve", "{}")
+                .getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
 
         Session purchaser = userWithRole(admin, "Purchaser");
-        assertThat(post(purchaser, "/api/purchase-orders/" + orderId + "/approve", """
+        assertThat(post(purchaser, "/api/purchase-orders/" + orderId + "/approve", "{}")
+                .getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(post(purchaser, "/api/purchase-orders/" + orderId + "/purchase", """
                 {"orderNumber":"%s","vendor":"CDW"}
                 """.formatted(unique("PO"))).getStatusCode()).isEqualTo(HttpStatus.OK);
     }
@@ -327,7 +382,8 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
         Long orderId = draft(admin, unique("router"), 1, "Router");
 
         post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
-        post(purchaser, "/api/purchase-orders/" + orderId + "/approve", """
+        post(purchaser, "/api/purchase-orders/" + orderId + "/approve", "{}");
+        post(purchaser, "/api/purchase-orders/" + orderId + "/purchase", """
                 {"orderNumber":"%s"}
                 """.formatted(unique("PO")));
         Long lineItemId = get(admin, "/api/purchase-orders/" + orderId).getBody()
@@ -368,7 +424,8 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
         Long orderId = draft(admin, unique("router"), 1, "Router");
 
         post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
-        post(admin, "/api/purchase-orders/" + orderId + "/approve", """
+        post(admin, "/api/purchase-orders/" + orderId + "/approve", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/purchase", """
                 {"orderNumber":"%s","vendor":"Ingram Micro"}
                 """.formatted(unique("PO")));
         Long lineItemId = get(admin, "/api/purchase-orders/" + orderId).getBody()
@@ -392,15 +449,16 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("units are numbered across the whole line, not per delivery")
-    void splitDeliveriesNumberAssetsContinuously() {
+    @DisplayName("split deliveries produce plainly named assets, not numbered ones")
+    void splitDeliveriesProducePlainNames() {
         Session admin = admin();
         Long locationId = newLocation(admin);
         String description = unique("core switch");
         Long orderId = draft(admin, description, 4, "Switch");
 
         post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
-        post(admin, "/api/purchase-orders/" + orderId + "/approve", """
+        post(admin, "/api/purchase-orders/" + orderId + "/approve", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/purchase", """
                 {"orderNumber":"%s","vendor":"CDW"}
                 """.formatted(unique("PO")));
         Long lineItemId = get(admin, "/api/purchase-orders/" + orderId).getBody()
@@ -413,15 +471,55 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
                     """.formatted(locationId, lineItemId));
         }
 
-        // Numbering per delivery gave "1 of 2" and "2 of 2" twice over, so a
-        // warehouse holding four boxes had two pairs it could not tell apart.
+        // Four identical switches get four identical names. The counter they
+        // used to carry read like a distinguishing fact and was not one -- what
+        // actually tells them apart is the serial and asset tag a human puts on
+        // them afterwards.
         assertThat(jdbc.queryForList(
-                "SELECT name FROM asset WHERE purchase_order_id = ? ORDER BY name", String.class, orderId))
-                .containsExactly(
-                        description + " (1 of 4)",
-                        description + " (2 of 4)",
-                        description + " (3 of 4)",
-                        description + " (4 of 4)");
+                "SELECT name FROM asset WHERE purchase_order_id = ?", String.class, orderId))
+                .hasSize(4)
+                .containsOnly(description);
+    }
+
+    @Test
+    @DisplayName("a line naming a catalogue device names its assets after it")
+    void catalogueDevicesNameTheirAssets() {
+        Session admin = admin();
+        Long locationId = newLocation(admin);
+        String model = unique("EX4400");
+        Long deviceId = post(admin, "/api/device-models", """
+                {"manufacturer":"Juniper","model":"%s","categoryId":%d,"active":true}
+                """.formatted(model, categoryId("Switch"))).getBody().get("id").asLong();
+
+        Long orderId = post(admin, "/api/purchase-orders", """
+                {"justification":"%s","lineItems":[
+                  {"categoryId":%d,"deviceModelId":%d,"description":"whatever the requester typed",
+                   "quantityOrdered":2,"unitPrice":1800.00}]}
+                """.formatted(unique("need"), categoryId("Switch"), deviceId))
+                .getBody().get("id").asLong();
+
+        post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/approve", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/purchase", """
+                {"orderNumber":"%s","vendor":"CDW"}
+                """.formatted(unique("PO")));
+        Long lineItemId = get(admin, "/api/purchase-orders/" + orderId).getBody()
+                .get("lineItems").get(0).get("id").asLong();
+        post(admin, "/api/purchase-orders/" + orderId + "/receipts", """
+                {"locationId":%d,"lines":[{"lineItemId":%d,"quantityReceived":2}]}
+                """.formatted(locationId, lineItemId));
+
+        // The catalogue's name wins over the prose on the line: an asset called
+        // "Juniper - EX4400" is a thing, "whatever the requester typed" is not.
+        assertThat(jdbc.queryForList(
+                "SELECT name FROM asset WHERE purchase_order_id = ?", String.class, orderId))
+                .containsOnly("Juniper - " + model);
+        assertThat(jdbc.queryForObject(
+                "SELECT DISTINCT manufacturer FROM asset WHERE purchase_order_id = ?",
+                String.class, orderId)).isEqualTo("Juniper");
+        assertThat(jdbc.queryForObject(
+                "SELECT DISTINCT model FROM asset WHERE purchase_order_id = ?",
+                String.class, orderId)).isEqualTo(model);
     }
 
     @Test
@@ -459,9 +557,10 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
 
         for (Long id : new Long[] { orderId, otherOrderId }) {
             post(admin, "/api/purchase-orders/" + id + "/submit", "{}");
-            post(admin, "/api/purchase-orders/" + id + "/approve", """
-                    {"orderNumber":"%s","vendor":"CDW"}
-                    """.formatted(unique("PO")));
+            post(admin, "/api/purchase-orders/" + id + "/approve", "{}");
+        post(admin, "/api/purchase-orders/" + id + "/purchase", """
+                {"orderNumber":"%s","vendor":"CDW"}
+                """.formatted(unique("PO")));
             Long lineItemId = get(admin, "/api/purchase-orders/" + id).getBody()
                     .get("lineItems").get(0).get("id").asLong();
             post(admin, "/api/purchase-orders/" + id + "/receipts", """
@@ -482,7 +581,8 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
         Session admin = admin();
         Long orderId = draft(admin, unique("history router"), 1, "Router");
         post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
-        post(admin, "/api/purchase-orders/" + orderId + "/approve", """
+        post(admin, "/api/purchase-orders/" + orderId + "/approve", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/purchase", """
                 {"orderNumber":"%s","vendor":"CDW"}
                 """.formatted(unique("PO")));
 

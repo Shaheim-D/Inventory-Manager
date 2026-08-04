@@ -27,8 +27,6 @@ import InventoryIcon from '@mui/icons-material/Inventory2';
 import RouterIcon from '@mui/icons-material/Router';
 import PlaceIcon from '@mui/icons-material/Place';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
-import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
-import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import FactCheckIcon from '@mui/icons-material/FactCheck';
 import HistoryIcon from '@mui/icons-material/History';
 import CategoryIcon from '@mui/icons-material/Category';
@@ -90,20 +88,6 @@ const NAV: NavSection[] = [
         permissions: ['purchase_order:view'],
         createTo: '/purchase-orders/new',
         createPermissions: ['purchase_order:create'],
-      },
-      {
-        // Its own item rather than a tab inside Purchase Orders: a purchaser's
-        // queue is a place they go to work, not a view of the order list.
-        label: 'Approvals',
-        to: '/purchase-orders/approvals',
-        icon: <AssignmentTurnedInIcon />,
-        permissions: ['purchase_order:approve'],
-      },
-      {
-        label: 'Receiving',
-        to: '/purchase-orders/receiving',
-        icon: <LocalShippingIcon />,
-        permissions: ['purchase_order:receive'],
       },
       {
         label: 'Inventory Verification',

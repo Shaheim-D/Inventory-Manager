@@ -16,7 +16,6 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import type { PurchaseOrder } from '../../api/types';
-import { PageHeader } from '../../components/PageHeader';
 import { ReceiveDialog } from './ReceiveDialog';
 import { orderLabel, RECEIVABLE, StatusChip } from './shared';
 
@@ -48,10 +47,9 @@ export function ReceivingPage() {
 
   return (
     <>
-      <PageHeader
-        title="Receiving"
-        subtitle="Orders placed with a vendor and still waiting on some or all of their delivery."
-      />
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Orders that have been bought and are still waiting on some or all of their delivery.
+      </Typography>
 
       {orders.isLoading && <LinearProgress />}
 
@@ -88,7 +86,7 @@ export function ReceivingPage() {
                   </Box>
 
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                    <Button size="large" onClick={() => navigate(`/purchase-orders/${order.id}`)}>
+                    <Button size="large" onClick={() => navigate(`/purchase-orders/order/${order.id}`)}>
                       Details
                     </Button>
                     <Button size="large" variant="contained" onClick={() => setReceiving(order)}>

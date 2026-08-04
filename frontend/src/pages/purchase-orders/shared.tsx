@@ -13,8 +13,10 @@ const STATUS: Record<
 > = {
   DRAFT: { label: 'Draft', color: 'default' },
   SUBMITTED: { label: 'Awaiting approval', color: 'warning' },
-  REJECTED: { label: 'Rejected', color: 'error' },
-  ORDERED: { label: 'Ordered', color: 'info' },
+  APPROVED: { label: 'Approved', color: 'info' },
+  REJECTED: { label: 'Denied', color: 'error' },
+  // Stored as ORDERED since V3; "Purchased" is what it is called out loud.
+  ORDERED: { label: 'Purchased', color: 'info' },
   PARTIALLY_RECEIVED: { label: 'Partially received', color: 'primary' },
   RECEIVED: { label: 'Received', color: 'success' },
   CANCELLED: { label: 'Cancelled', color: 'default' },
@@ -33,6 +35,7 @@ export function statusLabel(status: PurchaseOrderStatus): string {
 export const ALL_STATUSES: PurchaseOrderStatus[] = [
   'DRAFT',
   'SUBMITTED',
+  'APPROVED',
   'ORDERED',
   'PARTIALLY_RECEIVED',
   'RECEIVED',
@@ -40,8 +43,11 @@ export const ALL_STATUSES: PurchaseOrderStatus[] = [
   'CANCELLED',
 ];
 
-/** An order is only receivable once it has actually been placed with a vendor. */
+/** An order is only receivable once it has actually been bought. */
 export const RECEIVABLE: PurchaseOrderStatus[] = ['ORDERED', 'PARTIALLY_RECEIVED'];
+
+/** Agreed to, but not bought yet — the purchasing queue's contents. */
+export const AWAITING_PURCHASE: PurchaseOrderStatus[] = ['APPROVED'];
 
 export function money(value: number | null | undefined): string {
   if (value == null) return '—';

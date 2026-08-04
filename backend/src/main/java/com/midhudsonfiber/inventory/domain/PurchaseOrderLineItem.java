@@ -28,6 +28,15 @@ public class PurchaseOrderLineItem {
     @JoinColumn(name = "asset_category_id")
     private AssetCategory category;
 
+    /**
+     * The catalogue entry being bought, when it is a known one. Optional —
+     * buying something not in the catalogue is normal — but when present it is
+     * what names the received asset and fills its manufacturer and model.
+     */
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "device_model_id")
+    private DeviceModel deviceModel;
+
     @Column(nullable = false)
     private String description;
 
@@ -53,6 +62,8 @@ public class PurchaseOrderLineItem {
     public void setPurchaseOrder(PurchaseOrder purchaseOrder) { this.purchaseOrder = purchaseOrder; }
     public AssetCategory getCategory() { return category; }
     public void setCategory(AssetCategory category) { this.category = category; }
+    public DeviceModel getDeviceModel() { return deviceModel; }
+    public void setDeviceModel(DeviceModel deviceModel) { this.deviceModel = deviceModel; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
     public int getQuantityOrdered() { return quantityOrdered; }

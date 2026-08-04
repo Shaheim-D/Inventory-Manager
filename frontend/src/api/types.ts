@@ -279,9 +279,11 @@ export interface ImportBatchDetail extends ImportBatch {
   rows: ImportRow[];
 }
 
+/** ORDERED is what the UI calls "Purchased"; the stored name is unchanged. */
 export type PurchaseOrderStatus =
   | 'DRAFT'
   | 'SUBMITTED'
+  | 'APPROVED'
   | 'REJECTED'
   | 'ORDERED'
   | 'PARTIALLY_RECEIVED'
@@ -299,6 +301,9 @@ export interface PurchaseOrderLineItem {
   categoryId: number;
   categoryName: string;
   serialized: boolean;
+  /** The catalogue entry being bought, when the line names one. */
+  deviceModelId: number | null;
+  deviceLabel: string | null;
   description: string;
   quantityOrdered: number;
   quantityReceived: number;
@@ -324,9 +329,13 @@ export interface PurchaseOrder {
   notes: string | null;
   orderNumber: string | null;
   vendor: string | null;
+  purchaseLink: string | null;
   requestedBy: string | null;
   requestedAt: string | null;
+  approvedBy: string | null;
+  approvedAt: string | null;
   orderedBy: string | null;
+  /** When it was bought — the purchase date of everything it delivers. */
   orderedAt: string | null;
   rejectedBy: string | null;
   rejectedAt: string | null;

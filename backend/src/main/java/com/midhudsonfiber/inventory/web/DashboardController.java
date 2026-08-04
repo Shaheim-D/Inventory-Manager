@@ -53,21 +53,6 @@ public class DashboardController {
             widgets.put("totalAssets", scalar("SELECT count(*) FROM asset WHERE is_deleted = FALSE"));
         }
 
-        if (currentUser.has(PermissionKeys.ASSET_WRITE)) {
-            // Live computed staleness count -- there is no staging table behind this,
-            // the asset row already is the truth (Staleness design §4).
-            widgets.put("staleAssetCount", scalar("""
-                    SELECT count(*)
-                    FROM asset a
-                    JOIN asset_category c ON c.id = a.asset_category_id
-                    JOIN lifecycle_state s ON s.id = a.lifecycle_state_id
-                    WHERE a.is_deleted = FALSE
-                      AND c.verification_interval_days IS NOT NULL
-                      AND s.name NOT IN ('Disposed', 'Retired')
-                      AND a.last_verified_at < now() - (c.verification_interval_days || ' days')::interval
-                    """));
-        }
-
         if (currentUser.has(PermissionKeys.ASSET_READ)) {
             widgets.put("warrantyExpiringSoon", scalar("""
                     SELECT count(*) FROM asset
@@ -84,18 +69,6 @@ public class DashboardController {
                     SELECT status, count(*) FROM purchase_order
                     WHERE status <> 'DRAFT'
                     GROUP BY status ORDER BY count(*) DESC
-                    """));
-        }
-
-        if (currentUser.has(PermissionKeys.PURCHASE_ORDER_APPROVE)) {
-            widgets.put("purchaseOrdersAwaitingApproval",
-                    scalar("SELECT count(*) FROM purchase_order WHERE status = 'SUBMITTED'"));
-        }
-
-        if (currentUser.has(PermissionKeys.PURCHASE_ORDER_RECEIVE)) {
-            widgets.put("purchaseOrdersAwaitingDelivery", scalar("""
-                    SELECT count(*) FROM purchase_order
-                    WHERE status IN ('ORDERED', 'PARTIALLY_RECEIVED')
                     """));
         }
 

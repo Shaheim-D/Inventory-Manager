@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import type { PurchaseOrder } from '../../api/types';
 import { EntityTable, type Column } from '../../components/EntityTable';
-import { PageHeader } from '../../components/PageHeader';
 import { ApproveDialog, ReasonDialog } from './OrderActionDialogs';
 import { money, when } from './shared';
 
@@ -66,10 +65,10 @@ export function ApprovalsPage() {
 
   return (
     <>
-      <PageHeader
-        title="Approvals"
-        subtitle="Purchase requests waiting on a decision. Approving one places it with the vendor."
-      />
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Requests waiting on a decision. Approving one sends it to Purchasing; denying it needs a
+        reason, which the person who asked will see.
+      </Typography>
 
       {orders.isFetching && !orders.isLoading && <LinearProgress sx={{ mb: 1 }} />}
 
@@ -80,14 +79,14 @@ export function ApprovalsPage() {
           rowKey={(order) => order.id}
           loading={orders.isLoading}
           emptyMessage="Nothing is waiting for approval."
-          onRowClick={(order) => navigate(`/purchase-orders/${order.id}`)}
+          onRowClick={(order) => navigate(`/purchase-orders/order/${order.id}`)}
           rowActions={(order) => (
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               <Button size="small" variant="contained" onClick={() => setApproving(order)}>
                 Approve
               </Button>
               <Button size="small" color="error" onClick={() => setRejecting(order)}>
-                Reject
+                Deny
               </Button>
             </Stack>
           )}

@@ -55,8 +55,6 @@ public class PurchaseOrderController {
         this.auditAssembler = auditAssembler;
     }
 
-    public record ApproveRequest(String orderNumber, String vendor) {}
-
     public record ReasonRequest(String reason) {}
 
     @GetMapping
@@ -96,14 +94,26 @@ public class PurchaseOrderController {
         return assembler.toView(orders.submit(id), decision(), null);
     }
 
-    /** Approving is placing the order, which is why it captures the order number. */
+    /** Agreeing to the request. Nothing has been bought at this point. */
     @PostMapping("/{id}/approve")
     @PreAuthorize("hasAuthority('" + PermissionKeys.PURCHASE_ORDER_APPROVE + "')")
-    public Map<String, Object> approve(@PathVariable Long id, @RequestBody ApproveRequest request) {
-        return assembler.toView(
-                orders.approve(id, request.orderNumber(), request.vendor()), decision(), null);
+    public Map<String, Object> approve(@PathVariable Long id) {
+        return assembler.toView(orders.approve(id), decision(), null);
     }
 
+    /**
+     * Recording that it has actually been bought. Separate from approving
+     * because the two happen days apart, and this is the one that produces an
+     * order number and a purchase date.
+     */
+    @PostMapping("/{id}/purchase")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.PURCHASE_ORDER_APPROVE + "')")
+    public Map<String, Object> purchase(@PathVariable Long id,
+                                        @RequestBody PurchaseOrderService.PurchaseRequest request) {
+        return assembler.toView(orders.purchase(id, request), decision(), null);
+    }
+
+    /** Denying it. The reason is required and visible to anyone who can see the order. */
     @PostMapping("/{id}/reject")
     @PreAuthorize("hasAuthority('" + PermissionKeys.PURCHASE_ORDER_APPROVE + "')")
     public Map<String, Object> reject(@PathVariable Long id, @RequestBody ReasonRequest request) {

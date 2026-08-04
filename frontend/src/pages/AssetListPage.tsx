@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Button, Chip, Grid, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Alert, Button, Chip, Grid, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Asset, Category, LifecycleState, Location, Page } from '../api/types';
@@ -12,6 +12,13 @@ import { useAuth } from '../auth/AuthContext';
 export function AssetListPage() {
   const navigate = useNavigate();
   const { has } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Arriving from an order's "Show items". It lives in the URL rather than in
+  // state so the link is shareable and the back button behaves, and it is
+  // deliberately not one of the dropdowns — it is a scope the page was opened
+  // in, not a filter someone chose from the toolbar.
+  const purchaseOrderId = searchParams.get('purchaseOrderId');
 
   const [importing, setImporting] = useState(false);
   const [q, setQ] = useState('');
@@ -51,6 +58,7 @@ export function AssetListPage() {
   if (categoryId) params.set('categoryId', categoryId);
   if (locationId) params.set('locationId', locationId);
   if (lifecycleStateId) params.set('lifecycleStateId', lifecycleStateId);
+  if (purchaseOrderId) params.set('purchaseOrderId', purchaseOrderId);
 
   const assets = useQuery({
     queryKey: ['assets', params.toString()],
@@ -135,6 +143,36 @@ export function AssetListPage() {
       />
 
       <ImportDialog open={importing} onClose={() => setImporting(false)} />
+
+      {purchaseOrderId && (
+        <Alert
+          severity="info"
+          sx={{ mb: 2 }}
+          action={
+            <Stack direction="row" spacing={1}>
+              <Button
+                size="small"
+                onClick={() => navigate(`/purchase-orders/order/${purchaseOrderId}`)}
+              >
+                Back to order
+              </Button>
+              <Button
+                size="small"
+                onClick={() => {
+                  const next = new URLSearchParams(searchParams);
+                  next.delete('purchaseOrderId');
+                  setSearchParams(next);
+                }}
+              >
+                Show all assets
+              </Button>
+            </Stack>
+          }
+        >
+          Showing only what purchase order #{purchaseOrderId} delivered. Open one to fill in its
+          serial number, asset tag and name.
+        </Alert>
+      )}
 
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
         <Grid container spacing={2}>
