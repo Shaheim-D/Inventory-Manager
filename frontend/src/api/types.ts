@@ -278,3 +278,67 @@ export interface ImportRow {
 export interface ImportBatchDetail extends ImportBatch {
   rows: ImportRow[];
 }
+
+export type PurchaseOrderStatus =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'REJECTED'
+  | 'ORDERED'
+  | 'PARTIALLY_RECEIVED'
+  | 'RECEIVED'
+  | 'CANCELLED';
+
+/**
+ * One line of an order. `unitPrice` and `lineTotal` are optional for the same
+ * reason the asset cost fields are: without `purchase_order:cost:view` the
+ * server does not send them at all, and the order total goes with them so the
+ * price cannot be recovered by division.
+ */
+export interface PurchaseOrderLineItem {
+  id: number;
+  categoryId: number;
+  categoryName: string;
+  serialized: boolean;
+  description: string;
+  quantityOrdered: number;
+  quantityReceived: number;
+  quantityOutstanding: number;
+  notes: string | null;
+  unitPrice?: number | null;
+  lineTotal?: number | null;
+}
+
+/** One delivery against an order: who unpacked it, when, and what was in it. */
+export interface PurchaseOrderReceipt {
+  id: number;
+  receivedBy: string | null;
+  receivedAt: string;
+  notes: string | null;
+  lines: { lineItemId: number; description: string; quantityReceived: number }[];
+}
+
+export interface PurchaseOrder {
+  id: number;
+  status: PurchaseOrderStatus;
+  justification: string | null;
+  notes: string | null;
+  orderNumber: string | null;
+  vendor: string | null;
+  requestedBy: string | null;
+  requestedAt: string | null;
+  orderedBy: string | null;
+  orderedAt: string | null;
+  rejectedBy: string | null;
+  rejectedAt: string | null;
+  rejectionReason: string | null;
+  createdAt: string | null;
+  lineItems: PurchaseOrderLineItem[];
+  quantityOrdered: number;
+  quantityReceived: number;
+  fullyReceived: boolean;
+  /** Absent without `purchase_order:cost:view`. */
+  total?: number;
+  /** Only on the detail response; the list omits receipts. */
+  receipts?: PurchaseOrderReceipt[];
+  hiddenFields: string[];
+}

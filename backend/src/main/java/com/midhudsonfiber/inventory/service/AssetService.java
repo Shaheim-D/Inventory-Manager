@@ -61,7 +61,7 @@ public class AssetService {
     static final String DEFAULT_INITIAL_STATE = "Available";
 
     public record AssetFilter(String q, Long categoryId, Long locationId, Long lifecycleStateId,
-                              Long assigneeUserId, Boolean includeDeleted) {}
+                              Long assigneeUserId, Long purchaseOrderId, Boolean includeDeleted) {}
 
     @Transactional(readOnly = true)
     public Page<Asset> search(AssetFilter filter, Pageable pageable) {
@@ -97,6 +97,12 @@ public class AssetService {
             }
             if (filter.assigneeUserId() != null) {
                 predicates.add(cb.equal(root.get("assigneeUserId"), filter.assigneeUserId()));
+            }
+            // What a purchase order actually turned into. The column is a plain
+            // id rather than a relation for the same reason audit rows are:
+            // deleting the order should not take the assets' provenance with it.
+            if (filter.purchaseOrderId() != null) {
+                predicates.add(cb.equal(root.get("purchaseOrderId"), filter.purchaseOrderId()));
             }
             if (hits != null) {
                 predicates.add(root.get("id").in(hits));

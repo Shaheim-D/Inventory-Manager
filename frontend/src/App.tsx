@@ -10,6 +10,11 @@ import { AssetFormPage } from './pages/AssetFormPage';
 import { LocationsPage } from './pages/LocationsPage';
 import { AuditPage } from './pages/AuditPage';
 import { VerificationPage } from './pages/VerificationPage';
+import { PurchaseOrderListPage } from './pages/purchase-orders/PurchaseOrderListPage';
+import { PurchaseOrderFormPage } from './pages/purchase-orders/PurchaseOrderFormPage';
+import { PurchaseOrderDetailPage } from './pages/purchase-orders/PurchaseOrderDetailPage';
+import { ApprovalsPage } from './pages/purchase-orders/ApprovalsPage';
+import { ReceivingPage } from './pages/purchase-orders/ReceivingPage';
 import { CategoriesPage } from './pages/admin/CategoriesPage';
 import { DevicesPage } from './pages/admin/DevicesPage';
 import { UsersPage } from './pages/admin/UsersPage';
@@ -40,6 +45,33 @@ export function App() {
         <Route path="/assets/new" element={guard(['asset:write'], <AssetFormPage />)} />
         <Route path="/assets/:id" element={guard(['asset:read'], <AssetDetailPage />)} />
         <Route path="/assets/:id/edit" element={guard(['asset:write'], <AssetFormPage />)} />
+
+        {/* The static segments are declared alongside `:id`; React Router ranks
+            them higher, so /purchase-orders/approvals is never read as an id. */}
+        <Route
+          path="/purchase-orders"
+          element={guard(['purchase_order:view'], <PurchaseOrderListPage />)}
+        />
+        <Route
+          path="/purchase-orders/new"
+          element={guard(['purchase_order:create'], <PurchaseOrderFormPage />)}
+        />
+        <Route
+          path="/purchase-orders/approvals"
+          element={guard(['purchase_order:approve'], <ApprovalsPage />)}
+        />
+        <Route
+          path="/purchase-orders/receiving"
+          element={guard(['purchase_order:receive'], <ReceivingPage />)}
+        />
+        <Route
+          path="/purchase-orders/:id"
+          element={guard(['purchase_order:view'], <PurchaseOrderDetailPage />)}
+        />
+        <Route
+          path="/purchase-orders/:id/edit"
+          element={guard(['purchase_order:create'], <PurchaseOrderFormPage />)}
+        />
 
         <Route path="/locations" element={guard(['location:read'], <LocationsPage />)} />
         <Route path="/verification" element={guard(['asset:write'], <VerificationPage />)} />

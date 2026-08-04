@@ -77,6 +77,28 @@ public class DashboardController {
                     """));
         }
 
+        if (currentUser.has(PermissionKeys.PURCHASE_ORDER_VIEW)) {
+            // Drafts are left out: they are somebody's unfinished sentence, and a
+            // breakdown that counts them reads as work in progress that isn't.
+            widgets.put("purchaseOrdersByStatus", rows("""
+                    SELECT status, count(*) FROM purchase_order
+                    WHERE status <> 'DRAFT'
+                    GROUP BY status ORDER BY count(*) DESC
+                    """));
+        }
+
+        if (currentUser.has(PermissionKeys.PURCHASE_ORDER_APPROVE)) {
+            widgets.put("purchaseOrdersAwaitingApproval",
+                    scalar("SELECT count(*) FROM purchase_order WHERE status = 'SUBMITTED'"));
+        }
+
+        if (currentUser.has(PermissionKeys.PURCHASE_ORDER_RECEIVE)) {
+            widgets.put("purchaseOrdersAwaitingDelivery", scalar("""
+                    SELECT count(*) FROM purchase_order
+                    WHERE status IN ('ORDERED', 'PARTIALLY_RECEIVED')
+                    """));
+        }
+
         if (currentUser.has(PermissionKeys.AUDIT_VIEW)) {
             widgets.put("recentAuditCount", scalar(
                     "SELECT count(*) FROM audit_event WHERE occurred_at > now() - INTERVAL '7 days'"));

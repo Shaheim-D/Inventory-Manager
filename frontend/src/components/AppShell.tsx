@@ -26,6 +26,9 @@ import DashboardIcon from '@mui/icons-material/SpaceDashboard';
 import InventoryIcon from '@mui/icons-material/Inventory2';
 import RouterIcon from '@mui/icons-material/Router';
 import PlaceIcon from '@mui/icons-material/Place';
+import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
+import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
+import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import FactCheckIcon from '@mui/icons-material/FactCheck';
 import HistoryIcon from '@mui/icons-material/History';
 import CategoryIcon from '@mui/icons-material/Category';
@@ -79,6 +82,28 @@ const NAV: NavSection[] = [
         permissions: ['location:read'],
         createTo: '/locations?new=1',
         createPermissions: ['location:write'],
+      },
+      {
+        label: 'Purchase Orders',
+        to: '/purchase-orders',
+        icon: <ShoppingCartIcon />,
+        permissions: ['purchase_order:view'],
+        createTo: '/purchase-orders/new',
+        createPermissions: ['purchase_order:create'],
+      },
+      {
+        // Its own item rather than a tab inside Purchase Orders: a purchaser's
+        // queue is a place they go to work, not a view of the order list.
+        label: 'Approvals',
+        to: '/purchase-orders/approvals',
+        icon: <AssignmentTurnedInIcon />,
+        permissions: ['purchase_order:approve'],
+      },
+      {
+        label: 'Receiving',
+        to: '/purchase-orders/receiving',
+        icon: <LocalShippingIcon />,
+        permissions: ['purchase_order:receive'],
       },
       {
         label: 'Inventory Verification',
@@ -148,8 +173,19 @@ export function AppShell() {
     items: section.items.filter((item) => hasAny(...item.permissions)),
   })).filter((section) => section.items.length > 0);
 
-  const isActive = (to: string) =>
-    to === '/' ? location.pathname === '/' : location.pathname.startsWith(to.split('?')[0]);
+  // Longest match wins, rather than every prefix lighting up. /purchase-orders
+  // is a real page and so is /purchase-orders/receiving; a plain startsWith
+  // would highlight both at once while standing on the second.
+  const activePath = sections
+    .flatMap((section) => section.items.map((item) => item.to.split('?')[0]))
+    .filter((path) =>
+      path === '/'
+        ? location.pathname === '/'
+        : location.pathname === path || location.pathname.startsWith(path + '/'),
+    )
+    .sort((a, b) => b.length - a.length)[0];
+
+  const isActive = (to: string) => to.split('?')[0] === activePath;
 
   const drawerContent = (
     <Box
