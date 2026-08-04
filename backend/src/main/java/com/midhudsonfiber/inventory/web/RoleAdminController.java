@@ -5,6 +5,7 @@ import com.midhudsonfiber.inventory.domain.*;
 import com.midhudsonfiber.inventory.repo.*;
 import com.midhudsonfiber.inventory.security.PermissionKeys;
 import com.midhudsonfiber.inventory.visibility.AssetViewAssembler;
+import com.midhudsonfiber.inventory.visibility.PurchaseOrderViewAssembler;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -120,11 +121,24 @@ public class RoleAdminController {
         return visibilityRules.findAll().stream().map(RoleAdminController::toView).toList();
     }
 
-    /** Core columns a rule may gate — the set the assembler actually consults. */
+    /**
+     * Core columns a rule may gate — the set the relevant assembler actually
+     * consults. Which set depends on what is being gated: an asset column and a
+     * purchase order line's unit price are gated by the same mechanism but by
+     * different code, and offering one list for both meant the purchase order
+     * rule could not be created at all.
+     */
     @GetMapping("/field-visibility-rules/gateable-core-fields")
     @PreAuthorize("hasAuthority('" + PermissionKeys.ROLE_MANAGE + "')")
-    public List<String> gateableCoreFields() {
-        return AssetViewAssembler.GATEABLE_CORE_FIELDS;
+    public List<String> gateableCoreFields(
+            @RequestParam(defaultValue = "ASSET") FieldVisibilityRule.EntityType entityType) {
+        return gateableFor(entityType);
+    }
+
+    private static List<String> gateableFor(FieldVisibilityRule.EntityType entityType) {
+        return entityType == FieldVisibilityRule.EntityType.PURCHASE_ORDER_LINE_ITEM
+                ? PurchaseOrderViewAssembler.GATEABLE_LINE_FIELDS
+                : AssetViewAssembler.GATEABLE_CORE_FIELDS;
     }
 
     @PostMapping("/field-visibility-rules")
@@ -137,9 +151,21 @@ public class RoleAdminController {
             throw new ApiExceptions.BadRequestException(
                     "A rule gates either a core field or a custom field — exactly one, not both.");
         }
-        if (hasCore && !AssetViewAssembler.GATEABLE_CORE_FIELDS.contains(request.coreFieldName())) {
+        // Checked against the set for the entity being gated. Checking every rule
+        // against the asset list meant the seeded purchase order cost rule could
+        // be deleted from the admin screen and never put back — the prices stayed
+        // visible to everyone from then on, with only SQL to undo it.
+        if (hasCore && !gateableFor(request.entityType()).contains(request.coreFieldName())) {
             throw new ApiExceptions.BadRequestException(
-                    "\"" + request.coreFieldName() + "\" is not a gateable core field.");
+                    "\"" + request.coreFieldName() + "\" is not a gateable field on "
+                            + request.entityType() + ".");
+        }
+        if (request.entityType() == FieldVisibilityRule.EntityType.PURCHASE_ORDER_LINE_ITEM
+                && request.assetCategoryId() != null) {
+            // Categories scope assets. A line item's price is gated globally or
+            // not at all, which is what the assembler asks the service for.
+            throw new ApiExceptions.BadRequestException(
+                    "A purchase order rule cannot be scoped to an asset category.");
         }
 
         FieldVisibilityRule rule = new FieldVisibilityRule();

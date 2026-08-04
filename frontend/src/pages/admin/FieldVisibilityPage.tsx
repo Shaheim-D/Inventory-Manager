@@ -126,12 +126,14 @@ function CreateRuleDialog({
   onCreated: () => void;
   onError: (message: string) => void;
 }) {
+  const [entityType, setEntityType] = useState<'ASSET' | 'PURCHASE_ORDER_LINE_ITEM'>('ASSET');
   const [kind, setKind] = useState<'CORE' | 'CUSTOM'>('CORE');
   const [coreFieldName, setCoreFieldName] = useState('');
   const [scopeCategoryId, setScopeCategoryId] = useState('');
   const [customCategoryId, setCustomCategoryId] = useState('');
   const [customFieldDefinitionId, setCustomFieldDefinitionId] = useState('');
   const [requiredPermissionId, setRequiredPermissionId] = useState('');
+  const onAsset = entityType === 'ASSET';
 
   const permissions = useQuery({
     queryKey: ['permissions'],
@@ -139,8 +141,11 @@ function CreateRuleDialog({
   });
   const categories = useQuery({ queryKey: ['categories'], queryFn: () => api.get<Category[]>('/api/categories') });
   const coreFields = useQuery({
-    queryKey: ['gateable-core-fields'],
-    queryFn: () => api.get<string[]>('/api/admin/field-visibility-rules/gateable-core-fields'),
+    queryKey: ['gateable-core-fields', entityType],
+    queryFn: () =>
+      api.get<string[]>(
+        `/api/admin/field-visibility-rules/gateable-core-fields?entityType=${entityType}`,
+      ),
   });
   const customFields = useQuery({
     queryKey: ['custom-fields-admin', customCategoryId],
@@ -152,11 +157,13 @@ function CreateRuleDialog({
   const create = useMutation({
     mutationFn: () =>
       api.post('/api/admin/field-visibility-rules', {
-        entityType: 'ASSET',
+        entityType,
         coreFieldName: kind === 'CORE' ? coreFieldName : null,
         customFieldDefinitionId: kind === 'CUSTOM' ? Number(customFieldDefinitionId) : null,
         requiredPermissionId: Number(requiredPermissionId),
-        assetCategoryId: kind === 'CORE' && scopeCategoryId ? Number(scopeCategoryId) : null,
+        // Categories scope assets; a line item's price is gated globally.
+        assetCategoryId:
+          onAsset && kind === 'CORE' && scopeCategoryId ? Number(scopeCategoryId) : null,
       }),
     onSuccess: onCreated,
     onError: (caught) => onError(caught instanceof ApiError ? caught.message : 'Could not create the rule.'),
@@ -171,15 +178,36 @@ function CreateRuleDialog({
       <DialogTitle>New field visibility rule</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
+          {/* Purchase order lines are gated by the same mechanism as assets but
+              by different code, so the field list depends on this. Without the
+              choice, the seeded rule hiding unit prices could be deleted here
+              and never recreated. */}
           <TextField
             select
-            label="What is being gated"
-            value={kind}
-            onChange={(event) => setKind(event.target.value as 'CORE' | 'CUSTOM')}
+            label="Where the field lives"
+            value={entityType}
+            onChange={(event) => {
+              setEntityType(event.target.value as 'ASSET' | 'PURCHASE_ORDER_LINE_ITEM');
+              setKind('CORE');
+              setCoreFieldName('');
+              setScopeCategoryId('');
+            }}
           >
-            <MenuItem value="CORE">A core asset column</MenuItem>
-            <MenuItem value="CUSTOM">A category's custom field</MenuItem>
+            <MenuItem value="ASSET">On an asset</MenuItem>
+            <MenuItem value="PURCHASE_ORDER_LINE_ITEM">On a purchase order line</MenuItem>
           </TextField>
+
+          {onAsset && (
+            <TextField
+              select
+              label="What is being gated"
+              value={kind}
+              onChange={(event) => setKind(event.target.value as 'CORE' | 'CUSTOM')}
+            >
+              <MenuItem value="CORE">A core asset column</MenuItem>
+              <MenuItem value="CUSTOM">A category's custom field</MenuItem>
+            </TextField>
+          )}
 
           {kind === 'CORE' ? (
             <>
@@ -195,6 +223,7 @@ function CreateRuleDialog({
                   </MenuItem>
                 ))}
               </TextField>
+              {onAsset && (
               <TextField
                 select
                 label="Scope"
@@ -209,6 +238,7 @@ function CreateRuleDialog({
                   </MenuItem>
                 ))}
               </TextField>
+              )}
             </>
           ) : (
             <>
