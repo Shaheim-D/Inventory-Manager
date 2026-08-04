@@ -2,6 +2,7 @@ package com.midhudsonfiber.inventory.service;
 
 import com.midhudsonfiber.inventory.audit.AuditService;
 import com.midhudsonfiber.inventory.domain.*;
+import com.midhudsonfiber.inventory.notify.NotificationService;
 import com.midhudsonfiber.inventory.repo.*;
 import com.midhudsonfiber.inventory.security.CurrentUser;
 import com.midhudsonfiber.inventory.security.PermissionKeys;
@@ -53,6 +54,8 @@ public class PurchaseOrderService {
     private final LifecycleStateRepository lifecycleStates;
     private final AssetRepository assets;
     private final AuditService audit;
+    private final NotificationService notifications;
+    private final AppUserRepository users;
     private final CurrentUser currentUser;
 
     public PurchaseOrderService(PurchaseOrderRepository orders,
@@ -64,6 +67,8 @@ public class PurchaseOrderService {
                                 LifecycleStateRepository lifecycleStates,
                                 AssetRepository assets,
                                 AuditService audit,
+                                NotificationService notifications,
+                                AppUserRepository users,
                                 CurrentUser currentUser) {
         this.orders = orders;
         this.lineItems = lineItems;
@@ -74,6 +79,8 @@ public class PurchaseOrderService {
         this.lifecycleStates = lifecycleStates;
         this.assets = assets;
         this.audit = audit;
+        this.notifications = notifications;
+        this.users = users;
         this.currentUser = currentUser;
     }
 
@@ -156,7 +163,36 @@ public class PurchaseOrderService {
 
         order.setStatus(PurchaseOrder.Status.SUBMITTED);
         order.setRequestedAt(Instant.now());
-        return recordStatus(order, "Submitted for approval", null);
+        PurchaseOrder saved = recordStatus(order, "Submitted for approval", null);
+
+        // Tell whoever the rule says approves these. Published in its own
+        // transaction and swallowing nothing of its own, so a notification
+        // problem cannot undo the submission -- the point of this call is the
+        // request being submitted, not the alert about it.
+        notifications.publish(new NotificationService.Event(
+                NotificationRule.TriggerType.PURCHASE_ORDER_SUBMITTED,
+                null,
+                "Purchase request #%d awaiting approval".formatted(saved.getId()),
+                """
+                %s raised a request for %d line item(s).
+
+                %s"""
+                        .formatted(requesterName(saved), saved.getLineItems().size(),
+                                saved.getJustification() == null
+                                        ? "No justification was given."
+                                        : saved.getJustification()),
+                AuditService.ENTITY_PURCHASE_ORDER,
+                saved.getId(),
+                // Once per submission. Re-submitting after an edit is not
+                // possible -- a submitted order is no longer editable -- so the
+                // order's id alone is enough to identify this.
+                "PO_SUBMITTED:%d".formatted(saved.getId())));
+        return saved;
+    }
+
+    private String requesterName(PurchaseOrder order) {
+        return order.getRequestedBy() == null ? "Someone"
+                : users.findById(order.getRequestedBy()).map(AppUser::getUsername).orElse("Someone");
     }
 
     /**

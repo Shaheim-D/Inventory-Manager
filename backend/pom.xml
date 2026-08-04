@@ -43,6 +43,17 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
         <!--
+            Email delivery for notifications (Milestone 4). The relay is
+            configured in the application and stored in mail_settings, not in
+            properties, so MailDeliveryService builds its own sender from the
+            current row rather than relying on Spring Boot's auto-configured
+            one. The starter is here for JavaMail itself.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+        <!--
             LDAP / Active Directory authentication (Part 3). spring-security-ldap
             alone, not spring-boot-starter-data-ldap, because nothing here needs
             an LdapTemplate. See application.yml's autoconfigure.exclude for why

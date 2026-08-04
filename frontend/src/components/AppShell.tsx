@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link as RouterLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   AppBar,
+  Badge,
   Box,
   Divider,
   Drawer,
@@ -20,6 +21,7 @@ import {
   useTheme,
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
+import NotificationsIcon from '@mui/icons-material/Notifications';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import AddIcon from '@mui/icons-material/Add';
 import DashboardIcon from '@mui/icons-material/SpaceDashboard';
@@ -34,6 +36,10 @@ import PeopleIcon from '@mui/icons-material/People';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import PaletteIcon from '@mui/icons-material/Palette';
+import RuleIcon from '@mui/icons-material/Rule';
+import MailIcon from '@mui/icons-material/Email';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { useBranding } from '../theme/BrandingProvider';
 
@@ -135,6 +141,25 @@ const NAV: NavSection[] = [
       { label: 'Branding', to: '/admin/branding', icon: <PaletteIcon />, permissions: ['branding:manage'] },
     ],
   },
+  {
+    // Its own section rather than another Admin row: Admin is about who may do
+    // what and how records are shaped, while these are the system's own wiring.
+    heading: 'Settings',
+    items: [
+      {
+        label: 'Notification Rules',
+        to: '/settings/notification-rules',
+        icon: <RuleIcon />,
+        permissions: ['notification_rule:manage'],
+      },
+      {
+        label: 'Email Delivery',
+        to: '/settings/email',
+        icon: <MailIcon />,
+        permissions: ['notification_rule:manage'],
+      },
+    ],
+  },
 ];
 
 export function AppShell() {
@@ -147,6 +172,16 @@ export function AppShell() {
   const { organizationName, logoUrl } = useBranding();
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Polled rather than pushed. A badge that is a minute stale is fine, and it
+  // avoids a WebSocket for one integer -- the same reasoning Phase 9 §7 applies
+  // to import and sync progress.
+  const unread = useQuery({
+    queryKey: ['notifications-unread'],
+    queryFn: () => api.get<{ unread: number }>('/api/notifications/unread-count'),
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
 
   // A rail by default, expanding on hover, so content gets the width most of
   // the time without anyone having to click anything to get it back.
@@ -285,6 +320,14 @@ export function AppShell() {
               Inventory Manager
             </Typography>
           </Box>
+
+          <Tooltip title="Notifications">
+            <IconButton color="inherit" onClick={() => navigate('/notifications')}>
+              <Badge badgeContent={unread.data?.unread ?? 0} color="error" max={99}>
+                <NotificationsIcon />
+              </Badge>
+            </IconButton>
+          </Tooltip>
 
           <IconButton color="inherit" onClick={(event) => setAccountAnchor(event.currentTarget)}>
             <AccountCircleIcon />
