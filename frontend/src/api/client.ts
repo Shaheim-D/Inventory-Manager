@@ -81,6 +81,36 @@ export const api = {
     }
     return response.blob();
   },
+
+  /**
+   * A file produced from a request body rather than a URL — a report export,
+   * where what to generate is too big and too structured to be query string.
+   * Returns the blob and the name the server suggested for it.
+   */
+  postBlob: async (path: string, body: unknown): Promise<{ blob: Blob; filename: string | null }> => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const token = csrfToken();
+    if (token) headers['X-XSRF-TOKEN'] = token;
+
+    const response = await fetch(path, {
+      method: 'POST',
+      headers,
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      const payload = text ? safeParse(text) : undefined;
+      const message =
+        (payload && typeof payload === 'object' && 'error' in payload
+          ? String((payload as { error: unknown }).error)
+          : undefined) ?? `Request failed (${response.status})`;
+      throw new ApiError(response.status, message);
+    }
+    const disposition = response.headers.get('Content-Disposition') ?? '';
+    const match = disposition.match(/filename="?([^";]+)"?/);
+    return { blob: await response.blob(), filename: match ? match[1] : null };
+  },
 };
 
 /**

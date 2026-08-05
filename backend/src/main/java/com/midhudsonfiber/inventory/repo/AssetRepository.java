@@ -7,8 +7,22 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface AssetRepository extends JpaRepository<Asset, Long>, JpaSpecificationExecutor<Asset> {
+
+    /**
+     * The bulk row an earlier delivery of this same order line already created
+     * at this location, if there is one.
+     *
+     * <p>Scoped to the line rather than to "same category and place", so a
+     * second shipment against one line tops up the row the first shipment made
+     * instead of standing a second row of the same thing beside it — while a
+     * different order stays a different row, keeping each asset's vendor, price
+     * and order number the ones it was actually bought under.
+     */
+    Optional<Asset> findFirstByPurchaseOrderLineItemIdAndLocationIdAndDeletedFalse(
+            Long purchaseOrderLineItemId, Long locationId);
 
     /**
      * Serial numbers already in use by live assets, out of the ones offered.

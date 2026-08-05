@@ -18,6 +18,7 @@ import { PurchaseOrderFormPage } from './pages/purchase-orders/PurchaseOrderForm
 import { PurchaseOrderDetailPage } from './pages/purchase-orders/PurchaseOrderDetailPage';
 import { CategoriesPage } from './pages/admin/CategoriesPage';
 import { DevicesPage } from './pages/admin/DevicesPage';
+import { ReportsPage } from './pages/reports/ReportsPage';
 import { UsersPage } from './pages/admin/UsersPage';
 import { RolesPage } from './pages/admin/RolesPage';
 import { FieldVisibilityPage } from './pages/admin/FieldVisibilityPage';
@@ -72,6 +73,7 @@ export function App() {
 
         <Route path="/locations" element={guard(['location:read'], <LocationsPage />)} />
         <Route path="/verification" element={guard(['asset:write'], <VerificationPage />)} />
+        <Route path="/reports" element={guard(['report:view'], <ReportsPage />)} />
         <Route path="/audit" element={guard(['audit:view'], <AuditPage />)} />
         {/* No permission: these rows are addressed to the caller, and every
             query behind them is scoped to whoever is signed in. */}

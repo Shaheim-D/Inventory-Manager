@@ -205,5 +205,17 @@ de-duplication means the second run raises nothing. Their schedules are
 `app.notifications.digest-cron` (the email digest), all overridable as
 environment variables in the usual Spring way.
 
+**Somebody needs a list for a vendor.** **Reports → Device identification list**,
+filtered to the device types in question, then **CSV** (opens in Excel and Google
+Sheets) or **PDF** (for something meant to be read rather than worked with).
+Every report exports the same two ways.
+
+**Two people run the same report and get different columns.** Correct, and not a
+bug. Reports obey field visibility exactly like every other screen: the field
+picker only ever offers what that person is allowed to see, and a saved report
+is re-checked against whoever runs it rather than whoever saved it. If somebody
+needs a column they cannot see, the fix is the permission behind it under
+**Settings → Field Visibility Rules**, not the report.
+
 **Logs.** `docker compose logs -f app`. Everything goes to stdout/stderr; there
 is deliberately no log aggregation stack at this size.

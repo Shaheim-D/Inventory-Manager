@@ -78,6 +78,19 @@
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
+        <!--
+            PDF export (Phase 9 §4.14.5). PDFBox rather than iText or OpenPDF
+            because it is Apache-2.0 and this is a commercial delivery: an
+            AGPL/LGPL PDF writer would put a licence question on the client's
+            deployment for the sake of a table of text. CSV is the interchange
+            format; PDF is for the copy somebody hands to a fleet manager.
+        -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.3</version>
+        </dependency>
+
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
