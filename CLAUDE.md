@@ -38,7 +38,8 @@ null-check would pass against an implementation that leaks.
 Two consequences that are easy to miss:
 - Anything that *lists fields* is also a leak surface. The custom-field
   definitions endpoint filters by visibility for the same reason the values do.
-  The report builder's field picker will need the same treatment in Milestone 7.
+  The report builder's field picker is the same rule again: it never offers a
+  field the viewer cannot see, and `ReportService` refuses one asked for anyway.
 - A viewer who cannot see a field must not be able to erase it by submitting a
   form without it. `AssetService` keeps the stored value in that case.
 
@@ -85,15 +86,35 @@ commit and say why.
 - Anything list-shaped uses `EntityTable`, which carries the table/card
   responsive modes for free. Do not hand-roll a table.
 - Schema-driven forms use `DynamicFieldForm`.
-- Review queues (staleness now, plugin confirmations in Milestone 6) share one
+- Review queues — inventory verification and plugin confirmations — share one
   interaction pattern deliberately: a reviewer should not have to learn two.
 
 ## What is not built yet
 
-Milestones 3–7 are largely open — see the status table in `README.md`. The
-schema for Purchase Orders (V3), plugins (V8), and saved reports (V9) already
-exists and is validated; those milestones are application and UI layers on top of
-tables that are already there.
+Every feature milestone (0–7) is done — see the status table in `README.md`.
+What remains is Milestone 8, and specifically **the restore rehearsal, which has
+never been performed for real**. The roadmap calls that the single most
+important demonstrable in the whole project, because the tolerance for automatic
+Flyway-on-startup and forward-only migrations rests entirely on restore actually
+working when it is needed. Writing the runbook was not the same as executing it.
 
-Do not build the Plugin Framework early. Nothing else depends on it existing, and
-it was sequenced last among the feature milestones on purpose.
+## Plugins
+
+A plugin implements `SyncPlugin` and does nothing else — there is deliberately
+no method on that interface that writes anything. It reads its upstream and
+returns what it found; `PluginSyncOrchestrator` decides what that means. That is
+what makes the confirmation gate unbypassable rather than merely documented: a
+plugin may never write to an asset a human has not confirmed it against, and no
+plugin author has to remember it.
+
+Adding an integration is a new `@Component` implementing that interface. Nothing
+in the orchestrator, the schema, the API, or the admin screen changes — the
+configuration form is rendered from the schema the plugin declares. If you find
+yourself editing core code to add a plugin, the design has been broken.
+
+Secrets are never stored. A plugin's configuration holds the *name* of an
+environment variable and `SecretResolver` reads it when needed.
+
+Directory sync is not authentication. It changes role assignment and nothing
+else, and `PluginFrameworkIntegrationTest` asserts on every build that it leaves
+`password_hash`, `locked_until` and `failed_login_attempts` untouched.

@@ -15,6 +15,13 @@ spring:
       ddl-auto: validate
 
 app:
+  plugins:
+    # Spring's "never" cron. Plugins are exercised by triggering them directly;
+    # a background tick firing mid-suite would run whichever test's plugin
+    # happened to be enabled at that moment, against a fake server that test had
+    # already shut down -- flakiness with nothing to teach.
+    tick-cron: "-"
+
   bootstrap-admin:
     username: admin
     password: BootstrapAdmin123
@@ -23,3 +30,10 @@ logging:
   level:
     org.springframework.web: WARN
     org.hibernate: WARN
+
+# Secret references a plugin's configuration can name in tests. Plugins store
+# only the name of a variable; these are what those names resolve to here, the
+# same way an environment variable would in a deployment.
+TEST_ZABBIX_TOKEN: test-zabbix-token
+TEST_NETBOX_TOKEN: test-netbox-token
+TEST_BIND_PASSWORD: test-bind-password
