@@ -14,6 +14,7 @@ import {
   Collapse,
   Menu,
   MenuItem,
+  Switch,
   Toolbar,
   Tooltip,
   Typography,
@@ -43,6 +44,10 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
 import MailIcon from '@mui/icons-material/Email';
+import DarkModeIcon from '@mui/icons-material/DarkModeOutlined';
+import LightModeIcon from '@mui/icons-material/LightModeOutlined';
+import KeyIcon from '@mui/icons-material/VpnKeyOutlined';
+import LogoutIcon from '@mui/icons-material/LogoutOutlined';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
@@ -179,7 +184,7 @@ export function AppShell() {
   const [hovering, setHovering] = useState(false);
   const [accountAnchor, setAccountAnchor] = useState<null | HTMLElement>(null);
   const { user, hasAny, signOut } = useAuth();
-  const { organizationName, logoUrl } = useBranding();
+  const { organizationName, logoUrl, mode, toggleMode } = useBranding();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -377,14 +382,29 @@ export function AppShell() {
             }}
           >
             {logoUrl ? (
-              // On a light bar the logo simply sits on the background. The old
-              // white plate behind it existed only because the bar was dark,
-              // and it framed every logo in a box it was never designed for.
+              // In light mode the logo simply sits on the background. In dark
+              // mode it gets a light plate back -- not for decoration, but
+              // because most uploaded logos are dark ink on transparency and
+              // would otherwise vanish entirely. The organisation's mark is the
+              // one piece of branding dark mode keeps, so it has to stay
+              // legible; the plate is the smallest thing that guarantees it
+              // without asking anyone to upload a second file.
               <Box
                 component="img"
                 src={logoUrl}
                 alt={organizationName}
-                sx={{ height: 30, maxWidth: 190, objectFit: 'contain' }}
+                sx={{
+                  height: 30,
+                  maxWidth: 190,
+                  objectFit: 'contain',
+                  ...(mode === 'dark' && {
+                    bgcolor: 'rgba(255, 255, 255, 0.92)',
+                    borderRadius: 1,
+                    px: 0.75,
+                    py: 0.5,
+                    boxSizing: 'content-box',
+                  }),
+                }}
               />
             ) : (
               <Box
@@ -439,15 +459,41 @@ export function AppShell() {
               </Box>
             </MenuItem>
             <Divider />
+            {/* Deliberately does not close the menu. Appearance is the one
+                choice here you might want to try and reverse immediately, and
+                having the menu vanish under you to do that is the difference
+                between a toggle and a trip. */}
+            <MenuItem onClick={toggleMode}>
+              <ListItemIcon sx={{ minWidth: 36 }}>
+                {mode === 'dark' ? <LightModeIcon fontSize="small" /> : <DarkModeIcon fontSize="small" />}
+              </ListItemIcon>
+              <ListItemText primary={mode === 'dark' ? 'Light mode' : 'Dark mode'} />
+              <Switch
+                edge="end"
+                size="small"
+                checked={mode === 'dark'}
+                inputProps={{ 'aria-label': 'Dark mode' }}
+                sx={{ ml: 1, pointerEvents: 'none' }}
+              />
+            </MenuItem>
+            <Divider />
             <MenuItem
               onClick={() => {
                 setAccountAnchor(null);
                 navigate('/change-password');
               }}
             >
-              Change password
+              <ListItemIcon sx={{ minWidth: 36 }}>
+                <KeyIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText primary="Change password" />
             </MenuItem>
-            <MenuItem onClick={() => void signOut()}>Sign out</MenuItem>
+            <MenuItem onClick={() => void signOut()}>
+              <ListItemIcon sx={{ minWidth: 36 }}>
+                <LogoutIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText primary="Sign out" />
+            </MenuItem>
           </Menu>
         </Toolbar>
       </AppBar>

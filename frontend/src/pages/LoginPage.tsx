@@ -9,7 +9,7 @@ import { ApiError } from '../api/client';
 
 export function LoginPage() {
   const { user, loading, signIn } = useAuth();
-  const { organizationName, logoUrl } = useBranding();
+  const { organizationName, logoUrl, mode } = useBranding();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -65,7 +65,19 @@ export function LoginPage() {
               component="img"
               src={logoUrl}
               alt={organizationName}
-              sx={{ maxHeight: 56, maxWidth: '100%', objectFit: 'contain' }}
+              sx={{
+                maxHeight: 56,
+                maxWidth: '100%',
+                objectFit: 'contain',
+                // Same reason as the app bar: a dark-ink logo on a dark ground
+                // is no logo at all.
+                ...(mode === 'dark' && {
+                  bgcolor: 'rgba(255, 255, 255, 0.92)',
+                  borderRadius: 1.5,
+                  px: 1.5,
+                  py: 1,
+                }),
+              }}
             />
           ) : (
             <Box
