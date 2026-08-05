@@ -54,7 +54,7 @@ export function RolesPage() {
     <>
       <PageHeader
         title="Roles & permissions"
-        subtitle="Every authorization decision in the platform resolves to one of these keys."
+        help="Every authorization decision in the platform resolves to one of these keys."
       />
 
       {error && (

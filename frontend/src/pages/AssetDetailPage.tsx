@@ -410,11 +410,20 @@ export function AssetDetailPage() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <Box sx={{ mb: 3 }}>
-      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+    <Box sx={{ mb: 3.5 }}>
+      {/* A small capitalised label with a rule under it, rather than another
+          line of grey body text. Four of these stack down a two-column panel,
+          and without a weight difference they read as more fields rather than
+          as the headings that separate the fields. */}
+      <Typography
+        variant="overline"
+        color="text.secondary"
+        component="div"
+        sx={{ pb: 0.75, mb: 1.5, borderBottom: 1, borderColor: 'divider' }}
+      >
         {title}
       </Typography>
-      <Stack spacing={0.5}>{children}</Stack>
+      <Stack spacing={0.75}>{children}</Stack>
     </Box>
   );
 }
@@ -422,11 +431,20 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Field({ label, value }: { label: string; value?: ReactNode }) {
   const empty = value == null || value === '';
   return (
-    <Box sx={{ display: 'flex', gap: 2 }}>
-      <Typography variant="body2" color="text.secondary" sx={{ minWidth: 150 }}>
+    <Box sx={{ display: 'flex', gap: 2, alignItems: 'baseline' }}>
+      <Typography variant="body2" color="text.secondary" sx={{ minWidth: 150, flexShrink: 0 }}>
         {label}
       </Typography>
-      <Typography variant="body2" component="div" sx={{ wordBreak: 'break-word' }}>
+      <Typography
+        variant="body2"
+        component="div"
+        sx={{
+          wordBreak: 'break-word',
+          // An empty field should be visibly empty, not a dash competing with
+          // the values around it for the same weight.
+          ...(empty ? { color: 'text.disabled' } : { fontWeight: 500 }),
+        }}
+      >
         {empty ? '—' : value}
       </Typography>
     </Box>

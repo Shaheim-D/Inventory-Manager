@@ -51,7 +51,7 @@ export function CategoriesPage() {
     <>
       <PageHeader
         title="Categories & custom fields"
-        subtitle="Categories are data, not schema: adding one, or changing what it tracks, never needs a deployment."
+        help="Categories are data, not schema: adding one, or changing what it tracks, never needs a deployment."
         actions={
           <Button variant="contained" onClick={() => setEditing({ serialized: true })}>
             New category
@@ -68,7 +68,7 @@ export function CategoriesPage() {
       <Paper variant="outlined">
         <EntityTable
           columns={[
-            { header: 'Name', render: (category: Category) => category.name },
+            { header: 'Name', render: (category: Category) => category.name, secondary: true },
             { header: 'Description', render: (category: Category) => category.description ?? '—' },
             {
               header: 'Tracking',

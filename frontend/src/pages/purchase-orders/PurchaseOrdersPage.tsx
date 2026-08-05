@@ -45,7 +45,7 @@ export function PurchaseOrdersPage() {
     <>
       <PageHeader
         title="Purchase orders"
-        subtitle="Request something, get it approved, buy it, and book it in when it turns up."
+        help="Request something, get it approved, buy it, and book it in when it turns up."
       />
 
       <Paper variant="outlined" sx={{ mb: 2 }}>

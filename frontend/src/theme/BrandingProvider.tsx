@@ -1,38 +1,69 @@
-import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import { CssBaseline, ThemeProvider, createTheme } from '@mui/material';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
+import { CssBaseline, ThemeProvider } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
+// Self-hosted rather than fetched from a font CDN: this application is
+// installed on a customer's own VM, sometimes without egress, and a typeface
+// that silently fails to load takes the whole typographic scale with it. The
+// theme asked for Inter long before anything actually loaded it.
+import '@fontsource-variable/inter';
 import { api } from '../api/client';
 import type { Branding } from '../api/types';
+import { createAppTheme, type ThemeMode } from './createAppTheme';
 
 /**
- * Builds the MUI theme from whatever branding the deployment has uploaded.
+ * Supplies the branding an installation has uploaded, plus the viewer's choice
+ * of light or dark, and builds the theme from the two.
  *
- * The defaults below are a real, finished neutral theme, not a placeholder —
- * an installation with no logo and no palette still looks deliberate. Uploading
- * a logo and colors through Admin > Branding is a theme-level change that every
- * component picks up, which is exactly what MOP §1.5 asks for.
+ * The look itself lives in `createAppTheme` — this file's job is only to decide
+ * what to feed it. Uploading a logo and palette through Admin > Branding is a
+ * theme-level change that every component picks up, which is exactly what
+ * MOP §1.5 asks for.
+ *
+ * Light or dark rides along here rather than in a context of its own. It is
+ * the same question — what does this look like — answered by a different
+ * source, and every consumer that wants one generally wants the other.
  */
-const DEFAULT_PRIMARY = '#1f2a44';
-const DEFAULT_SECONDARY = '#4a5a7a';
 
-/**
- * Links are hyperlink blue rather than the brand colour, deliberately.
- *
- * MUI points links at `primary.main`, and this platform's primary is a near
- * black navy — which renders a link as bold text and nothing else. Blue is what
- * people have been taught to click for thirty years, and an installation that
- * brands itself dark green or maroon should not lose that signal. So links keep
- * their own colour and do not follow the palette.
- */
-const LINK_BLUE = '#1565c0';
+const MODE_STORAGE_KEY = 'inventory-manager.theme-mode';
 
 interface BrandingValue {
   branding: Branding | undefined;
   organizationName: string;
   logoUrl: string | null;
+  mode: ThemeMode;
+  setMode: (mode: ThemeMode) => void;
+  toggleMode: () => void;
 }
 
 const BrandingContext = createContext<BrandingValue | undefined>(undefined);
+
+/**
+ * A per-device preference, not a per-account one.
+ *
+ * Somebody working from a bright warehouse floor and a dim office at night
+ * wants different answers on the two machines, and storing it on the user
+ * would force one answer everywhere. It also means the choice survives a
+ * signed-out reload, so the sign-in screen is not the one screen that ignores
+ * it. Falls back to whatever the operating system already says.
+ */
+function initialMode(): ThemeMode {
+  try {
+    const stored = window.localStorage.getItem(MODE_STORAGE_KEY);
+    if (stored === 'light' || stored === 'dark') return stored;
+  } catch {
+    // Private browsing, or storage disabled by policy. Not worth failing over;
+    // the preference simply does not persist.
+  }
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
 
 export function BrandingProvider({ children }: { children: ReactNode }) {
   const { data } = useQuery({
@@ -41,6 +72,40 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
     staleTime: 60_000,
   });
 
+  const [mode, setModeState] = useState<ThemeMode>(initialMode);
+
+  const setMode = useCallback((next: ThemeMode) => {
+    setModeState(next);
+    try {
+      window.localStorage.setItem(MODE_STORAGE_KEY, next);
+    } catch {
+      // As above: an unwritable store costs persistence, not the feature.
+    }
+  }, []);
+
+  const toggleMode = useCallback(
+    () => setMode(mode === 'dark' ? 'light' : 'dark'),
+    [mode, setMode],
+  );
+
+  // Follow the operating system until somebody states a preference. After that
+  // the explicit choice wins, including across a system change.
+  useEffect(() => {
+    const query = window.matchMedia?.('(prefers-color-scheme: dark)');
+    if (!query) return;
+    const onChange = (event: MediaQueryListEvent) => {
+      let stored: string | null = null;
+      try {
+        stored = window.localStorage.getItem(MODE_STORAGE_KEY);
+      } catch {
+        stored = null;
+      }
+      if (stored !== 'light' && stored !== 'dark') setModeState(event.matches ? 'dark' : 'light');
+    };
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
+
   const value = useMemo<BrandingValue>(
     () => ({
       branding: data,
@@ -48,61 +113,19 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
       // The cache-busting stamp is the upload time, so a re-uploaded logo
       // appears immediately instead of waiting out the response's max-age.
       logoUrl: data?.hasLogo ? `/api/branding/logo?v=${encodeURIComponent(data.logoUpdatedAt ?? '')}` : null,
+      mode,
+      setMode,
+      toggleMode,
     }),
-    [data],
+    [data, mode, setMode, toggleMode],
   );
 
+  // The uploaded colours are passed in either mode; `createAppTheme` is what
+  // decides to ignore them in dark, so the rule lives with the palette rather
+  // than being enforced twice.
   const theme = useMemo(
-    () =>
-      createTheme({
-        palette: {
-          primary: { main: data?.primaryColor || DEFAULT_PRIMARY },
-          secondary: { main: data?.secondaryColor || DEFAULT_SECONDARY },
-          background: { default: '#f5f6f8' },
-        },
-        shape: { borderRadius: 8 },
-        typography: {
-          fontFamily: '"Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-          h5: { fontWeight: 600 },
-          h6: { fontWeight: 600 },
-        },
-        components: {
-          MuiButton: {
-            defaultProps: { disableElevation: true },
-            // Touch-sized targets by default: review queues get worked through on
-            // a phone while walking the warehouse (Frontend Design §8).
-            styleOverrides: { root: { textTransform: 'none', minHeight: 40 } },
-          },
-          MuiTextField: { defaultProps: { size: 'small', fullWidth: true } },
-          // Dropdowns open beneath the field they belong to. MUI's default is
-          // to lay the menu over the input, centred on whichever option is
-          // selected -- which hides the very field you are choosing for, and
-          // reads as the page having broken rather than as a list opening.
-          MuiSelect: {
-            defaultProps: {
-              MenuProps: {
-                anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
-                transformOrigin: { vertical: 'top', horizontal: 'left' },
-                // Otherwise the menu is laid out from the selected item and
-                // still creeps upward over the field on a long list.
-                slotProps: { paper: { sx: { maxHeight: 360 } } },
-              },
-            },
-          },
-          MuiCard: { defaultProps: { variant: 'outlined' } },
-          MuiLink: {
-            styleOverrides: {
-              root: {
-                color: LINK_BLUE,
-                textDecorationColor: 'currentColor',
-                fontWeight: 500,
-                '&:hover': { color: '#0d47a1' },
-              },
-            },
-          },
-        },
-      }),
-    [data?.primaryColor, data?.secondaryColor],
+    () => createAppTheme(data?.primaryColor, data?.secondaryColor, mode),
+    [data?.primaryColor, data?.secondaryColor, mode],
   );
 
   return (

@@ -14,6 +14,7 @@ import {
   Collapse,
   Menu,
   MenuItem,
+  Switch,
   Toolbar,
   Tooltip,
   Typography,
@@ -43,6 +44,10 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
 import MailIcon from '@mui/icons-material/Email';
+import DarkModeIcon from '@mui/icons-material/DarkModeOutlined';
+import LightModeIcon from '@mui/icons-material/LightModeOutlined';
+import KeyIcon from '@mui/icons-material/VpnKeyOutlined';
+import LogoutIcon from '@mui/icons-material/LogoutOutlined';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
@@ -179,7 +184,7 @@ export function AppShell() {
   const [hovering, setHovering] = useState(false);
   const [accountAnchor, setAccountAnchor] = useState<null | HTMLElement>(null);
   const { user, hasAny, signOut } = useAuth();
-  const { organizationName, logoUrl } = useBranding();
+  const { organizationName, logoUrl, mode, toggleMode } = useBranding();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -240,11 +245,18 @@ export function AppShell() {
           navigate(item.to);
           setDrawerOpen(false);
         }}
-        sx={{ minHeight: 44, px: expanded ? 2 : 1.5, pl: expanded && indented ? 4 : undefined }}
+        sx={{
+          minHeight: 42,
+          // A pill needs air around it or it reads as a full-bleed band again.
+          mx: 1,
+          px: expanded ? 1.5 : 1.25,
+          pl: expanded && indented ? 3.5 : undefined,
+          color: active ? 'primary.main' : 'text.primary',
+        }}
       >
         <Tooltip title={expanded ? '' : item.label} placement="right">
           <ListItemIcon
-            sx={{ minWidth: expanded ? 40 : 'auto', color: active ? 'primary.main' : undefined }}
+            sx={{ minWidth: expanded ? 36 : 'auto', color: active ? 'primary.main' : undefined }}
           >
             {item.icon}
           </ListItemIcon>
@@ -252,7 +264,11 @@ export function AppShell() {
         {expanded && (
           <ListItemText
             primary={item.label}
-            primaryTypographyProps={{ noWrap: true, fontWeight: active ? 600 : 400 }}
+            primaryTypographyProps={{
+              noWrap: true,
+              variant: 'body2',
+              fontWeight: active ? 650 : 500,
+            }}
           />
         )}
         {showCreate && (
@@ -291,8 +307,8 @@ export function AppShell() {
         }
 
         return (
-          <List key={section.heading ?? index}>
-            <Divider sx={{ my: 1 }} />
+          <List key={section.heading ?? index} sx={{ px: 0 }}>
+            <Divider sx={{ mx: 2, my: 1 }} />
             <ListItemButton
               // In the rail there is nothing to reveal, so the icon goes
               // straight to the first page rather than toggling a list nobody
@@ -305,12 +321,12 @@ export function AppShell() {
                 }
               }}
               selected={!expanded && insideSettings}
-              sx={{ minHeight: 44, px: expanded ? 2 : 1.5 }}
+              sx={{ minHeight: 42, mx: 1, px: expanded ? 1.5 : 1.25 }}
             >
               <Tooltip title={expanded ? '' : (section.heading ?? '')} placement="right">
                 <ListItemIcon
                   sx={{
-                    minWidth: expanded ? 40 : 'auto',
+                    minWidth: expanded ? 36 : 'auto',
                     color: insideSettings ? 'primary.main' : undefined,
                   }}
                 >
@@ -321,7 +337,11 @@ export function AppShell() {
                 <>
                   <ListItemText
                     primary={section.heading}
-                    primaryTypographyProps={{ noWrap: true, fontWeight: insideSettings ? 600 : 400 }}
+                    primaryTypographyProps={{
+                      noWrap: true,
+                      variant: 'body2',
+                      fontWeight: insideSettings ? 650 : 500,
+                    }}
                   />
                   {showSettings ? <ExpandLess /> : <ExpandMore />}
                 </>
@@ -342,7 +362,7 @@ export function AppShell() {
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       <AppBar position="fixed" sx={{ zIndex: theme.zIndex.drawer + 1 }}>
-        <Toolbar>
+        <Toolbar sx={{ gap: 0.5 }}>
           {!permanent && (
             <IconButton color="inherit" edge="start" onClick={() => setDrawerOpen(true)} sx={{ mr: 1 }}>
               <MenuIcon />
@@ -354,30 +374,64 @@ export function AppShell() {
             sx={{
               display: 'flex',
               alignItems: 'center',
-              gap: 1.5,
+              gap: 1.25,
               color: 'inherit',
               textDecoration: 'none',
               flexGrow: 1,
+              minWidth: 0,
             }}
           >
-            {logoUrl && (
+            {logoUrl ? (
+              // In light mode the logo simply sits on the background. In dark
+              // mode it gets a light plate back -- not for decoration, but
+              // because most uploaded logos are dark ink on transparency and
+              // would otherwise vanish entirely. The organisation's mark is the
+              // one piece of branding dark mode keeps, so it has to stay
+              // legible; the plate is the smallest thing that guarantees it
+              // without asking anyone to upload a second file.
               <Box
                 component="img"
                 src={logoUrl}
                 alt={organizationName}
                 sx={{
                   height: 30,
-                  maxWidth: 200,
+                  maxWidth: 190,
                   objectFit: 'contain',
-                  bgcolor: 'common.white',
-                  borderRadius: 0.5,
-                  p: 0.5,
+                  ...(mode === 'dark' && {
+                    bgcolor: 'rgba(255, 255, 255, 0.92)',
+                    borderRadius: 1,
+                    px: 0.75,
+                    py: 0.5,
+                    boxSizing: 'content-box',
+                  }),
                 }}
               />
+            ) : (
+              <Box
+                sx={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 1.5,
+                  bgcolor: 'primary.main',
+                  color: 'primary.contrastText',
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <InventoryIcon sx={{ fontSize: 18 }} />
+              </Box>
             )}
-            <Typography variant="h6" noWrap sx={{ display: { xs: logoUrl ? 'none' : 'block', sm: 'block' } }}>
-              Inventory Manager
-            </Typography>
+            <Box sx={{ minWidth: 0, display: { xs: logoUrl ? 'none' : 'block', sm: 'block' } }}>
+              <Typography variant="subtitle1" noWrap sx={{ lineHeight: 1.2 }}>
+                {organizationName}
+              </Typography>
+              {organizationName !== 'Inventory Manager' && (
+                <Typography variant="caption" color="text.secondary" noWrap sx={{ lineHeight: 1 }}>
+                  Inventory Manager
+                </Typography>
+              )}
+            </Box>
           </Box>
 
           <Tooltip title="Notifications">
@@ -388,9 +442,11 @@ export function AppShell() {
             </IconButton>
           </Tooltip>
 
-          <IconButton color="inherit" onClick={(event) => setAccountAnchor(event.currentTarget)}>
-            <AccountCircleIcon />
-          </IconButton>
+          <Tooltip title={user?.username ?? 'Account'}>
+            <IconButton color="inherit" onClick={(event) => setAccountAnchor(event.currentTarget)}>
+              <AccountCircleIcon />
+            </IconButton>
+          </Tooltip>
           <Menu anchorEl={accountAnchor} open={Boolean(accountAnchor)} onClose={() => setAccountAnchor(null)}>
             <MenuItem disabled>
               <Box>
@@ -403,15 +459,41 @@ export function AppShell() {
               </Box>
             </MenuItem>
             <Divider />
+            {/* Deliberately does not close the menu. Appearance is the one
+                choice here you might want to try and reverse immediately, and
+                having the menu vanish under you to do that is the difference
+                between a toggle and a trip. */}
+            <MenuItem onClick={toggleMode}>
+              <ListItemIcon sx={{ minWidth: 36 }}>
+                {mode === 'dark' ? <LightModeIcon fontSize="small" /> : <DarkModeIcon fontSize="small" />}
+              </ListItemIcon>
+              <ListItemText primary={mode === 'dark' ? 'Light mode' : 'Dark mode'} />
+              <Switch
+                edge="end"
+                size="small"
+                checked={mode === 'dark'}
+                inputProps={{ 'aria-label': 'Dark mode' }}
+                sx={{ ml: 1, pointerEvents: 'none' }}
+              />
+            </MenuItem>
+            <Divider />
             <MenuItem
               onClick={() => {
                 setAccountAnchor(null);
                 navigate('/change-password');
               }}
             >
-              Change password
+              <ListItemIcon sx={{ minWidth: 36 }}>
+                <KeyIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText primary="Change password" />
             </MenuItem>
-            <MenuItem onClick={() => void signOut()}>Sign out</MenuItem>
+            <MenuItem onClick={() => void signOut()}>
+              <ListItemIcon sx={{ minWidth: 36 }}>
+                <LogoutIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText primary="Sign out" />
+            </MenuItem>
           </Menu>
         </Toolbar>
       </AppBar>

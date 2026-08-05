@@ -18,6 +18,7 @@ import {
   useMediaQuery,
   useTheme,
 } from '@mui/material';
+import InboxIcon from '@mui/icons-material/InboxOutlined';
 import type { ReactNode } from 'react';
 
 export interface Column<T> {
@@ -87,8 +88,27 @@ export function EntityTable<T>({
 
   if (rows.length === 0) {
     return (
-      <Box sx={{ p: 4, textAlign: 'center' }}>
-        <Typography color="text.secondary">{emptyMessage}</Typography>
+      // Every list in the application shows its empty state through here, so it
+      // is worth being an actual designed state rather than a line of grey text
+      // floating in the middle of a page. The message itself still comes from
+      // the screen, because "no assets yet" and "no results for that search"
+      // are different things and only the screen knows which one this is.
+      <Box
+        sx={{
+          px: 3,
+          py: 6,
+          textAlign: 'center',
+          border: 1,
+          borderStyle: 'dashed',
+          borderColor: 'divider',
+          borderRadius: 3,
+          bgcolor: 'background.paper',
+        }}
+      >
+        <InboxIcon sx={{ fontSize: 32, color: 'text.disabled', mb: 1 }} />
+        <Typography color="text.secondary" sx={{ maxWidth: '52ch', mx: 'auto' }}>
+          {emptyMessage}
+        </Typography>
       </Box>
     );
   }

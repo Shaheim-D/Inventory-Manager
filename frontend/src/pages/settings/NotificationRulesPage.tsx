@@ -105,7 +105,7 @@ export function NotificationRulesPage() {
     <>
       <PageHeader
         title="Notification rules"
-        subtitle="What raises a notification, who is told, and how often the email goes out. Role targets are resolved when it sends, so nobody maintains a recipient list."
+        help="What raises a notification, who is told, and how often the email goes out. Role targets are resolved when it sends, so nobody maintains a recipient list."
         actions={
           <Stack direction="row" spacing={1}>
             <Button onClick={() => runSweep.mutate('run-warranty-check')} disabled={runSweep.isPending}>

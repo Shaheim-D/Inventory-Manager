@@ -76,7 +76,7 @@ export function DevicesPage() {
     <>
       <PageHeader
         title="Devices"
-        subtitle="Known manufacturer, model, and device-role combinations, offered when creating an asset."
+        help="Known manufacturer, model, and device-role combinations, offered when creating an asset."
         actions={
           <Button variant="contained" onClick={() => setEditing({ active: true })}>
             New device
@@ -110,8 +110,9 @@ export function DevicesPage() {
       <Paper variant="outlined">
         <EntityTable
           columns={[
-            { header: 'Manufacturer', render: (d: DeviceModel) => d.manufacturer },
-            { header: 'Model', render: (d: DeviceModel) => d.model },
+            // Both are in the card heading already.
+            { header: 'Manufacturer', render: (d: DeviceModel) => d.manufacturer, secondary: true },
+            { header: 'Model', render: (d: DeviceModel) => d.model, secondary: true },
             { header: 'Device role', render: (d: DeviceModel) => d.deviceRole ?? '—' },
             {
               header: 'Retail price',

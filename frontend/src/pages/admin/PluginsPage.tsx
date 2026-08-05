@@ -52,7 +52,7 @@ export function PluginsPage() {
     <>
       <PageHeader
         title="Plugins"
-        subtitle="Integrations that read from other systems. Nothing an integration proposes reaches an asset until somebody confirms it."
+        help="Integrations that read from other systems. Nothing an integration proposes reaches an asset until somebody confirms it."
         actions={
           <Button variant="contained" onClick={() => setAdding(true)}>
             Add a plugin

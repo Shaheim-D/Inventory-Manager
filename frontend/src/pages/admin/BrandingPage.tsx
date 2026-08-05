@@ -81,7 +81,7 @@ export function BrandingPage() {
     <>
       <PageHeader
         title="Branding"
-        subtitle="Upload the organization's logo and set the palette the interface is themed from."
+        help="Upload the organization's logo and set the palette the interface is themed from."
       />
 
       {error && (
@@ -118,7 +118,11 @@ export function BrandingPage() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   minHeight: 120,
-                  bgcolor: 'common.white',
+                  // White only when there is actually a logo to show, because
+                  // most are dark ink on transparency and need it. With nothing
+                  // uploaded the same plate is just a slab of white on a dark
+                  // page saying "no logo uploaded yet".
+                  ...(logoUrl && { bgcolor: 'common.white' }),
                 }}
               >
                 {logoUrl ? (
@@ -192,6 +196,14 @@ export function BrandingPage() {
                 </Box>
                 <Typography variant="caption" color="text.secondary">
                   Leave a color blank to keep the neutral default. Colors are hex values such as #1B34C8.
+                </Typography>
+                {/* Somebody will set a colour, switch to dark, see nothing
+                    change, and file it as a bug. Say so here rather than let
+                    them find out. */}
+                <Typography variant="caption" color="text.secondary">
+                  These colors apply in light mode. Dark mode uses its own palette, because a color
+                  picked to read well on white has no guarantee of contrast on near-black. Your logo
+                  is used in both.
                 </Typography>
               </Stack>
             </CardContent>

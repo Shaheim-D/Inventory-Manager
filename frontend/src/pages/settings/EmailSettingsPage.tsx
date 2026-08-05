@@ -107,7 +107,7 @@ export function EmailSettingsPage() {
     <>
       <PageHeader
         title="Email delivery"
-        subtitle="Where notifications are emailed from. Notifications always appear in the application; email is in addition to that."
+        help="Where notifications are emailed from. Notifications always appear in the application; email is in addition to that."
       />
 
       {banner && (

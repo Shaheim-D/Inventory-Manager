@@ -60,7 +60,7 @@ export function ReportsPage() {
     <>
       <PageHeader
         title="Reports"
-        subtitle="Run one of the standard reports, one somebody saved, or build your own. Everything here can be exported."
+        help="Run one of the standard reports, one somebody saved, or build your own. Everything here can be exported."
       />
 
       <Tabs

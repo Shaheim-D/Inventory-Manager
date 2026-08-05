@@ -43,7 +43,7 @@ export function FieldVisibilityPage() {
     <>
       <PageHeader
         title="Field visibility rules"
-        subtitle="A field with no matching rule is visible to anyone with base read access. A field with one is absent entirely for anyone lacking the required permission."
+        help="A field with no matching rule is visible to anyone with base read access. A field with one is absent entirely for anyone lacking the required permission."
         actions={
           <Button variant="contained" onClick={() => setCreating(true)}>
             New rule
@@ -63,6 +63,7 @@ export function FieldVisibilityPage() {
             { header: 'Entity', render: (rule: FieldVisibilityRule) => rule.entityType.replaceAll('_', ' ') },
             {
               header: 'Field',
+              secondary: true,
               render: (rule: FieldVisibilityRule) => (
                 <Typography variant="body2" fontFamily="monospace">
                   {rule.coreFieldName ?? rule.customFieldName}
