@@ -1,11 +1,14 @@
 package com.midhudsonfiber.inventory.report;
 
+import com.midhudsonfiber.inventory.domain.Branding;
+import com.midhudsonfiber.inventory.service.BrandingService;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
@@ -26,6 +29,16 @@ import java.util.Map;
  */
 @Component
 public class ReportExporter {
+
+    /** Tall enough to be recognisable on paper, short enough to stay a letterhead. */
+    private static final float LOGO_MAX_HEIGHT = 34f;
+    private static final float LOGO_MAX_WIDTH = 150f;
+
+    private final BrandingService branding;
+
+    public ReportExporter(BrandingService branding) {
+        this.branding = branding;
+    }
 
     /**
      * CSV, quoted properly.
@@ -59,6 +72,9 @@ public class ReportExporter {
             var regular = new org.apache.pdfbox.pdmodel.font.PDType1Font(Standard14Fonts.FontName.HELVETICA);
             var bold = new PDType1Font(Standard14Fonts.FontName.HELVETICA_BOLD);
 
+            Branding organisation = branding.current();
+            PDImageXObject logo = logoFor(document, organisation);
+
             float margin = 30f;
             PDRectangle size = new PDRectangle(PDRectangle.A4.getHeight(), PDRectangle.A4.getWidth());
             float usableWidth = size.getWidth() - margin * 2;
@@ -87,6 +103,29 @@ public class ReportExporter {
                     content.showText("Generated " + LocalDate.now() + " — " + result.rows().size()
                             + " row(s)" + (result.truncated() ? ", truncated" : ""));
                     content.endText();
+
+                    // The organisation's own logo, top right, on every page. A
+                    // report handed to a vendor or a fleet manager leaves the
+                    // building, and a page with no mark on it says nothing about
+                    // where it came from.
+                    if (logo != null) {
+                        float scale = Math.min(LOGO_MAX_HEIGHT / logo.getHeight(),
+                                LOGO_MAX_WIDTH / logo.getWidth());
+                        float width = logo.getWidth() * scale;
+                        float height = logo.getHeight() * scale;
+                        content.drawImage(logo, size.getWidth() - margin - width,
+                                y + 10 - height, width, height);
+                    } else if (organisation.getOrganizationName() != null) {
+                        // No logo, or one in a format PDF cannot carry. The name
+                        // is still worth having in the corner.
+                        String name = sanitise(organisation.getOrganizationName());
+                        float width = bold.getStringWidth(name) / 1000 * 10;
+                        content.beginText();
+                        content.setFont(bold, 10);
+                        content.newLineAtOffset(size.getWidth() - margin - width, y);
+                        content.showText(name);
+                        content.endText();
+                    }
 
                     y -= 34;
                     content.setFont(bold, 8);
@@ -127,6 +166,27 @@ public class ReportExporter {
             return out.toByteArray();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * The branding logo as something a PDF can carry, or null.
+     *
+     * <p>PNG and JPEG embed directly. SVG and WebP are both offered by the
+     * branding upload and neither is a PDF image format, so those fall back to
+     * the organisation's name in text — an export that failed because somebody
+     * uploaded an SVG would be a strange way to find that out.
+     */
+    private PDImageXObject logoFor(PDDocument document, Branding organisation) {
+        byte[] bytes = organisation.getLogoBytes();
+        String type = organisation.getLogoContentType();
+        if (bytes == null || type == null) return null;
+        if (!type.equalsIgnoreCase("image/png") && !type.equalsIgnoreCase("image/jpeg")) return null;
+        try {
+            return PDImageXObject.createFromByteArray(document, bytes, "logo");
+        } catch (IOException e) {
+            // A report is worth more than its letterhead.
+            return null;
         }
     }
 

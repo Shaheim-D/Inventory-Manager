@@ -162,7 +162,7 @@ class ReportIntegrationTest extends AbstractIntegrationTest {
                 """.formatted(categoryId)).getBody();
 
         assertThat(labelsOf(report.get("columns")))
-                .containsExactly("Name", "Asset tag", "Location (full path)",
+                .containsExactly("Name", "Asset tag", "Location",
                         "Serial number", "PO / order number");
 
         JsonNode mine = null;
@@ -216,6 +216,24 @@ class ReportIntegrationTest extends AbstractIntegrationTest {
         assertThat(rerun.get("title").asText()).isEqualTo(name);
         assertThat(rerun.get("columns")).hasSize(3);
 
+        // Editing one: same checks as saving, so an edit cannot smuggle in a
+        // column the person editing may not see.
+        JsonNode edited = put(admin, "/api/reports/saved/" + savedId, """
+                {"name":"%s","entity":"ASSET","fields":["name","assetTag"],"filters":{}}
+                """.formatted(name + " v2")).getBody();
+        assertThat(edited.get("name").asText()).isEqualTo(name + " v2");
+        assertThat(edited.get("fields")).hasSize(2);
+
+        JsonNode afterEdit = post(admin, "/api/reports/run", """
+                {"savedReportId":%d}
+                """.formatted(savedId)).getBody();
+        assertThat(afterEdit.get("columns")).as("the saved report runs with its new columns").hasSize(2);
+
+        Session reporter = restrictedReporter(admin);
+        assertThat(put(reporter, "/api/reports/saved/" + savedId, """
+                {"name":"%s","entity":"ASSET","fields":["name","purchasePrice"],"filters":{}}
+                """.formatted(name)).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
         delete(admin, "/api/reports/saved/" + savedId);
         assertThat(post(admin, "/api/reports/run", """
                 {"savedReportId":%d}
@@ -265,14 +283,36 @@ class ReportIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("PDF comes out a real PDF")
+    @DisplayName("PDF comes out a real PDF, carrying the organisation's logo")
     void pdfExport() {
         Session admin = admin();
-        byte[] pdf = exportBytes(admin, """
+        byte[] plain = exportBytes(admin, """
                 {"reportId":"device-identification"}
                 """, "pdf");
-        assertThat(new String(pdf, 0, 5, StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
-        assertThat(pdf.length).isGreaterThan(400);
+        assertThat(new String(plain, 0, 5, StandardCharsets.US_ASCII)).isEqualTo("%PDF-");
+        assertThat(plain.length).isGreaterThan(400);
+
+        // A report leaves the building — it is handed to a vendor or a fleet
+        // manager — so it carries whatever letterhead the client uploaded.
+        boolean hadLogo = get(admin, "/api/branding").getBody().get("hasLogo").asBoolean();
+        postMultipart(admin, "/api/branding/logo", "logo.png", "image/png", onePixelPng());
+        try {
+            byte[] branded = exportBytes(admin, """
+                    {"reportId":"device-identification"}
+                    """, "pdf");
+            assertThat(new String(branded, StandardCharsets.ISO_8859_1))
+                    .as("an image is embedded in the document")
+                    .contains("/Subtype /Image");
+        } finally {
+            if (!hadLogo) delete(admin, "/api/branding/logo");
+        }
+    }
+
+    /** The smallest valid PNG, so the test does not carry a binary fixture. */
+    private static byte[] onePixelPng() {
+        return java.util.Base64.getDecoder().decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+                        + "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
     }
 
     @Test

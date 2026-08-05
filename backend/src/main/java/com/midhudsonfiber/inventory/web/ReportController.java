@@ -257,6 +257,37 @@ public class ReportController {
         return toView(saved.save(definition));
     }
 
+    /**
+     * Editing a saved report.
+     *
+     * <p>Same checks as saving a new one, for the same reason: the columns are
+     * re-validated against whoever is editing, so an edit cannot smuggle in a
+     * field the editor may not see.
+     */
+    @PutMapping("/saved/{id}")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.REPORT_VIEW + "')")
+    @Transactional
+    public Map<String, Object> updateSaved(@PathVariable Long id, @RequestBody SaveRequest request) {
+        SavedReportDefinition definition = saved.findById(id)
+                .orElseThrow(() -> new ApiExceptions.NotFoundException("Saved report not found"));
+        if (request.name() == null || request.name().isBlank()) {
+            throw new ApiExceptions.BadRequestException("A saved report needs a name.");
+        }
+        if (request.fields() == null || request.fields().isEmpty()) {
+            throw new ApiExceptions.BadRequestException("A saved report needs at least one column.");
+        }
+        EntityType entity = request.entity() == null ? definition.getEntityType() : request.entity();
+        reports.run(request.name(), new ReportSpec(entity, request.fields(), request.filters()),
+                decisionFor(entity));
+
+        definition.setName(request.name().trim());
+        definition.setEntityType(entity);
+        definition.setSelectedFields(List.copyOf(request.fields()));
+        definition.setFilterConfig(request.filters() == null
+                ? Map.of() : new LinkedHashMap<>(request.filters()));
+        return toView(saved.save(definition));
+    }
+
     @DeleteMapping("/saved/{id}")
     @PreAuthorize("hasAuthority('" + PermissionKeys.REPORT_VIEW + "')")
     @Transactional

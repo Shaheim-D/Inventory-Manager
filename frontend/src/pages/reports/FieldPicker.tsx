@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
   Box,
   Button,
@@ -39,6 +39,11 @@ export function FieldPicker({
   const fields = useQuery({
     queryKey: ['report-fields', entity, categoryIds.join(',')],
     queryFn: () => api.get<ReportFieldOption[]>(`/api/reports/fields?entity=${entity}${query}`),
+    // Keep the list on screen while a new one loads. Narrowing to a category
+    // changes the key, and swapping the whole picker out for a progress bar
+    // collapsed the page to nothing -- which threw whoever was halfway down it
+    // back to the top, every single time they picked a category.
+    placeholderData: (previous) => previous,
   });
 
   const groups = useMemo(() => {
@@ -52,10 +57,22 @@ export function FieldPicker({
   const toggle = (key: string) =>
     onChange(selected.includes(key) ? selected.filter((k) => k !== key) : [...selected, key]);
 
-  if (fields.isLoading) return <LinearProgress />;
+  // Narrowing to one category takes another category's custom fields off the
+  // menu. A column still ticked but no longer offered would be refused at run
+  // time with a message about a field the person can no longer see, so it is
+  // dropped here instead, while the list in front of them still explains why.
+  useEffect(() => {
+    if (!fields.data) return;
+    const offered = new Set(fields.data.map((option) => option.key));
+    const kept = selected.filter((key) => offered.has(key));
+    if (kept.length !== selected.length) onChange(kept);
+  }, [fields.data, selected, onChange]);
+
+  // Only on the very first load, when there is genuinely nothing to show yet.
+  if (fields.isLoading && !fields.data) return <LinearProgress />;
 
   return (
-    <Stack spacing={2}>
+    <Stack spacing={2} sx={{ opacity: fields.isFetching ? 0.7 : 1, transition: 'opacity 120ms' }}>
       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
         <Typography variant="body2" color="text.secondary">
           {selected.length === 0
