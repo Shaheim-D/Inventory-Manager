@@ -63,6 +63,7 @@ export function FieldVisibilityPage() {
             { header: 'Entity', render: (rule: FieldVisibilityRule) => rule.entityType.replaceAll('_', ' ') },
             {
               header: 'Field',
+              secondary: true,
               render: (rule: FieldVisibilityRule) => (
                 <Typography variant="body2" fontFamily="monospace">
                   {rule.coreFieldName ?? rule.customFieldName}

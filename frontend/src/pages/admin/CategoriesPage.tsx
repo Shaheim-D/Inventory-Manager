@@ -68,7 +68,7 @@ export function CategoriesPage() {
       <Paper variant="outlined">
         <EntityTable
           columns={[
-            { header: 'Name', render: (category: Category) => category.name },
+            { header: 'Name', render: (category: Category) => category.name, secondary: true },
             { header: 'Description', render: (category: Category) => category.description ?? '—' },
             {
               header: 'Tracking',

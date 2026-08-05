@@ -1,30 +1,24 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import { CssBaseline, ThemeProvider, createTheme } from '@mui/material';
+import { CssBaseline, ThemeProvider } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
+// Self-hosted rather than fetched from a font CDN: this application is
+// installed on a customer's own VM, sometimes without egress, and a typeface
+// that silently fails to load takes the whole typographic scale with it. The
+// theme asked for Inter long before anything actually loaded it.
+import '@fontsource-variable/inter';
 import { api } from '../api/client';
 import type { Branding } from '../api/types';
+import { createAppTheme } from './createAppTheme';
 
 /**
- * Builds the MUI theme from whatever branding the deployment has uploaded.
+ * Supplies the branding an installation has uploaded, and builds the theme from
+ * it.
  *
- * The defaults below are a real, finished neutral theme, not a placeholder —
- * an installation with no logo and no palette still looks deliberate. Uploading
- * a logo and colors through Admin > Branding is a theme-level change that every
- * component picks up, which is exactly what MOP §1.5 asks for.
+ * The look itself lives in `createAppTheme` — this file's job is only to feed
+ * it the organization's colours. Uploading a logo and palette through
+ * Admin > Branding is a theme-level change that every component picks up, which
+ * is exactly what MOP §1.5 asks for.
  */
-const DEFAULT_PRIMARY = '#1f2a44';
-const DEFAULT_SECONDARY = '#4a5a7a';
-
-/**
- * Links are hyperlink blue rather than the brand colour, deliberately.
- *
- * MUI points links at `primary.main`, and this platform's primary is a near
- * black navy — which renders a link as bold text and nothing else. Blue is what
- * people have been taught to click for thirty years, and an installation that
- * brands itself dark green or maroon should not lose that signal. So links keep
- * their own colour and do not follow the palette.
- */
-const LINK_BLUE = '#1565c0';
 
 interface BrandingValue {
   branding: Branding | undefined;
@@ -53,55 +47,7 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
   );
 
   const theme = useMemo(
-    () =>
-      createTheme({
-        palette: {
-          primary: { main: data?.primaryColor || DEFAULT_PRIMARY },
-          secondary: { main: data?.secondaryColor || DEFAULT_SECONDARY },
-          background: { default: '#f5f6f8' },
-        },
-        shape: { borderRadius: 8 },
-        typography: {
-          fontFamily: '"Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-          h5: { fontWeight: 600 },
-          h6: { fontWeight: 600 },
-        },
-        components: {
-          MuiButton: {
-            defaultProps: { disableElevation: true },
-            // Touch-sized targets by default: review queues get worked through on
-            // a phone while walking the warehouse (Frontend Design §8).
-            styleOverrides: { root: { textTransform: 'none', minHeight: 40 } },
-          },
-          MuiTextField: { defaultProps: { size: 'small', fullWidth: true } },
-          // Dropdowns open beneath the field they belong to. MUI's default is
-          // to lay the menu over the input, centred on whichever option is
-          // selected -- which hides the very field you are choosing for, and
-          // reads as the page having broken rather than as a list opening.
-          MuiSelect: {
-            defaultProps: {
-              MenuProps: {
-                anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
-                transformOrigin: { vertical: 'top', horizontal: 'left' },
-                // Otherwise the menu is laid out from the selected item and
-                // still creeps upward over the field on a long list.
-                slotProps: { paper: { sx: { maxHeight: 360 } } },
-              },
-            },
-          },
-          MuiCard: { defaultProps: { variant: 'outlined' } },
-          MuiLink: {
-            styleOverrides: {
-              root: {
-                color: LINK_BLUE,
-                textDecorationColor: 'currentColor',
-                fontWeight: 500,
-                '&:hover': { color: '#0d47a1' },
-              },
-            },
-          },
-        },
-      }),
+    () => createAppTheme(data?.primaryColor, data?.secondaryColor),
     [data?.primaryColor, data?.secondaryColor],
   );
 

@@ -110,8 +110,9 @@ export function DevicesPage() {
       <Paper variant="outlined">
         <EntityTable
           columns={[
-            { header: 'Manufacturer', render: (d: DeviceModel) => d.manufacturer },
-            { header: 'Model', render: (d: DeviceModel) => d.model },
+            // Both are in the card heading already.
+            { header: 'Manufacturer', render: (d: DeviceModel) => d.manufacturer, secondary: true },
+            { header: 'Model', render: (d: DeviceModel) => d.model, secondary: true },
             { header: 'Device role', render: (d: DeviceModel) => d.deviceRole ?? '—' },
             {
               header: 'Retail price',

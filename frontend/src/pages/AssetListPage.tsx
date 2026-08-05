@@ -73,7 +73,9 @@ export function AssetListPage() {
   const costVisible = rows.length > 0 && 'purchasePrice' in rows[0];
 
   const columns: Column<Asset>[] = [
-    { key: 'name', header: 'Name', render: (asset) => asset.displayLabel },
+    // secondary: the card heading below is already this value, and repeating
+    // it as the first row of every card was pure noise on a phone.
+    { key: 'name', header: 'Name', render: (asset) => asset.displayLabel, secondary: true },
     { key: 'assetTag', header: 'Asset Tag', render: (asset) => asset.assetTag ?? '—' },
     {
       header: 'Category',

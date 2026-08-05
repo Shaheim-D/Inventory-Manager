@@ -64,7 +64,7 @@ export function UsersPage() {
       <Paper variant="outlined">
         <EntityTable
           columns={[
-            { header: 'Username', render: (user: UserSummary) => user.username },
+            { header: 'Username', render: (user: UserSummary) => user.username, secondary: true },
             { header: 'Email', render: (user: UserSummary) => user.email ?? '—' },
             { header: 'Sign-in', render: (user: UserSummary) => user.authProvider.replaceAll('_', ' ') },
             {

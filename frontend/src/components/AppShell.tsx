@@ -240,11 +240,18 @@ export function AppShell() {
           navigate(item.to);
           setDrawerOpen(false);
         }}
-        sx={{ minHeight: 44, px: expanded ? 2 : 1.5, pl: expanded && indented ? 4 : undefined }}
+        sx={{
+          minHeight: 42,
+          // A pill needs air around it or it reads as a full-bleed band again.
+          mx: 1,
+          px: expanded ? 1.5 : 1.25,
+          pl: expanded && indented ? 3.5 : undefined,
+          color: active ? 'primary.main' : 'text.primary',
+        }}
       >
         <Tooltip title={expanded ? '' : item.label} placement="right">
           <ListItemIcon
-            sx={{ minWidth: expanded ? 40 : 'auto', color: active ? 'primary.main' : undefined }}
+            sx={{ minWidth: expanded ? 36 : 'auto', color: active ? 'primary.main' : undefined }}
           >
             {item.icon}
           </ListItemIcon>
@@ -252,7 +259,11 @@ export function AppShell() {
         {expanded && (
           <ListItemText
             primary={item.label}
-            primaryTypographyProps={{ noWrap: true, fontWeight: active ? 600 : 400 }}
+            primaryTypographyProps={{
+              noWrap: true,
+              variant: 'body2',
+              fontWeight: active ? 650 : 500,
+            }}
           />
         )}
         {showCreate && (
@@ -291,8 +302,8 @@ export function AppShell() {
         }
 
         return (
-          <List key={section.heading ?? index}>
-            <Divider sx={{ my: 1 }} />
+          <List key={section.heading ?? index} sx={{ px: 0 }}>
+            <Divider sx={{ mx: 2, my: 1 }} />
             <ListItemButton
               // In the rail there is nothing to reveal, so the icon goes
               // straight to the first page rather than toggling a list nobody
@@ -305,12 +316,12 @@ export function AppShell() {
                 }
               }}
               selected={!expanded && insideSettings}
-              sx={{ minHeight: 44, px: expanded ? 2 : 1.5 }}
+              sx={{ minHeight: 42, mx: 1, px: expanded ? 1.5 : 1.25 }}
             >
               <Tooltip title={expanded ? '' : (section.heading ?? '')} placement="right">
                 <ListItemIcon
                   sx={{
-                    minWidth: expanded ? 40 : 'auto',
+                    minWidth: expanded ? 36 : 'auto',
                     color: insideSettings ? 'primary.main' : undefined,
                   }}
                 >
@@ -321,7 +332,11 @@ export function AppShell() {
                 <>
                   <ListItemText
                     primary={section.heading}
-                    primaryTypographyProps={{ noWrap: true, fontWeight: insideSettings ? 600 : 400 }}
+                    primaryTypographyProps={{
+                      noWrap: true,
+                      variant: 'body2',
+                      fontWeight: insideSettings ? 650 : 500,
+                    }}
                   />
                   {showSettings ? <ExpandLess /> : <ExpandMore />}
                 </>
@@ -342,7 +357,7 @@ export function AppShell() {
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       <AppBar position="fixed" sx={{ zIndex: theme.zIndex.drawer + 1 }}>
-        <Toolbar>
+        <Toolbar sx={{ gap: 0.5 }}>
           {!permanent && (
             <IconButton color="inherit" edge="start" onClick={() => setDrawerOpen(true)} sx={{ mr: 1 }}>
               <MenuIcon />
@@ -354,30 +369,49 @@ export function AppShell() {
             sx={{
               display: 'flex',
               alignItems: 'center',
-              gap: 1.5,
+              gap: 1.25,
               color: 'inherit',
               textDecoration: 'none',
               flexGrow: 1,
+              minWidth: 0,
             }}
           >
-            {logoUrl && (
+            {logoUrl ? (
+              // On a light bar the logo simply sits on the background. The old
+              // white plate behind it existed only because the bar was dark,
+              // and it framed every logo in a box it was never designed for.
               <Box
                 component="img"
                 src={logoUrl}
                 alt={organizationName}
-                sx={{
-                  height: 30,
-                  maxWidth: 200,
-                  objectFit: 'contain',
-                  bgcolor: 'common.white',
-                  borderRadius: 0.5,
-                  p: 0.5,
-                }}
+                sx={{ height: 30, maxWidth: 190, objectFit: 'contain' }}
               />
+            ) : (
+              <Box
+                sx={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 1.5,
+                  bgcolor: 'primary.main',
+                  color: 'primary.contrastText',
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <InventoryIcon sx={{ fontSize: 18 }} />
+              </Box>
             )}
-            <Typography variant="h6" noWrap sx={{ display: { xs: logoUrl ? 'none' : 'block', sm: 'block' } }}>
-              Inventory Manager
-            </Typography>
+            <Box sx={{ minWidth: 0, display: { xs: logoUrl ? 'none' : 'block', sm: 'block' } }}>
+              <Typography variant="subtitle1" noWrap sx={{ lineHeight: 1.2 }}>
+                {organizationName}
+              </Typography>
+              {organizationName !== 'Inventory Manager' && (
+                <Typography variant="caption" color="text.secondary" noWrap sx={{ lineHeight: 1 }}>
+                  Inventory Manager
+                </Typography>
+              )}
+            </Box>
           </Box>
 
           <Tooltip title="Notifications">
@@ -388,9 +422,11 @@ export function AppShell() {
             </IconButton>
           </Tooltip>
 
-          <IconButton color="inherit" onClick={(event) => setAccountAnchor(event.currentTarget)}>
-            <AccountCircleIcon />
-          </IconButton>
+          <Tooltip title={user?.username ?? 'Account'}>
+            <IconButton color="inherit" onClick={(event) => setAccountAnchor(event.currentTarget)}>
+              <AccountCircleIcon />
+            </IconButton>
+          </Tooltip>
           <Menu anchorEl={accountAnchor} open={Boolean(accountAnchor)} onClose={() => setAccountAnchor(null)}>
             <MenuItem disabled>
               <Box>

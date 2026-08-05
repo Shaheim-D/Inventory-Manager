@@ -88,7 +88,8 @@ export function VerificationPage() {
       <Paper variant="outlined">
         <EntityTable
           columns={[
-            { header: 'Asset', render: (asset: Asset) => asset.displayLabel },
+            // Already the card heading; see AssetListPage.
+            { header: 'Asset', render: (asset: Asset) => asset.displayLabel, secondary: true },
             { header: 'Category', render: (asset: Asset) => asset.categoryName },
             { header: 'Location', render: (asset: Asset) => asset.locationName },
             { header: 'Quantity', align: 'right', render: (asset: Asset) => asset.quantity },
