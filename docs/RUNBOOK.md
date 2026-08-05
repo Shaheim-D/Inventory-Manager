@@ -217,5 +217,31 @@ is re-checked against whoever runs it rather than whoever saved it. If somebody
 needs a column they cannot see, the fix is the permission behind it under
 **Settings → Field Visibility Rules**, not the report.
 
+**An integration is proposing things nobody wants.** Every plugin has an
+**Awaiting confirmation** tab under **Settings → Plugins**. *Not this time*
+leaves no record, so the record comes back on the next sync — right when the
+data upstream is about to be corrected. *Never ask again* is a standing
+decision: it is listed on that plugin's **Ignored** tab and can be reversed
+there, after which the next sync treats the record as new.
+
+**An integration is not updating an asset it should be.** Check that plugin's
+**Confirmed** tab. A plugin may only write to assets it has been confirmed
+against, one external record at a time, so an asset that has never been through
+the queue is one the plugin has never been allowed to touch. Unlinking from
+that tab is how you take the permission back.
+
+**A plugin's secret.** A plugin's configuration stores the *name* of an
+environment variable, never the value — the token itself lives wherever the
+deployment keeps its other secrets. The configuration screen shows whether the
+named variable currently resolves, which is usually the answer when a
+connection test fails on a plugin that used to work.
+
+**A directory sync went wrong.** It cannot affect signing in. Directory group
+sync only ever changes role assignment; authentication is checked against the
+directory on every login independently, and a failed or disabled sync leaves
+everybody with the roles they already had. It never touches passwords,
+lockouts, or the failed-attempt counter — there is a test on every build
+asserting exactly that.
+
 **Logs.** `docker compose logs -f app`. Everything goes to stdout/stderr; there
 is deliberately no log aggregation stack at this size.

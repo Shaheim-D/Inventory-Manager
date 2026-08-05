@@ -38,6 +38,7 @@ import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import PaletteIcon from '@mui/icons-material/Palette';
 import RuleIcon from '@mui/icons-material/Rule';
 import AssessmentIcon from '@mui/icons-material/Assessment';
+import ExtensionIcon from '@mui/icons-material/Extension';
 import SettingsIcon from '@mui/icons-material/Settings';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
@@ -159,6 +160,12 @@ const NAV: NavSection[] = [
         to: '/settings/email',
         icon: <MailIcon />,
         permissions: ['notification_rule:manage'],
+      },
+      {
+        label: 'Plugins',
+        to: '/admin/plugins',
+        icon: <ExtensionIcon />,
+        permissions: ['plugin:manage'],
       },
       { label: 'Branding', to: '/admin/branding', icon: <PaletteIcon />, permissions: ['branding:manage'] },
     ],

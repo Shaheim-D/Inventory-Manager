@@ -19,6 +19,8 @@ import { PurchaseOrderDetailPage } from './pages/purchase-orders/PurchaseOrderDe
 import { CategoriesPage } from './pages/admin/CategoriesPage';
 import { DevicesPage } from './pages/admin/DevicesPage';
 import { ReportsPage } from './pages/reports/ReportsPage';
+import { PluginsPage } from './pages/admin/PluginsPage';
+import { PluginDetailPage } from './pages/admin/PluginDetailPage';
 import { UsersPage } from './pages/admin/UsersPage';
 import { RolesPage } from './pages/admin/RolesPage';
 import { FieldVisibilityPage } from './pages/admin/FieldVisibilityPage';
@@ -89,6 +91,8 @@ export function App() {
         />
 
         <Route path="/admin/categories" element={guard(['category:manage'], <CategoriesPage />)} />
+        <Route path="/admin/plugins" element={guard(['plugin:manage'], <PluginsPage />)} />
+        <Route path="/admin/plugins/:id" element={guard(['plugin:manage'], <PluginDetailPage />)} />
         <Route path="/admin/devices" element={guard(['asset:read'], <DevicesPage />)} />
         <Route path="/admin/users" element={guard(['user:manage'], <UsersPage />)} />
         <Route path="/admin/roles" element={guard(['role:manage'], <RolesPage />)} />
