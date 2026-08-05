@@ -24,9 +24,9 @@ Against the roadmap's ten milestones:
 | 2 | Search, relationships, attachments, audit, bulk import | **Done** |
 | 3 | Purchase Orders | **Done** — request, approve/place, partial receiving, receipts create assets |
 | 4 | Notifications & warranty alerts | **Done** — in-app with an on-screen popup, plus email; dynamic role targets, per-rule email frequency, fourteen triggers across assets, purchase orders, imports and the two scheduled sweeps |
-| 5 | Inventory staleness & verification | Schema (V7), the queue screen, the three resolution actions, and the scheduled notification are in |
-| 6 | Plugin Framework | Schema only (V8); no plugins |
-| 7 | Reporting | Schema only (V9); no reports |
+| 5 | Inventory staleness & verification | **Done** — the queue and its three resolution actions, the scheduled check, and every rule about what counts as somebody having verified something |
+| 6 | Plugin Framework | Schema only (V8); no plugins — the last feature milestone, deliberately |
+| 7 | Reporting | **Done** — nine standard reports led by the Device Identification List, a custom builder whose field picker is itself the visibility boundary, saved definitions, CSV and PDF export |
 | 8 | Deployment hardening | Compose stack, scripts, and runbook written; **the restore rehearsal has not been performed** |
 | 9 | Final documentation & handoff | Ongoing |
 

@@ -422,11 +422,20 @@ class NotificationIntegrationTest extends AbstractIntegrationTest {
         assertThat(post(manager, "/api/notifications/" + id + "/clear", "{}")
                 .getStatusCode().is2xxSuccessful()).isTrue();
 
-        // Gone from the inbox, gone from the badge, and gone from what the
-        // popup would offer.
+        // Gone from the inbox, gone from the badge, and gone from what the popup
+        // would offer. Asserted about this notification rather than about the
+        // count: the suite shares a database, and a brand-new Asset Manager is
+        // told about every asset currently inside a warranty threshold, not only
+        // the one this test made.
         assertThat(notificationAbout(manager, assetId, "WARRANTY_EXPIRATION")).isNull();
-        assertThat(get(manager, "/api/notifications").getBody().get("unread").asInt()).isZero();
-        assertThat(get(manager, "/api/notifications/since/0").getBody().size()).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT read_at IS NOT NULL AND cleared_at IS NOT NULL FROM notification_log WHERE id = ?",
+                Boolean.class, id))
+                .as("cleared, and so no longer counted as unread").isTrue();
+        for (JsonNode entry : get(manager, "/api/notifications/since/0").getBody()) {
+            assertThat(entry.get("id").asLong())
+                    .as("a cleared notification is never offered to the popup").isNotEqualTo(id);
+        }
 
         // But the row is still the de-duplication record. If clearing deleted
         // it, the next sweep -- an hour later -- would raise the same warranty

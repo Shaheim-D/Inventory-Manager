@@ -186,6 +186,16 @@ public class AssetService {
         asset.setCustomFields(customFieldValidator.validate(
                 category.getId(), request.customFields(), retainedCustomFields(asset, category.getId())));
 
+        // Staleness design §3: changing the quantity means somebody counted, so
+        // it counts as verification. Nothing else about an edit does -- fixing a
+        // typo in the notes is not evidence anyone laid eyes on two hundred
+        // connectors, and treating it as if it were would quietly empty the
+        // verification queue without anybody checking anything.
+        if (!java.util.Objects.equals(before.get("quantity"), asset.getQuantity())) {
+            asset.setLastVerifiedAt(Instant.now());
+            asset.setLastVerifiedBy(currentUser.idOrNull());
+        }
+
         Asset saved = assets.save(asset);
         Map<String, Object> after = snapshot(saved);
         audit.recordFieldChanges(AuditService.ENTITY_ASSET, saved.getId(), diff(before, after));

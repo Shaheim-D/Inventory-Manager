@@ -37,6 +37,7 @@ import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import PaletteIcon from '@mui/icons-material/Palette';
 import RuleIcon from '@mui/icons-material/Rule';
+import AssessmentIcon from '@mui/icons-material/Assessment';
 import SettingsIcon from '@mui/icons-material/Settings';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
@@ -108,6 +109,7 @@ const NAV: NavSection[] = [
         icon: <FactCheckIcon />,
         permissions: ['asset:write'],
       },
+      { label: 'Reports', to: '/reports', icon: <AssessmentIcon />, permissions: ['report:view'] },
       { label: 'Audit History', to: '/audit', icon: <HistoryIcon />, permissions: ['audit:view'] },
     ],
   },

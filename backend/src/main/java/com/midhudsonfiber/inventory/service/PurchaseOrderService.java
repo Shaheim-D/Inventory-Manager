@@ -18,6 +18,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * The purchase order workflow: request, approve or reject, order, receive.
@@ -369,6 +370,10 @@ public class PurchaseOrderService {
         receipt.setNotes(blankToNull(request.notes()));
 
         List<Asset> created = new ArrayList<>();
+        // How many units each topped-up row gained, so the audit trail can say
+        // what it went from rather than only what it is now.
+        Map<Asset, Integer> addedTo = new java.util.IdentityHashMap<>();
+        int units = 0;
         for (ReceiptLineRequest line : request.lines()) {
             if (line.quantityReceived() == null || line.quantityReceived() < 1) continue;
 
@@ -384,7 +389,12 @@ public class PurchaseOrderService {
             receiptLine.setQuantityReceived(line.quantityReceived());
             receipt.getLines().add(receiptLine);
 
-            created.addAll(assetsFor(item, line.quantityReceived(), location, order));
+            units += line.quantityReceived();
+            List<Asset> rows = assetsFor(item, line.quantityReceived(), location, order);
+            for (Asset row : rows) {
+                if (row.getId() != null) addedTo.put(row, line.quantityReceived());
+            }
+            created.addAll(rows);
         }
 
         if (receipt.getLines().isEmpty()) {
@@ -395,15 +405,26 @@ public class PurchaseOrderService {
         // refuses an over-receipt; saving the assets afterwards means a rejected
         // receipt leaves nothing behind.
         PurchaseOrderReceipt savedReceipt = receipts.save(receipt);
+        // Which rows are new has to be answered before saving, because after it
+        // every one of them has an id.
+        List<Asset> fresh = created.stream().filter(asset -> asset.getId() == null).toList();
+        List<Asset> toppedUp = created.stream().filter(asset -> asset.getId() != null).toList();
         assets.saveAll(created);
-        for (Asset asset : created) {
+        for (Asset asset : fresh) {
             audit.recordCreate(AuditService.ENTITY_ASSET, asset.getId(),
                     "Received against " + describe(order));
+        }
+        for (Asset asset : toppedUp) {
+            audit.recordFieldChanges(AuditService.ENTITY_ASSET, asset.getId(), List.of(
+                    AuditService.FieldChange.of("quantity",
+                            asset.getQuantity() - addedTo.getOrDefault(asset, 0), asset.getQuantity()),
+                    AuditService.FieldChange.of("last_verified_at", null,
+                            "Received against " + describe(order))));
         }
 
         audit.recordFieldChanges(AuditService.ENTITY_PURCHASE_ORDER, order.getId(), List.of(
                 AuditService.FieldChange.of("received", null,
-                        "%d item(s) into %s".formatted(created.size(), location.getName()))));
+                        "%d unit(s) into %s".formatted(units, location.getName()))));
 
         // Re-read, because the trigger decided the new status: a delivery that
         // completes an order is a different thing to announce than one that does
@@ -424,7 +445,7 @@ public class PurchaseOrderService {
                         : NotificationRule.TriggerType.PURCHASE_ORDER_PARTIALLY_RECEIVED,
                 complete ? "%s fully received".formatted(label(after))
                         : "%s partly received".formatted(label(after)),
-                "%s booked %d item(s) into %s.%s".formatted(actorName(), created.size(),
+                "%s booked %d unit(s) into %s.%s".formatted(actorName(), units,
                         location.getName(),
                         complete ? " That completes the order."
                                 : " %d of %d still outstanding.".formatted(
@@ -475,6 +496,30 @@ public class PurchaseOrderService {
                 : order.getOrderedAt().atZone(ZoneOffset.UTC).toLocalDate();
 
         List<Asset> created = new ArrayList<>();
+
+        // Bulk stock delivered in two shipments is one pile, not two. Topping up
+        // the row the first delivery made keeps "how much fibre is at Kingston"
+        // answerable from one number, and the receipt events remain the record
+        // of how it got there.
+        //
+        // Bumping last_verified_at is the Staleness design §3 rule: taking a
+        // delivery of something is itself somebody confirming it is still real
+        // and still being managed, so it should not go on sitting in the
+        // verification queue as if nobody had touched it.
+        if (!category.isSerialized()) {
+            Optional<Asset> existing = assets
+                    .findFirstByPurchaseOrderLineItemIdAndLocationIdAndDeletedFalse(
+                            item.getId(), location.getId());
+            if (existing.isPresent()) {
+                Asset topUp = existing.get();
+                topUp.setQuantity(topUp.getQuantity() + quantity);
+                topUp.setLastVerifiedAt(Instant.now());
+                topUp.setLastVerifiedBy(currentUser.idOrNull());
+                created.add(topUp);
+                return created;
+            }
+        }
+
         // One row per unit when each unit is individually identifiable, one row
         // carrying the count when they are not.
         int rows = category.isSerialized() ? quantity : 1;

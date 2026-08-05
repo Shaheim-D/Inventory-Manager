@@ -181,6 +181,85 @@ class PurchaseOrderIntegrationTest extends AbstractIntegrationTest {
                 .isEqualTo(12);
     }
 
+
+    @Test
+    @DisplayName("a second delivery of a bulk line tops up the row the first one made")
+    void bulkDeliveriesAccumulateIntoOneRow() {
+        Session admin = admin();
+        Long locationId = newLocation(admin);
+        Long orderId = draft(admin, unique("fibre spool"), 100, "Fiber Cable");
+
+        post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/approve", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/purchase", """
+                {"orderNumber":"%s"}
+                """.formatted(unique("PO")));
+        Long lineItemId = get(admin, "/api/purchase-orders/" + orderId).getBody()
+                .get("lineItems").get(0).get("id").asLong();
+
+        post(admin, "/api/purchase-orders/" + orderId + "/receipts", """
+                {"locationId":%d,"lines":[{"lineItemId":%d,"quantityReceived":60}]}
+                """.formatted(locationId, lineItemId));
+
+        // Backdate it, so the bump the second delivery is supposed to apply is
+        // visible rather than indistinguishable from the first.
+        jdbc.update("""
+                UPDATE asset SET last_verified_at = now() - interval '400 days'
+                WHERE purchase_order_id = ?
+                """, orderId);
+
+        post(admin, "/api/purchase-orders/" + orderId + "/receipts", """
+                {"locationId":%d,"lines":[{"lineItemId":%d,"quantityReceived":40}]}
+                """.formatted(locationId, lineItemId));
+
+        // One pile of a hundred, not two piles of sixty and forty. "How much
+        // fibre is at Kingston" has to be answerable from one number.
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM asset WHERE purchase_order_id = ?", Integer.class, orderId))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT quantity FROM asset WHERE purchase_order_id = ?", Integer.class, orderId))
+                .isEqualTo(100);
+
+        // Staleness design §3: taking a delivery of something is somebody
+        // confirming it is still real, so it leaves the verification queue.
+        assertThat(jdbc.queryForObject("""
+                SELECT last_verified_at > now() - interval '1 hour' FROM asset
+                WHERE purchase_order_id = ?
+                """, Boolean.class, orderId))
+                .as("receiving against a bulk row re-verifies it").isTrue();
+    }
+
+    @Test
+    @DisplayName("the same bulk line delivered to two places stays two rows")
+    void bulkDeliveriesToDifferentPlacesStayApart() {
+        Session admin = admin();
+        Long kingston = newLocation(admin);
+        Long poughkeepsie = newLocation(admin);
+        Long orderId = draft(admin, unique("connectors"), 500, "Connectors & Small Parts");
+
+        post(admin, "/api/purchase-orders/" + orderId + "/submit", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/approve", "{}");
+        post(admin, "/api/purchase-orders/" + orderId + "/purchase", """
+                {"orderNumber":"%s"}
+                """.formatted(unique("PO")));
+        Long lineItemId = get(admin, "/api/purchase-orders/" + orderId).getBody()
+                .get("lineItems").get(0).get("id").asLong();
+
+        post(admin, "/api/purchase-orders/" + orderId + "/receipts", """
+                {"locationId":%d,"lines":[{"lineItemId":%d,"quantityReceived":300}]}
+                """.formatted(kingston, lineItemId));
+        post(admin, "/api/purchase-orders/" + orderId + "/receipts", """
+                {"locationId":%d,"lines":[{"lineItemId":%d,"quantityReceived":200}]}
+                """.formatted(poughkeepsie, lineItemId));
+
+        // Stock in two buildings is two piles however it was bought. Merging
+        // these would claim five hundred are somewhere they are not.
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM asset WHERE purchase_order_id = ?", Integer.class, orderId))
+                .isEqualTo(2);
+    }
+
     @Test
     @DisplayName("receiving more than was ordered is refused by the database")
     void overReceivingIsRefused() {
