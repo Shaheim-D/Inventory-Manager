@@ -79,8 +79,11 @@ public class ReportFieldCatalog {
         fields.add(new ReportField("categoryName", "Category", "Identification"));
         fields.add(new ReportField("subcategoryNames", "Sub-categories", "Identification"));
         fields.add(new ReportField("lifecycleStateName", "Lifecycle state", "Identification"));
-        fields.add(new ReportField("locationName", "Location", "Where it is"));
-        fields.add(new ReportField("locationPath", "Location (full path)", "Where it is"));
+        // One location column, and it is always the full path. "Rack 4" on its
+        // own identifies nothing to somebody reading the report outside the
+        // building, so offering a leaf-name column alongside the path was two
+        // ways of asking the same question with one of them being the wrong one.
+        fields.add(new ReportField("locationPath", "Location", "Where it is"));
         fields.add(new ReportField("quantity", "Quantity", "Where it is"));
 
         // The configurable core columns, in the platform's own order and under
