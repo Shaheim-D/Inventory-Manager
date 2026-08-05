@@ -6,7 +6,7 @@ import { api } from '../../api/client';
 import type { PurchaseOrder } from '../../api/types';
 import { EntityTable, type Column } from '../../components/EntityTable';
 import { ApproveDialog, ReasonDialog } from './OrderActionDialogs';
-import { money, when } from './shared';
+import { money, when } from '../../format';
 
 /**
  * The approvals queue. It shares its shape with the other review queues in the

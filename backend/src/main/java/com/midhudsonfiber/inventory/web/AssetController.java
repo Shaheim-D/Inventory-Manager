@@ -80,6 +80,29 @@ public class AssetController {
                 "totalPages", result.getTotalPages());
     }
 
+    /**
+     * Resolve an asset tag to the asset carrying it — what a barcode scan asks.
+     *
+     * <p>Answers with the id and label only, not the asset. The client's next
+     * move is to open that asset, which goes through {@link #get} and applies
+     * field visibility there; returning a whole asset from here would be a
+     * second place for a restricted field to escape from, for no gain.
+     *
+     * <p>A tag that matches nothing is 404 rather than an empty 200: the caller
+     * is asking "which asset is this", and "none" is genuinely not finding it.
+     * The tag is a query parameter rather than a path segment because tags are
+     * whatever is printed on a sticker, and a slash in one would otherwise
+     * change the route.
+     */
+    @GetMapping("/lookup")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.ASSET_READ + "')")
+    public Map<String, Object> lookupByTag(@RequestParam String assetTag) {
+        Asset asset = assets.findByAssetTag(assetTag)
+                .orElseThrow(() -> new ApiExceptions.NotFoundException(
+                        "No asset has the tag " + assetTag + "."));
+        return Map.of("id", asset.getId(), "displayLabel", asset.displayLabel());
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('" + PermissionKeys.ASSET_READ + "')")
     public Map<String, Object> get(@PathVariable Long id) {

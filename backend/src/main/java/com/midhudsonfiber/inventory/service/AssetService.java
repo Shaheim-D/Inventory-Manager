@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
@@ -127,6 +128,20 @@ public class AssetService {
             throw new ApiExceptions.NotFoundException("Asset not found");
         }
         return asset;
+    }
+
+    /**
+     * The live asset carrying this tag, for resolving a scanned barcode.
+     *
+     * <p>Returns empty rather than throwing when nothing matches: a scan that
+     * finds nothing is an ordinary outcome — a sticker on something not yet
+     * entered, or a barcode that was never one of ours — and the caller says so
+     * rather than treating it as an error.
+     */
+    @Transactional(readOnly = true)
+    public Optional<Asset> findByAssetTag(String assetTag) {
+        if (assetTag == null || assetTag.isBlank()) return Optional.empty();
+        return assets.findFirstByAssetTagIgnoreCaseAndDeletedFalse(assetTag.trim());
     }
 
     @Transactional

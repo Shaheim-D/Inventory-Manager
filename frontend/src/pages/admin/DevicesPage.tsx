@@ -23,6 +23,7 @@ import type { Category, DeviceModel } from '../../api/types';
 import { CategoryPicker } from '../../components/CategoryPicker';
 import { EntityTable } from '../../components/EntityTable';
 import { PageHeader } from '../../components/PageHeader';
+import { money } from '../../format';
 
 /**
  * The Devices catalog. Keeping a short list of known manufacturer / model /
@@ -117,10 +118,7 @@ export function DevicesPage() {
             {
               header: 'Retail price',
               align: 'right',
-              render: (d: DeviceModel) =>
-                d.defaultPrice == null
-                  ? '—'
-                  : Number(d.defaultPrice).toLocaleString(undefined, { style: 'currency', currency: 'USD' }),
+              render: (d: DeviceModel) => money(d.defaultPrice),
             },
             {
               header: 'Category',

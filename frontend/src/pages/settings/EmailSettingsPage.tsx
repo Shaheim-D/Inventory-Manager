@@ -106,7 +106,7 @@ export function EmailSettingsPage() {
   return (
     <>
       <PageHeader
-        title="Email delivery"
+        title="SMTP settings"
         help="Where notifications are emailed from. Notifications always appear in the application; email is in addition to that."
       />
 

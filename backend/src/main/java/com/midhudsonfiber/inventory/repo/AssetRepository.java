@@ -45,6 +45,23 @@ public interface AssetRepository extends JpaRepository<Asset, Long>, JpaSpecific
             """)
     List<String> findAssetTagsInUse(java.util.Collection<String> tags);
 
+    /**
+     * The one live asset carrying this tag, for resolving a scanned barcode.
+     *
+     * <p>Case-insensitive and excluding deleted rows, to match how the rest of
+     * the application already treats tags: {@link #findAssetTagsInUse} rejects a
+     * new asset whose tag differs only in case, so at most one live asset can
+     * match here however it was typed. Deleted rows are excluded because
+     * uq_asset_tag is partial — a tag freed by a deletion is genuinely
+     * available again, and a scan should find the asset that holds it now
+     * rather than one that was thrown away.
+     *
+     * <p>{@code findFirst} rather than a unique result on purpose: the index
+     * guarantees at most one, but a lookup that answers a barcode scan should
+     * not be the thing that throws if that guarantee were ever violated.
+     */
+    Optional<Asset> findFirstByAssetTagIgnoreCaseAndDeletedFalse(String assetTag);
+
 
     /**
      * Ranked search over the tsvector and trigram indexes built in V1/V6. Native

@@ -46,18 +46,6 @@ export const ALL_STATUSES: PurchaseOrderStatus[] = [
 /** An order is only receivable once it has actually been bought. */
 export const RECEIVABLE: PurchaseOrderStatus[] = ['ORDERED', 'PARTIALLY_RECEIVED'];
 
-/** Agreed to, but not bought yet — the purchasing queue's contents. */
-export const AWAITING_PURCHASE: PurchaseOrderStatus[] = ['APPROVED'];
-
-export function money(value: number | null | undefined): string {
-  if (value == null) return '—';
-  return Number(value).toLocaleString(undefined, { style: 'currency', currency: 'USD' });
-}
-
-export function when(value: string | null | undefined): string {
-  return value ? new Date(value).toLocaleString() : '—';
-}
-
 /** What to call an order in a sentence: its vendor number once it has one. */
 export function orderLabel(order: PurchaseOrder): string {
   return order.orderNumber ? order.orderNumber : `Request #${order.id}`;
