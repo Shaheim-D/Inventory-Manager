@@ -209,7 +209,7 @@ export function PurchaseOrderFormPage() {
     <>
       <PageHeader
         title={editing ? 'Edit purchase request' : 'New purchase request'}
-        subtitle="Say what is needed and why. A purchaser approves it, then buys it."
+        help="Say what is needed and why. A purchaser approves it, then buys it."
         actions={
           <Button onClick={() => navigate(editing ? `/purchase-orders/order/${id}` : '/purchase-orders')}>
             Cancel

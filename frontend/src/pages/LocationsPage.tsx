@@ -212,7 +212,7 @@ export function LocationsPage() {
     <>
       <PageHeader
         title="Locations"
-        subtitle="Sites, warehouses, towers, and anything else that holds an asset."
+        help="Sites, warehouses, towers, and anything else that holds an asset."
         actions={
           has('location:write') ? (
             <Button

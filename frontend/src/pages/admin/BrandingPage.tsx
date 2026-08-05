@@ -81,7 +81,7 @@ export function BrandingPage() {
     <>
       <PageHeader
         title="Branding"
-        subtitle="Upload the organization's logo and set the palette the interface is themed from."
+        help="Upload the organization's logo and set the palette the interface is themed from."
       />
 
       {error && (

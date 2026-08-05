@@ -51,7 +51,7 @@ export function CategoriesPage() {
     <>
       <PageHeader
         title="Categories & custom fields"
-        subtitle="Categories are data, not schema: adding one, or changing what it tracks, never needs a deployment."
+        help="Categories are data, not schema: adding one, or changing what it tracks, never needs a deployment."
         actions={
           <Button variant="contained" onClick={() => setEditing({ serialized: true })}>
             New category

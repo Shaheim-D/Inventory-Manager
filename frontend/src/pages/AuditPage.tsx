@@ -28,7 +28,7 @@ export function AuditPage() {
     <>
       <PageHeader
         title="Audit history"
-        subtitle="Every recorded state change, newest first. Rows are append-only and outlive the records they describe."
+        help="Every recorded state change, newest first. Rows are append-only and outlive the records they describe."
       />
 
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>

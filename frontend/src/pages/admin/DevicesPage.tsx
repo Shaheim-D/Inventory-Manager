@@ -76,7 +76,7 @@ export function DevicesPage() {
     <>
       <PageHeader
         title="Devices"
-        subtitle="Known manufacturer, model, and device-role combinations, offered when creating an asset."
+        help="Known manufacturer, model, and device-role combinations, offered when creating an asset."
         actions={
           <Button variant="contained" onClick={() => setEditing({ active: true })}>
             New device

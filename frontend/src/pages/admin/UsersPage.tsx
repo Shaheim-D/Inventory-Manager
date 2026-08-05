@@ -47,7 +47,7 @@ export function UsersPage() {
     <>
       <PageHeader
         title="Users"
-        subtitle="Role assignment plus, separately, individual exceptions to that role."
+        help="Role assignment plus, separately, individual exceptions to that role."
         actions={
           <Button variant="contained" onClick={() => setCreating(true)}>
             New user

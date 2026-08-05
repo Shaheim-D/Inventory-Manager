@@ -222,7 +222,10 @@ export function AssetFormPage() {
     <Box component="form" onSubmit={submit}>
       <PageHeader
         title={editing ? 'Edit asset' : 'New asset'}
-        subtitle={editing ? existing.data?.displayLabel : 'Fields adapt to the category you choose.'}
+        // Which asset is being edited has to stay on the page; how the form
+        // behaves is the same sentence every time and belongs in the bubble.
+        subtitle={editing ? existing.data?.displayLabel : undefined}
+        help="Fields adapt to the category you choose. Only the fields that category uses are shown, and a field you cannot see is left as it was rather than cleared."
         actions={
           <>
             <Button onClick={() => navigate(editing ? `/assets/${id}` : '/assets')}>Cancel</Button>

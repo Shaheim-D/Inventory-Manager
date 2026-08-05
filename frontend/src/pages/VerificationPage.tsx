@@ -58,7 +58,7 @@ export function VerificationPage() {
     <>
       <PageHeader
         title="Inventory verification"
-        subtitle="Bulk stock whose recorded quantity has not been confirmed within its category's interval."
+        help="Bulk stock whose recorded quantity has not been confirmed within its category's interval."
       />
 
       {trackedCategories.length === 0 && (
