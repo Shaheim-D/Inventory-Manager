@@ -27,7 +27,7 @@ Against the roadmap's ten milestones:
 | 5 | Inventory staleness & verification | **Done** — the queue and its three resolution actions, the scheduled check, and every rule about what counts as somebody having verified something |
 | 6 | Plugin Framework | **Done** — `SyncPlugin` contract, orchestrator with the confirmation gate, Zabbix and NetBox read-only pulls, directory group sync, and the review/ignore screens |
 | 7 | Reporting | **Done** — nine standard reports led by the Device Identification List, a custom builder whose field picker is itself the visibility boundary, saved definitions, CSV and PDF export |
-| 8 | Deployment hardening | Compose stack, scripts, and runbook written; **the restore rehearsal has not been performed** |
+| 8 | Deployment hardening | **Done** — **the restore rehearsal has been executed for real** and is now a repeatable drill; see `docs/RESTORE_REHEARSAL.md`, including §5 on what it does not yet cover |
 | 9 | Final documentation & handoff | Ongoing |
 
 Milestone 1's demonstrable checkpoint — sign in as each seeded role and confirm

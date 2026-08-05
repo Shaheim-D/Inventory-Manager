@@ -178,7 +178,7 @@ function AddPluginDialog({
         <Stack spacing={2} sx={{ mt: 1 }}>
           <TextField
             select
-            label="Kind"
+            label="Plugin"
             value={type}
             onChange={(event) => {
               setType(event.target.value);

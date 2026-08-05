@@ -16,18 +16,18 @@
 # database. A backup that only ever lived next to the thing it protects is not
 # a backup. The destination is configured, never hardcoded.
 #
+# Where the database and the attachments actually are is DEPLOY_MODE's problem,
+# not this script's -- see scripts/lib/runtime.sh.
+#
 # Install as a nightly cron entry, e.g.:
 #     15 2 * * * /opt/inventory-manager/scripts/backup.sh >> /var/log/im-backup.log 2>&1
 # =====================================================================
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT/deploy"
-
-set -a
 # shellcheck disable=SC1091
-source "$ROOT/.env"
-set +a
+source "$ROOT/scripts/lib/runtime.sh"
+runtime_load_env "$ROOT"
 
 STAGING="${BACKUP_STAGING_DIR:-/var/backups/inventory-manager}"
 RETENTION="${BACKUP_RETENTION_DAYS:-180}"
@@ -38,7 +38,7 @@ FILES_ARCHIVE="inventory-manager-files-${STAMP}.tar.gz"
 mkdir -p "$STAGING"
 
 echo "[$(date -Is)] Dumping ${DB_NAME}..."
-docker compose exec -T postgres pg_dump -Fc -U "$DB_USER" "$DB_NAME" > "${STAGING}/${FILE}"
+db_dump "${STAGING}/${FILE}"
 
 # A zero-byte dump is worse than no dump, because it looks like success.
 if [[ ! -s "${STAGING}/${FILE}" ]]; then
@@ -48,11 +48,8 @@ if [[ ! -s "${STAGING}/${FILE}" ]]; then
 fi
 echo "[$(date -Is)] Wrote ${STAGING}/${FILE} ($(du -h "${STAGING}/${FILE}" | cut -f1))"
 
-# Attachments. Read out of the running container so this works the same whether
-# the volume is a Docker named volume or a bind mount.
-ATTACHMENT_DIR="${APP_ATTACHMENTS_DIRECTORY:-/var/lib/inventory-manager/attachments}"
-echo "[$(date -Is)] Archiving attachments from ${ATTACHMENT_DIR}..."
-docker compose exec -T app tar -czf - -C "$ATTACHMENT_DIR" . > "${STAGING}/${FILES_ARCHIVE}"
+echo "[$(date -Is)] Archiving attachments from ${APP_ATTACHMENTS_DIRECTORY}..."
+attachments_tar_to "${STAGING}/${FILES_ARCHIVE}"
 
 # An empty archive is legitimate here -- a new deployment has no attachments
 # yet -- so this checks the tar is readable rather than that it has content.

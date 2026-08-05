@@ -91,12 +91,34 @@ commit and say why.
 
 ## What is not built yet
 
-Every feature milestone (0–7) is done — see the status table in `README.md`.
-What remains is Milestone 8, and specifically **the restore rehearsal, which has
-never been performed for real**. The roadmap calls that the single most
-important demonstrable in the whole project, because the tolerance for automatic
-Flyway-on-startup and forward-only migrations rests entirely on restore actually
-working when it is needed. Writing the runbook was not the same as executing it.
+Milestones 0–8 are done — see the status table in `README.md`. What remains is
+Milestone 9, the consolidated MOP and the standalone database documentation.
+
+## Backup and restore
+
+The restore rehearsal has been performed for real, and the record —
+`docs/RESTORE_REHEARSAL.md` — is worth reading before touching anything in
+`scripts/`. Its §5 is the important part: it lists what the rehearsal did *not*
+cover, and Compose mode is on that list.
+
+Rollback is restore-from-backup. That is the only recovery mechanism there is,
+which is what makes automatic Flyway-on-startup and forward-only migrations
+tolerable, so `scripts/restore-drill.sh` exists to keep it true rather than
+remembered. **Re-run the drill after any change to `backup.sh`, `restore.sh`,
+the backup artefact format, or the deployment topology** — it runs the shipped
+scripts, genuinely destroys the data, restores from the off-box copy, and
+compares row counts and per-file SHA-256s.
+
+Two consequences worth holding onto:
+
+- **Nothing may assume the database is in the Compose stack.** Both scripts
+  reach it through `scripts/lib/runtime.sh` and a `DEPLOY_MODE` of `compose` or
+  `direct`, because the runbook offers externalizing Postgres as a config
+  change. A new `docker compose exec postgres` anywhere silently breaks backups
+  for anyone who took that path.
+- **`DB_USER` needs `CREATEDB`**, because restore drops and recreates the
+  database. In the default stack that is true by accident — `DB_USER` is the
+  container's superuser — which is exactly why it has to be stated.
 
 ## Plugins
 
