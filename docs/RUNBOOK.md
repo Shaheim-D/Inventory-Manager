@@ -104,6 +104,11 @@ script finds it by matching the timestamp. If it finds neither, it says so and
 makes you confirm before continuing, because a silent restore-without-files is
 the failure that only shows up weeks later when someone opens an invoice.
 
+**This procedure has been executed for real.** The record — what was run, what
+it proved, what it found, and what it explicitly does *not* prove — is
+`docs/RESTORE_REHEARSAL.md`. Read that before trusting this section, in
+particular §5, which lists the parts still unproven.
+
 The script walks these six steps by hand:
 
 1. **Stop `app`** so nothing writes mid-restore.
@@ -118,20 +123,67 @@ The script walks these six steps by hand:
    attachment**. A file reported as missing means the archive did not come back
    with the database.
 
-**Rehearse this at least once against a real backup before you need it.** Much of
-this platform's risk tolerance — automatic Flyway on startup, no down-migrations
-— rests on the assumption that restore actually works.
+### Rehearsing it
+
+Don't wait for an incident to find out. The drill is a script:
+
+```
+./scripts/restore-drill.sh
+```
+
+It copies a real database and its attachments, runs the **shipped** `backup.sh`,
+genuinely destroys both, runs the **shipped** `restore.sh` against the *off-box*
+copy, and then proves every table's row count and every attachment's SHA-256
+came back identical. Nothing writes to the source database.
+
+Add `DRILL_KEEP=1` to leave the restored copy in place, point an application at
+it, and run the smoke test above by hand — the mechanical pass is the easier
+half, and the one most likely to be mistaken for the whole.
+
+**Re-run the drill after any change to `backup.sh`, `restore.sh`, the backup
+artefact format, or the deployment topology.** Much of this platform's risk
+tolerance — automatic Flyway on startup, no down-migrations — rests on the
+assumption that restore actually works, and that assumption expires.
 
 ---
 
-## 5. Moving Postgres out of the stack
+## 5. Where the database and the app actually are
+
+`backup.sh`, `restore.sh` and `restore-drill.sh` reach the database and the
+attachment directory through `DEPLOY_MODE` in `.env`:
+
+| `DEPLOY_MODE` | Means |
+|---|---|
+| `compose` (default) | Both are services in `deploy/docker-compose.yml`; the scripts use `docker compose exec`. No PostgreSQL client tools needed on the host. |
+| `direct` | Postgres is at `DB_HOST:DB_PORT` and `psql`/`pg_dump`/`pg_restore` are on `PATH`. For an externalized or managed database, or a drill on a machine with no Docker. |
+
+In `direct` mode the scripts cannot guess how the application itself is started,
+so tell them with `APP_STOP_COMMAND` / `APP_START_COMMAND` / `APP_HEALTH_URL`.
+Left unset, `restore.sh` stops and asks a human rather than restoring underneath
+a running application.
+
+`update.sh` is Compose-only by nature and says so if it finds another mode.
+
+---
+
+## 6. Moving Postgres out of the stack
 
 A configuration change, not a port:
 
 1. Stand up PostgreSQL 15+ wherever it should live.
-2. Restore the current database into it with §4's procedure.
-3. Change `DB_HOST` (and any of `DB_PORT`/`DB_NAME`/`DB_USER`/`DB_PASSWORD`) in `.env`.
-4. Stop starting the `postgres` service, or remove it from `docker-compose.yml`.
+2. Grant the application's role `CREATEDB`. This is not for the application —
+   it never creates a database — it is for `restore.sh`, which drops and
+   recreates as step 2. In the default stack `DB_USER` is the Postgres
+   container's own superuser and this is true by accident; here it has to be
+   granted, or the recovery procedure fails with a permission error at the worst
+   possible moment. `scripts/setup-database.sql` shows the grant.
+3. Restore the current database into it with §4's procedure.
+4. Change `DB_HOST` (and any of `DB_PORT`/`DB_NAME`/`DB_USER`/`DB_PASSWORD`) in `.env`.
+5. Set `DEPLOY_MODE=direct`, so the backup and restore scripts stop looking for
+   a `postgres` service that is no longer there. Miss this and backups fail —
+   silently enough to be discovered during a restore.
+6. Stop starting the `postgres` service, or remove it from `docker-compose.yml`.
+7. Run `./scripts/restore-drill.sh` against the new instance before trusting it.
 
 Nothing in the application assumes the database is same-host, which is what keeps
 this true. It stays true only as long as nothing hardcodes `postgres` as a
@@ -139,7 +191,7 @@ hostname anywhere — hold that line.
 
 ---
 
-## 6. Before shipping a release
+## 7. Before shipping a release
 
 The pre-release check that makes automatic-Flyway-on-startup safe:
 
@@ -152,7 +204,7 @@ surfaces. Do this once per release, before it goes out.
 
 ---
 
-## 7. Routine questions
+## 8. Routine questions
 
 **Someone is locked out.** Five failed sign-ins lock an account for 15 minutes.
 Either wait it out or, under **Admin → Users**, use **Unlock**.

@@ -51,6 +51,91 @@ jobs:
           DB_PASSWORD: inventory_manager
         run: mvn -B test
 
+  restore-drill:
+    name: Restore drill (backup, destroy, restore, verify)
+    runs-on: ubuntu-latest
+
+    # Rollback is restore-from-backup -- there is no other recovery mechanism,
+    # which is what makes automatic Flyway-on-startup and forward-only
+    # migrations tolerable. That makes restore working a standing property of
+    # the repository, not a thing somebody rehearsed once. The drill runs the
+    # shipped backup.sh and restore.sh, genuinely destroys the data, restores
+    # from the off-box copy, and compares row counts and per-file SHA-256s.
+    #
+    # Same reasoning as MigrationValidationTest: the claim is re-proved on every
+    # build rather than trusted because it was true once.
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: inventory_manager_test
+          POSTGRES_USER: inventory_manager
+          POSTGRES_PASSWORD: inventory_manager
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U inventory_manager"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      - name: Install PostgreSQL 16 client
+        # pg_dump must match the server's major version, so pin it rather than
+        # taking whatever the runner image happens to carry.
+        run: |
+          sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16
+          pg_dump --version
+
+      - name: Build the schema by running the migration chain
+        # The drill needs a database with real structure to back up. The test
+        # suite builds one from empty via Flyway, which is also the shape a real
+        # deployment has.
+        working-directory: backend
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: inventory_manager_test
+          DB_USER: inventory_manager
+          DB_PASSWORD: inventory_manager
+        run: mvn -B test -Dtest=MigrationValidationTest -DfailIfNoTests=false
+
+      - name: Give it attachments to lose
+        # A drill over an empty attachment directory would exercise the tar and
+        # prove nothing about the half of a backup that is not the dump.
+        run: |
+          mkdir -p /tmp/im-attachments/2026/08
+          for i in $(seq 1 5); do
+            head -c 4096 /dev/urandom > "/tmp/im-attachments/2026/08/fixture-${i}.bin"
+          done
+
+      - name: Run the drill
+        env:
+          IM_ENV_FILE: /tmp/im-drill.env
+        run: |
+          cat > /tmp/im-drill.env <<'EOF'
+          DEPLOY_MODE=direct
+          DB_HOST=localhost
+          DB_PORT=5432
+          DB_NAME=inventory_manager_test
+          DB_USER=inventory_manager
+          DB_PASSWORD=inventory_manager
+          APP_ATTACHMENTS_DIRECTORY=/tmp/im-attachments
+          EOF
+          ./scripts/restore-drill.sh
+
   frontend:
     name: Frontend (typecheck + build)
     runs-on: ubuntu-latest

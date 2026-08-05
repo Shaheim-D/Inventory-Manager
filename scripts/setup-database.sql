@@ -24,13 +24,23 @@
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'inventory_manager') THEN
-        CREATE ROLE inventory_manager LOGIN PASSWORD 'inventory_manager';
+        CREATE ROLE inventory_manager LOGIN CREATEDB PASSWORD 'inventory_manager';
         RAISE NOTICE 'Created role inventory_manager.';
     ELSE
         RAISE NOTICE 'Role inventory_manager already exists; leaving it alone.';
     END IF;
 END
 $$;
+
+-- CREATEDB is not optional, and it is not for the application -- the app never
+-- creates a database, Flyway only builds a schema inside one that exists.
+-- It is for restore.sh, which drops and recreates the database as step 2 of
+-- every restore. Rollback is restore-from-backup here, so a role that cannot
+-- do that turns the recovery procedure into a permission error discovered at
+-- the worst possible moment. In the default stack DB_USER is the Postgres
+-- container's own superuser and this is true by accident; the moment the
+-- database is externalized (RUNBOOK §5) it stops being true unless granted.
+ALTER ROLE inventory_manager CREATEDB;
 
 -- CREATE DATABASE cannot run inside a transaction block, so it cannot be
 -- wrapped the same way. If the database already exists this reports
