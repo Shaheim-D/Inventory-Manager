@@ -77,6 +77,14 @@ public class BackupService {
     private final String username;
     private final String password;
     private final long timeoutSeconds;
+    /**
+     * Both default to a bare name found on PATH, which is what the deployed
+     * image provides. They are configurable because a developer machine often
+     * does not: the PostgreSQL installer for Windows does not put its bin
+     * directory on PATH, so pg_dump is present but unreachable by name.
+     */
+    private final String pgDumpPath;
+    private final String tarPath;
 
     public BackupService(
             @Value("${app.backups.directory}") String backupDirectory,
@@ -86,7 +94,9 @@ public class BackupService {
             @Value("${DB_NAME:inventory_manager}") String database,
             @Value("${DB_USER:inventory_manager}") String username,
             @Value("${DB_PASSWORD:inventory_manager}") String password,
-            @Value("${app.backups.timeout-seconds:900}") long timeoutSeconds) {
+            @Value("${app.backups.timeout-seconds:900}") long timeoutSeconds,
+            @Value("${app.backups.pg-dump-path:pg_dump}") String pgDumpPath,
+            @Value("${app.backups.tar-path:tar}") String tarPath) {
         this.backupDirectory = Path.of(backupDirectory);
         this.attachmentDirectory = Path.of(attachmentDirectory);
         this.host = host;
@@ -95,6 +105,8 @@ public class BackupService {
         this.username = username;
         this.password = password;
         this.timeoutSeconds = timeoutSeconds;
+        this.pgDumpPath = pgDumpPath;
+        this.tarPath = tarPath;
     }
 
     public record Artefact(String name, long sizeBytes, Instant createdAt, boolean attachments) {}
@@ -118,7 +130,7 @@ public class BackupService {
         Path files = backupDirectory.resolve(FILES_PREFIX + stamp + FILES_SUFFIX);
 
         try {
-            run(dump, "pg_dump", "-Fc", "-h", host, "-p", port, "-U", username, database);
+            run(dump, pgDumpPath, "-Fc", "-h", host, "-p", port, "-U", username, database);
 
             // A zero-byte dump is worse than no dump, because it looks like success.
             if (Files.size(dump) == 0) {
@@ -129,7 +141,7 @@ public class BackupService {
             // An installation that has never had an upload has no directory yet.
             // That is a legitimate empty archive, not a failure.
             Files.createDirectories(attachmentDirectory);
-            run(files, "tar", "-czf", "-", "-C", attachmentDirectory.toString(), ".");
+            run(files, tarPath, "-czf", "-", "-C", attachmentDirectory.toString(), ".");
 
             log.info("Backup created: {} ({} bytes) and {} ({} bytes)",
                     dump.getFileName(), Files.size(dump), files.getFileName(), Files.size(files));
@@ -253,7 +265,18 @@ public class BackupService {
         Path errors = Files.createTempFile("backup-stderr-", ".log");
         builder.redirectError(errors.toFile());
 
-        Process process = builder.start();
+        Process process;
+        try {
+            process = builder.start();
+        } catch (IOException notFound) {
+            Files.deleteIfExists(errors);
+            throw new ApiExceptions.BadRequestException(
+                    command[0] + " could not be run. It must be installed and on PATH, or named "
+                    + "explicitly with app.backups." + (command[0].contains("tar") ? "tar" : "pg-dump")
+                    + "-path. On Windows the PostgreSQL installer does not add its bin directory "
+                    + "to PATH, so pg_dump is usually present at "
+                    + "C:\\Program Files\\PostgreSQL\\16\\bin\\pg_dump.exe but not reachable by name.");
+        }
         try {
             if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
                 process.destroyForcibly();

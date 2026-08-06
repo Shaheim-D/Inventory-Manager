@@ -138,6 +138,38 @@ npm run dev
 `package.json` — the frontend is its own project, and the repository root is not
 a Node package.
 
+**Docker is not involved in any of this.** The image and the Compose stack are
+how it *deploys*; running it locally is just a JVM, a Node dev server and a
+PostgreSQL you already have. Nothing above needs rebuilding an image, and a
+code change is picked up by restarting whichever of the two you changed.
+
+#### For the Backups screen on Windows
+
+**Settings → Backups** runs `pg_dump`, and the PostgreSQL installer for Windows
+does not put its `bin` directory on `PATH` — so the tool is on the machine but
+the application cannot find it by name. Either add it to `PATH`, or name it
+outright:
+
+```powershell
+# Option A -- add it to PATH for this session
+$env:PATH += ';C:\Program Files\PostgreSQL\16\bin'
+
+# Option B -- tell the application exactly where it is
+$env:APP_BACKUPS_PG_DUMP_PATH = 'C:\Program Files\PostgreSQL\16\bin\pg_dump.exe'
+```
+
+Use the `bin` of the **same major version as the server you are running**:
+pg_dump refuses to dump a server newer than itself, and the failure is an
+unrestorable archive rather than a clear error.
+
+`tar` needs nothing — Windows 11 ships it in `System32`, and the archive it
+writes is a normal gzipped tar. Without the setting above the screen still
+loads; taking a backup reports that pg_dump could not be run, and says where it
+usually lives.
+
+Backups land in `backend/data/backups/` when running this way, beside
+`backend/data/attachments/`.
+
 Then open <http://localhost:5173> and sign in as `admin` with the password you
 chose. If you leave `APP_ADMIN_INITIAL_PASSWORD` unset, one is generated and
 printed to the log **once**, at first startup only.
