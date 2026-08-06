@@ -166,9 +166,9 @@ exactly as given and never second-guessed, so a wrong one is an error rather
 than a silent fallback to a different binary.
 
 `tar` needs nothing — Windows 11 ships it in `System32`, and the archive it
-writes is a normal gzipped tar. Without the setting above the screen still
-loads; taking a backup reports that pg_dump could not be run, and says where it
-usually lives.
+writes is a normal gzipped tar. If pg_dump genuinely cannot be found anywhere,
+the screen still loads and taking a backup reports what to set, rather than an
+error number.
 
 Backups land in `backend/data/backups/` when running this way, beside
 `backend/data/attachments/`.
