@@ -13,20 +13,63 @@ procedure here has real commands.
 3. Clone this repository to `/opt/inventory-manager`.
 4. `cp .env.example .env`, fill in real values, then `chmod 600 .env`.
    The file is never committed and never world-readable.
-5. Issue the first certificate (renewals after this are unattended):
-   ```
-   cd deploy
-   docker compose up -d nginx
-   docker compose run --rm certbot certonly --webroot -w /var/www/certbot \
-     -d "$APP_HOSTNAME" --email "$APP_TLS_ACME_EMAIL" --agree-tos --no-eff-email
-   ```
-6. `docker compose up -d`
+5. Choose how it is served — see §1.1 below. On an internal VM the default
+   (`TLS_MODE=none`) needs no further action.
+6. `cd deploy && docker compose up -d`
 7. Watch the first startup: `docker compose logs -f app`. Flyway runs
    automatically, and if `APP_ADMIN_INITIAL_PASSWORD` was left blank, the
    generated bootstrap password is printed here **once**.
-8. Sign in as that administrator, change the password when prompted, then
-   create real accounts under **Admin → Users**.
+8. Browse to the VM — `http://<its address>/`. Sign in as that administrator,
+   change the password when prompted, then create real accounts under
+   **Admin → Users**.
 9. Upload the organization's logo and palette under **Admin → Branding**.
+
+### 1.1 How it is served, and reaching it on a VM
+
+The proxy publishes ports 80 and 443 on **every** interface of the VM, so the
+application is reachable from the rest of the network as soon as the stack is
+up. Restrict who can reach it at the VM's own firewall or security group rather
+than by binding it narrowly — but if you do want it bound to loopback only, set
+`HTTP_BIND=127.0.0.1` in `.env`.
+
+`TLS_MODE` in `.env` decides the rest:
+
+| `TLS_MODE` | Use it when | What you get |
+|---|---|---|
+| `none` (default) | A VM on an internal network, reached by IP or an internal DNS name | Plain HTTP. Nothing encrypted — right for a private LAN, wrong facing the internet |
+| `provided` | Internal, but you want encryption | TLS from a certificate you supply in `deploy/nginx/certs/` |
+| `letsencrypt` | A real public hostname resolving to this machine, with inbound port 80 from the internet | TLS issued and renewed automatically |
+
+**For `provided`**, either drop a `fullchain.pem` and `privkey.pem` from your own
+CA into `deploy/nginx/certs/`, or generate a self-signed pair:
+
+```
+./scripts/make-selfsigned-cert.sh inventory.corp.local 10.20.30.40
+```
+
+Pass every name and address people will actually type — a certificate is only
+valid for the names inside it. Browsers will still warn on a self-signed
+certificate, because nothing signed it but itself; that is the browser doing its
+job. It buys encryption, not identity. A certificate from an internal CA is
+strictly better if you have one.
+
+**For `letsencrypt`**, start the stack with the profile that includes certbot:
+
+```
+docker compose --profile letsencrypt up -d
+docker compose run --rm certbot certonly --webroot -w /var/www/certbot \
+  -d "$APP_HOSTNAME" --email "$APP_TLS_ACME_EMAIL" --agree-tos --no-eff-email
+```
+
+The proxy serves plain HTTP until that certificate exists — which is what lets
+the challenge be answered at all — and switches itself to TLS once it appears,
+within twelve hours or immediately on `docker compose restart nginx`.
+
+**The proxy never refuses to start over a missing certificate.** It logs the
+problem and serves HTTP instead. A proxy that will not start is an application
+nobody can reach, and that failure used to be silent and circular: nginx would
+not run without a certificate, so nothing served the ACME challenge, so no
+certificate was ever issued.
 
 ---
 
