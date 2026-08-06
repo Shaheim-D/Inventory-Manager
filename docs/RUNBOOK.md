@@ -139,6 +139,49 @@ The two artefacts still exist separately on the server, because that is the
 format the nightly job writes and this script reads; the zip is transport, not
 a third format.
 
+### Letting Unimus collect it
+
+Unimus backs things up by opening an SSH session, running a command, and
+storing what comes back on stdout as that device's configuration — then diffing
+each capture against the last. `scripts/unimus-backup.sh` emits the database as
+plain SQL text and nothing else, so the inventory database becomes another
+device it tracks with a readable history of every change.
+
+In Unimus: add the VM as a device, and set its backup command to
+
+```
+/opt/inventory-manager/scripts/unimus-backup.sh
+```
+
+The SSH account it logs in as needs to be able to reach the database — the same
+access `backup.sh` needs.
+
+**It is not a complete backup, and cannot be.** A backup here is two things,
+and a text stream can only carry the database. Restoring from this alone brings
+back every attachment row pointing at a file that is not there. So a manifest
+of the attachment files is appended as SQL comments: it cannot restore them,
+but it tells you exactly which files are missing, and it makes an attachment
+appearing or disappearing show up in the diff. **Keep `backup.sh` as the
+recovery path** — it captures both halves and it is what `restore.sh` reads.
+
+Two details that make the diff trustworthy, both learned the hard way:
+
+- pg_dump 16.9+ wraps its output in `\restrict`/`\unrestrict` with a **random
+  nonce**, so two dumps of completely unchanged data differ. Those lines are
+  stripped, or every capture would report a change and the diff would mean
+  nothing. The binary artefact `restore.sh` reads keeps them.
+- There is no timestamp in the payload for the same reason. Unimus records when
+  it took a capture; putting the time inside it would defeat the diff just as
+  effectively.
+
+Two consecutive captures of unchanged data are byte-identical; a single renamed
+asset shows up as exactly two changed lines.
+
+**Whoever can read Unimus's backup store can read this entire database**,
+password hashes and cost fields included, regardless of what field visibility
+shows anyone in the application. That is true of any dump — worth stating
+because this one is handed to a second system with its own access rules.
+
 Restoring is deliberately **not** in the application. A restore drops the
 database the application is running against — it cannot sensibly do that to
 itself, and putting the most destructive operation in the system behind a

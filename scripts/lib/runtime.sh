@@ -85,6 +85,16 @@ db_dump() {
   esac
 }
 
+# db_dump_plain -- plain SQL to stdout, for a collector that stores text.
+# Not a replacement for db_dump: this is the human-readable, diffable form,
+# and it carries no attachments.
+db_dump_plain() {
+  case "$DEPLOY_MODE" in
+    compose) docker compose exec -T postgres pg_dump --format=plain --no-owner --no-acl -U "$DB_USER" "$DB_NAME" ;;
+    direct)  pg_dump --format=plain --no-owner --no-acl -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" "$DB_NAME" ;;
+  esac
+}
+
 # db_restore <input-file>
 db_restore() {
   local in="$1"
