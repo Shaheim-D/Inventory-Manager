@@ -33,6 +33,7 @@ const NotificationRulesPage = lazyPage(
   () => import('./pages/settings/NotificationRulesPage'), 'NotificationRulesPage');
 const EmailSettingsPage = lazyPage(
   () => import('./pages/settings/EmailSettingsPage'), 'EmailSettingsPage');
+const BackupsPage = lazyPage(() => import('./pages/settings/BackupsPage'), 'BackupsPage');
 const PurchaseOrdersPage = lazyPage(
   () => import('./pages/purchase-orders/PurchaseOrdersPage'), 'PurchaseOrdersPage');
 const PurchaseOrderFormPage = lazyPage(
@@ -109,6 +110,7 @@ export function App() {
           path="/settings/email"
           element={guard(['notification_rule:manage'], <EmailSettingsPage />)}
         />
+        <Route path="/settings/backups" element={guard(['backup:run'], <BackupsPage />)} />
 
         <Route path="/admin/categories" element={guard(['category:manage'], <CategoriesPage />)} />
         <Route path="/admin/plugins" element={guard(['plugin:manage'], <PluginsPage />)} />

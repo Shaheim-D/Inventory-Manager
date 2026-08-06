@@ -43,12 +43,16 @@ services:
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
       APP_ATTACHMENTS_DIRECTORY: /var/lib/inventory-manager/attachments
+      APP_BACKUPS_DIRECTORY: /var/lib/inventory-manager/backups
     volumes:
       # Attachment bytes live on disk, not in Postgres, so they need a volume
       # of their own -- without one, replacing the container during an update
       # would take every uploaded file with it. backup.sh archives this
       # directory alongside the database dump for the same reason.
       - attachment-data:/var/lib/inventory-manager/attachments
+      # Backups taken from Settings > Backups. Its own volume so an update,
+      # which recreates the container, does not take them with it.
+      - backup-data:/var/lib/inventory-manager/backups
     networks:
       - internal
     # No ports: -- the app is reachable only through the reverse proxy.
@@ -105,6 +109,7 @@ services:
 volumes:
   postgres-data:
   attachment-data:
+  backup-data:
   certbot-certs:
   certbot-webroot:
 

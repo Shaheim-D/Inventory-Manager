@@ -42,4 +42,12 @@ public final class PermissionKeys {
 
     /** Added in V10 -- a plain catalog insert, exactly as Phase 7 §3 anticipated. */
     public static final String BRANDING_MANAGE = "branding:manage";
+
+    /**
+     * Added in V25. Deliberately not folded into ROLE_MANAGE: this is not
+     * "administers the system", it is "may obtain a complete copy of the
+     * database" -- every column of every row, field visibility not applied,
+     * password hashes included.
+     */
+    public static final String BACKUP_RUN = "backup:run";
 }

@@ -32,6 +32,26 @@ RUN mvn -f backend/pom.xml -B -DskipTests package
 FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
 
+# pg_dump, for backups taken from inside the application (Settings > Backups).
+# Pinned to 16 to match the server: pg_dump refuses to dump a newer server, and
+# a mismatch surfaces as an unrestorable archive rather than a clear error.
+#
+# This grants the container no authority it did not already have -- it holds the
+# database credentials either way. What it deliberately does NOT do is give the
+# app the Docker socket to run `docker compose exec postgres pg_dump`, which
+# would turn a web-app vulnerability into a host compromise.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+         -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+https://apt.postgresql.org/pub/repos/apt jammy-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-16 \
+    && apt-get purge -y gnupg && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
 # Never runs as root: a web-facing process has no reason to.
 RUN groupadd --system inventory && useradd --system --gid inventory --home /app inventory
 COPY --from=backend /build/backend/target/*.jar /app/inventory-manager.jar

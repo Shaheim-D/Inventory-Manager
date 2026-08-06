@@ -44,6 +44,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import ExpandLess from '@mui/icons-material/ExpandLess';
 import ExpandMore from '@mui/icons-material/ExpandMore';
 import MailIcon from '@mui/icons-material/Email';
+import BackupIcon from '@mui/icons-material/CloudDownloadOutlined';
 import DarkModeIcon from '@mui/icons-material/DarkModeOutlined';
 import LightModeIcon from '@mui/icons-material/LightModeOutlined';
 import KeyIcon from '@mui/icons-material/VpnKeyOutlined';
@@ -166,6 +167,12 @@ const NAV: NavSection[] = [
         to: '/settings/email',
         icon: <MailIcon />,
         permissions: ['notification_rule:manage'],
+      },
+      {
+        label: 'Backups',
+        to: '/settings/backups',
+        icon: <BackupIcon />,
+        permissions: ['backup:run'],
       },
       {
         label: 'Plugins',

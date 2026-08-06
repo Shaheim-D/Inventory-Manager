@@ -106,7 +106,33 @@ whatever `BACKUP_DESTINATION_TYPE` names:
 | `inventory-manager-<stamp>.dump` | `pg_dump -Fc` of the database |
 | `inventory-manager-files-<stamp>.tar.gz` | the attachment directory |
 
-Install it nightly:
+### Taking one from the application
+
+**Settings → Backups** takes the same two artefacts on demand, with the same
+names, so `restore.sh` restores one of these exactly as it restores a nightly
+one. There is no second recovery path to keep true — that is the point.
+
+Three things to know:
+
+- **It needs `backup:run`**, which is granted to Administrator alone. That is
+  not tidiness. A dump is every column of every row with field visibility not
+  applied and password hashes included, so downloading one is a complete bypass
+  of the rules the rest of the platform enforces. Grant it accordingly.
+- **Taking a backup and downloading one are separate audit events**, recorded
+  against the same entity id, so **Audit History** shows the whole life of one
+  backup. The download is the event that matters — it is the moment a complete
+  copy of the database leaves the machine.
+- **These land on a volume beside the database they protect**, which is not yet
+  a backup. Download them, or point `BACKUP_DESTINATION_PATH` at that volume so
+  the nightly job carries them off-box.
+
+Restoring is deliberately **not** in the application. A restore drops the
+database the application is running against — it cannot sensibly do that to
+itself, and putting the most destructive operation in the system behind a
+button makes it the most reachable one. It stays at §4, done from a shell by
+somebody who meant to.
+
+Install the nightly job:
 
 ```
 15 2 * * * /opt/inventory-manager/scripts/backup.sh >> /var/log/im-backup.log 2>&1
