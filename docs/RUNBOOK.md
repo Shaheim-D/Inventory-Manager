@@ -295,5 +295,30 @@ everybody with the roles they already had. It never touches passwords,
 lockouts, or the failed-attempt counter — there is a test on every build
 asserting exactly that.
 
+**A barcode scan does nothing.** Scanning an asset tag anywhere in the
+application opens the asset carrying it. There is no driver and no pairing:
+the scanner is a keyboard wedge, so it types the tag and presses Enter, and the
+application tells that apart from a person typing purely by speed.
+
+Three things to check, in this order:
+
+1. **The scanner must send Enter (a CR suffix) after the barcode.** This is the
+   default on essentially every wedge scanner, but it is configurable, and one
+   set to send nothing — or a Tab — will never complete a scan. Test it in any
+   text editor: the cursor should jump to the next line by itself.
+2. **Nothing may have focus.** If the cursor is in a search box or a form
+   field, the scan goes into that field instead, deliberately — scanning
+   straight into the asset-tag box while creating an asset is a thing people
+   want. Click on empty page background first.
+3. **The tag has to be on an asset.** A scan that matches nothing says so, and
+   offers a search instead: the sticker may be on something not entered yet, or
+   the number may be recorded in a different field. Matching is on **asset tag
+   only**, and ignores case.
+
+A deleted asset stops answering for its tag immediately, and the tag becomes
+available for a new asset — the same rule the uniqueness constraint follows, so
+that something deleted by mistake can be re-created with the sticker still
+physically on it.
+
 **Logs.** `docker compose logs -f app`. Everything goes to stdout/stderr; there
 is deliberately no log aggregation stack at this size.

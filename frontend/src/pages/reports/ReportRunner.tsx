@@ -5,7 +5,6 @@ import {
   Button,
   Collapse,
   Divider,
-  IconButton,
   LinearProgress,
   Paper,
   Stack,
@@ -232,20 +231,5 @@ export function ReportRunner({
         </>
       )}
     </Stack>
-  );
-}
-
-/** Shown by the runner's parent when it wants a plain expand/collapse control. */
-export function OptionsToggle({
-  open,
-  onToggle,
-}: {
-  open: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <IconButton size="small" onClick={onToggle}>
-      {open ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-    </IconButton>
   );
 }

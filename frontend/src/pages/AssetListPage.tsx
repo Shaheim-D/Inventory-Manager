@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Chip, Grid, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
@@ -9,6 +9,7 @@ import { PageHeader } from '../components/PageHeader';
 import { ImportDialog } from '../components/ImportDialog';
 import { locationOptions, locationOptionSx, locationPath } from '../components/locationTree';
 import { useAuth } from '../auth/AuthContext';
+import { money } from '../format';
 
 export function AssetListPage() {
   const navigate = useNavigate();
@@ -21,9 +22,14 @@ export function AssetListPage() {
   // in, not a filter someone chose from the toolbar.
   const purchaseOrderId = searchParams.get('purchaseOrderId');
 
+  // Seeded from the URL so a search is a shareable link, and so arriving here
+  // from somewhere that already knows what to look for -- a barcode scan whose
+  // tag matched nothing, say -- lands with the box filled in and run.
+  const initialQuery = searchParams.get('q') ?? '';
+
   const [importing, setImporting] = useState(false);
-  const [q, setQ] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [q, setQ] = useState(initialQuery);
+  const [searchTerm, setSearchTerm] = useState(initialQuery);
   const [categoryId, setCategoryId] = useState('');
   const [locationId, setLocationId] = useState('');
   const [lifecycleStateId, setLifecycleStateId] = useState('');
@@ -31,6 +37,20 @@ export function AssetListPage() {
   const [size, setSize] = useState(25);
   const [sort, setSort] = useState('id');
   const [direction, setDirection] = useState<'asc' | 'desc'>('desc');
+
+  // Arriving at /assets?q=… while already standing on /assets re-renders this
+  // component rather than remounting it, so the initial state above never runs
+  // again. Without this, scanning an unknown tag from the asset list and
+  // choosing Search would change the URL and nothing else.
+  //
+  // Keyed on the string rather than the URLSearchParams object: that object is
+  // a fresh instance on every render, so depending on it would reset the search
+  // box on every keystroke.
+  useEffect(() => {
+    setQ(initialQuery);
+    setSearchTerm(initialQuery);
+    setPage(0);
+  }, [initialQuery]);
 
   // Enter and the button do the same thing; neither should be the only way in.
   function runSearch() {
@@ -108,10 +128,7 @@ export function AssetListPage() {
           {
             header: 'Retail Price',
             align: 'right' as const,
-            render: (asset: Asset) =>
-              asset.purchasePrice == null
-                ? '—'
-                : asset.purchasePrice.toLocaleString(undefined, { style: 'currency', currency: 'USD' }),
+            render: (asset: Asset) => money(asset.purchasePrice),
           },
         ]
       : []),

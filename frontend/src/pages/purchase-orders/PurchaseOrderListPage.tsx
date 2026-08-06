@@ -16,7 +16,8 @@ import { api } from '../../api/client';
 import type { PurchaseOrder } from '../../api/types';
 import { EntityTable, type Column } from '../../components/EntityTable';
 import { useAuth } from '../../auth/AuthContext';
-import { ALL_STATUSES, money, orderLabel, statusLabel, StatusChip } from './shared';
+import { ALL_STATUSES, orderLabel, statusLabel, StatusChip } from './shared';
+import { money } from '../../format';
 
 /**
  * My Requests and All Orders are one view with a scope switch rather than two,

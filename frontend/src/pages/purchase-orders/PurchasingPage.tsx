@@ -6,7 +6,7 @@ import { api } from '../../api/client';
 import type { PurchaseOrder } from '../../api/types';
 import { EntityTable, type Column } from '../../components/EntityTable';
 import { PurchaseDialog } from './OrderActionDialogs';
-import { money, when } from './shared';
+import { money, when } from '../../format';
 
 /**
  * Orders that have been agreed to but not bought yet.

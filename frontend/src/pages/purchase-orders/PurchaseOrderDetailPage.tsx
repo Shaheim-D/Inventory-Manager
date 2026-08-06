@@ -23,7 +23,8 @@ import { PageHeader } from '../../components/PageHeader';
 import { useAuth } from '../../auth/AuthContext';
 import { ApproveDialog, PurchaseDialog, ReasonDialog } from './OrderActionDialogs';
 import { ReceiveDialog } from './ReceiveDialog';
-import { money, orderLabel, RECEIVABLE, StatusChip, when } from './shared';
+import { orderLabel, RECEIVABLE, StatusChip } from './shared';
+import { money, when } from '../../format';
 
 /**
  * One order, end to end: what was asked for, who decided what, every delivery

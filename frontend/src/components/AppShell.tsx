@@ -53,6 +53,7 @@ import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { useBranding } from '../theme/BrandingProvider';
 import { NotificationToaster } from './NotificationToaster';
+import { BarcodeScanner } from './BarcodeScanner';
 
 const DRAWER_WIDTH = 260;
 /** Wide enough for an icon and its hit area, and nothing else. */
@@ -161,7 +162,7 @@ const NAV: NavSection[] = [
         permissions: ['notification_rule:manage'],
       },
       {
-        label: 'Email Delivery',
+        label: 'SMTP Settings',
         to: '/settings/email',
         icon: <MailIcon />,
         permissions: ['notification_rule:manage'],
@@ -422,16 +423,15 @@ export function AppShell() {
                 <InventoryIcon sx={{ fontSize: 18 }} />
               </Box>
             )}
-            <Box sx={{ minWidth: 0, display: { xs: logoUrl ? 'none' : 'block', sm: 'block' } }}>
-              <Typography variant="subtitle1" noWrap sx={{ lineHeight: 1.2 }}>
-                {organizationName}
+            {/* The logo already says whose installation this is, so the name
+                beside it was saying it twice. Without a logo there is nothing
+                to read at all, so the product name stands in -- an unbranded
+                install still needs a word in the corner. */}
+            {!logoUrl && (
+              <Typography variant="subtitle1" noWrap sx={{ display: { xs: 'none', sm: 'block' } }}>
+                Inventory Manager
               </Typography>
-              {organizationName !== 'Inventory Manager' && (
-                <Typography variant="caption" color="text.secondary" noWrap sx={{ lineHeight: 1 }}>
-                  Inventory Manager
-                </Typography>
-              )}
-            </Box>
+            )}
           </Box>
 
           <Tooltip title="Notifications">
@@ -532,6 +532,10 @@ export function AppShell() {
       {/* Outside the main column: it is fixed to the viewport, and nesting it in
           a scrolling region would only make that a coincidence. */}
       <NotificationToaster />
+
+      {/* Listens on the window, so a tag scanned on any screen resolves. Renders
+          nothing until a scan actually happens. */}
+      <BarcodeScanner />
     </Box>
   );
 }

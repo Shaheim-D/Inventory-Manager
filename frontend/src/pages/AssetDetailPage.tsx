@@ -30,6 +30,7 @@ import { RelationshipsSection } from '../components/RelationshipsSection';
 import { AttachmentsTab } from '../components/AttachmentsTab';
 import { locationPath } from '../components/locationTree';
 import { useAuth } from '../auth/AuthContext';
+import { money } from '../format';
 
 export function AssetDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -206,9 +207,9 @@ export function AssetDetailPage() {
                   <Field
                     label={label('purchase_price')}
                     value={
-                      data.purchasePrice == null
-                        ? null
-                        : data.purchasePrice.toLocaleString(undefined, { style: 'currency', currency: 'USD' })
+                      // null, not the dash money() would give: Field renders an
+                      // absent value in its own muted style.
+                      data.purchasePrice == null ? null : money(data.purchasePrice)
                     }
                   />
                 )}

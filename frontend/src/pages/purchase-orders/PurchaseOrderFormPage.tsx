@@ -25,7 +25,7 @@ import type { Category, DeviceModel, PurchaseOrder } from '../../api/types';
 import { PageHeader } from '../../components/PageHeader';
 import { CategoryPicker } from '../../components/CategoryPicker';
 import { useAuth } from '../../auth/AuthContext';
-import { money } from './shared';
+import { money } from '../../format';
 
 interface LineDraft {
   /** Local only — line items are replaced wholesale on save, never patched. */

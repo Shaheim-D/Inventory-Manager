@@ -184,7 +184,7 @@ export function AttachmentsTab({
           <Stack spacing={2} sx={{ mt: 1 }}>
             <TextField
               select
-              label="Kind of file"
+              label="File type"
               value={category}
               onChange={(event) => setCategory(event.target.value)}
             >
