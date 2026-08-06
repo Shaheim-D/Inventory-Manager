@@ -1,4 +1,6 @@
-export type PluginType = 'ZABBIX' | 'NETBOX' | 'LDAP' | 'ACTIVE_DIRECTORY' | 'RADIUS_NPS';
+// LDAP, ACTIVE_DIRECTORY and RADIUS_NPS were removed in V26. Directory sync is
+// gone; RADIUS is authentication and lives in Settings > RADIUS, not here.
+export type PluginType = 'ZABBIX' | 'NETBOX';
 
 export type SyncStatus = 'RUNNING' | 'SUCCESS' | 'PARTIAL' | 'FAILURE';
 
@@ -73,13 +75,6 @@ export interface SyncRun {
   recordsCreated: number | null;
   recordsUpdated: number | null;
   recordsFailed: number | null;
-}
-
-export interface GroupMapping {
-  id: number;
-  groupIdentifier: string;
-  roleId: number;
-  roleName: string | null;
 }
 
 export interface SyncReport {

@@ -9,6 +9,7 @@ import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.AuthenticationServiceException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -64,6 +65,23 @@ public class AuthController {
         } catch (LockedException ex) {
             return ResponseEntity.status(HttpStatus.LOCKED)
                     .body(Map.of("error", "This account is temporarily locked. Try again later."));
+        } catch (AuthenticationServiceException ex) {
+            // The RADIUS server could not be reached, or is misconfigured. That is
+            // not a wrong password, and two things follow from saying so.
+            //
+            // It is deliberately NOT recorded as a failed attempt. Counting it
+            // would mean an NPS outage locks out every person who tries during
+            // it, and they would still be locked out for fifteen minutes after
+            // the server came back -- an outage turned into an incident by the
+            // thing meant to protect the accounts.
+            //
+            // And the message is different, because "Incorrect username or
+            // password" sends somebody to reset a password that was always
+            // right. Local sign-in is unaffected and still works, which is the
+            // useful thing to tell them.
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", "The network sign-in server could not be reached. "
+                            + "An account with a password set in this application can still sign in."));
         } catch (AuthenticationException ex) {
             loginAttempts.recordFailure(request.username());
             // Deliberately identical whether the account exists or not.
@@ -118,12 +136,23 @@ public class AuthController {
         AppUser user = users.findById(principal.getId())
                 .orElseThrow(() -> new ApiExceptions.NotFoundException("User not found"));
 
-        if (user.getAuthProvider() != AppUser.AuthProvider.LOCAL) {
+        // Keyed on whether a local password exists, not on auth_provider, because
+        // since V26 an account can legitimately have both: a RADIUS identity and
+        // a password set here, either of which signs them in.
+        //
+        // No local password means this endpoint refuses, rather than treating a
+        // blank current password as permission to set one. Otherwise anybody who
+        // signed in through RADIUS could give themselves a local password that
+        // keeps working after NPS stops recognising them -- a self-service
+        // backdoor around the directory. Setting the first one is an
+        // administrator's job, on Settings > Users.
+        if (user.getPasswordHash() == null) {
             throw new ApiExceptions.BadRequestException(
-                    "Passwords for directory accounts are managed in the directory, not here.");
+                    "This account signs in with your network credentials, which are managed on the "
+                            + "network, not here. An administrator can set a password for it in this "
+                            + "application if you need one.");
         }
-        if (user.getPasswordHash() != null
-                && !passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
             throw new ApiExceptions.BadRequestException("Current password is incorrect.");
         }
         validatePasswordStrength(request.newPassword());

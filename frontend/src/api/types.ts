@@ -1,7 +1,7 @@
 export interface CurrentUser {
   id: number;
   username: string;
-  authProvider: 'LOCAL' | 'LDAP' | 'ACTIVE_DIRECTORY';
+  authProvider: 'LOCAL' | 'RADIUS';
   mustChangePassword: boolean;
   roles: string[];
   permissions: string[];
@@ -436,5 +436,19 @@ export interface MailSettings {
   startTls: boolean;
   passwordSet: boolean;
   usable: boolean;
+  updatedAt: string | null;
+}
+
+/** Settings > RADIUS. The shared secret is never here — only the variable's name. */
+export interface RadiusSettings {
+  enabled: boolean;
+  host: string | null;
+  port: number;
+  sharedSecretRef: string | null;
+  /** Whether that variable currently resolves. Never what it resolves to. */
+  sharedSecretResolves: boolean;
+  timeoutSeconds: number;
+  retries: number;
+  nasIdentifier: string | null;
   updatedAt: string | null;
 }

@@ -162,8 +162,10 @@ function CreateUserDialog({
         <Stack spacing={2} sx={{ mt: 1 }}>
           <TextField label="Username" required value={username} onChange={(e) => setUsername(e.target.value)} />
           <TextField label="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          {/* No sign-in method picker: accounts made here are always local.
-              Directory and RADIUS users appear on first sign-in instead. */}
+          {/* No sign-in method picker. A password set here always works, and if
+              RADIUS is configured the same person's network password works too --
+              the two are additive, so there is nothing to choose between. A RADIUS
+              user nobody has typed in appears by itself on first sign-in. */}
           <TextField
             label="Temporary password"
             type="password"

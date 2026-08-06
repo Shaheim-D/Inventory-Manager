@@ -1,15 +1,11 @@
 package com.midhudsonfiber.inventory.config;
 
-import com.midhudsonfiber.inventory.domain.AppUser;
 import com.midhudsonfiber.inventory.security.AppUserDetailsService;
-import com.midhudsonfiber.inventory.security.DirectoryUserProvisioner;
-import com.midhudsonfiber.inventory.security.JitUserDetailsContextMapper;
-import com.midhudsonfiber.inventory.security.PermissionResolver;
+import com.midhudsonfiber.inventory.security.RadiusAuthenticationProvider;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
-import org.springframework.security.ldap.DefaultSpringSecurityContextSource;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -19,15 +15,10 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.ldap.authentication.BindAuthenticator;
-import org.springframework.security.ldap.authentication.LdapAuthenticationProvider;
-import org.springframework.security.ldap.authentication.ad.ActiveDirectoryLdapAuthenticationProvider;
-import org.springframework.security.ldap.search.FilterBasedLdapUserSearch;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 
-import java.util.ArrayList;
 import java.util.List;
 
 @Configuration
@@ -41,56 +32,32 @@ public class SecurityConfig {
     }
 
     /**
-     * Authentication is core, synchronous, always-on functionality and is kept
-     * strictly separate from the Plugin Framework, even though LDAP/AD appear in
-     * both. The providers here never participate in "a plugin may fail safely"
-     * semantics, and the plugin-side directory sync never touches credentials.
+     * Local accounts first, then RADIUS.
+     *
+     * <p>The order is the safety property. {@code DaoAuthenticationProvider} is
+     * ahead of RADIUS, so a RADIUS server that is unreachable, misconfigured, or
+     * pointed at the wrong host can never lock an administrator out of the local
+     * account they would need to fix it. Losing network sign-in is an incident;
+     * losing every way in is an outage.
+     *
+     * <p>Authentication is core, synchronous, always-on functionality and is kept
+     * strictly separate from the Plugin Framework. Nothing here participates in
+     * "a plugin may fail safely" semantics, and no plugin touches credentials.
+     *
+     * <p>RADIUS is configured in Settings &gt; RADIUS rather than in environment
+     * variables, so its provider reads the database on every attempt instead of
+     * being wired up here from properties read once at startup. That is why this
+     * method no longer branches on whether it is enabled -- the provider itself
+     * answers "not my business" when it is not.
      */
     @Bean
     public AuthenticationManager authenticationManager(AppUserDetailsService userDetailsService,
                                                        PasswordEncoder passwordEncoder,
-                                                       AppProperties props,
-                                                       DirectoryUserProvisioner provisioner,
-                                                       PermissionResolver permissionResolver) {
-        List<org.springframework.security.authentication.AuthenticationProvider> providers = new ArrayList<>();
-
+                                                       RadiusAuthenticationProvider radius) {
         DaoAuthenticationProvider local = new DaoAuthenticationProvider(userDetailsService);
         local.setPasswordEncoder(passwordEncoder);
-        providers.add(local);
 
-        AppProperties.Ldap ldap = props.getLdap();
-        if (ldap.isEnabled() && !ldap.getUrl().isBlank()) {
-            DefaultSpringSecurityContextSource contextSource =
-                    new DefaultSpringSecurityContextSource(ldap.getUrl());
-            if (!ldap.getBindDn().isBlank()) {
-                contextSource.setUserDn(ldap.getBindDn());
-                contextSource.setPassword(ldap.getBindPassword());
-            }
-            contextSource.afterPropertiesSet();
-
-            // Search-then-bind: find the DN with the service account, then bind as the user.
-            FilterBasedLdapUserSearch search =
-                    new FilterBasedLdapUserSearch(ldap.getUserSearchBase(), ldap.getUserSearchFilter(), contextSource);
-            BindAuthenticator authenticator = new BindAuthenticator(contextSource);
-            authenticator.setUserSearch(search);
-
-            LdapAuthenticationProvider ldapProvider = new LdapAuthenticationProvider(authenticator);
-            ldapProvider.setUserDetailsContextMapper(
-                    new JitUserDetailsContextMapper(provisioner, permissionResolver, AppUser.AuthProvider.LDAP));
-            providers.add(ldapProvider);
-        }
-
-        AppProperties.ActiveDirectory ad = props.getActiveDirectory();
-        if (ad.isEnabled() && !ad.getUrl().isBlank()) {
-            ActiveDirectoryLdapAuthenticationProvider adProvider =
-                    new ActiveDirectoryLdapAuthenticationProvider(ad.getDomain(), ad.getUrl());
-            adProvider.setUserDetailsContextMapper(
-                    new JitUserDetailsContextMapper(provisioner, permissionResolver, AppUser.AuthProvider.ACTIVE_DIRECTORY));
-            adProvider.setConvertSubErrorCodesToExceptions(true);
-            providers.add(adProvider);
-        }
-
-        return new ProviderManager(providers);
+        return new ProviderManager(List.of(local, radius));
     }
 
     @Bean

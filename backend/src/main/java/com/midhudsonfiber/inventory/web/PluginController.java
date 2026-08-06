@@ -31,7 +31,6 @@ public class PluginController {
     private final PluginRepository plugins;
     private final PluginSyncLogRepository syncLogs;
     private final PluginPendingActionRepository pending;
-    private final LdapGroupRoleMappingRepository groupMappings;
     private final AssetRepository assets;
     private final RoleRepository roles;
     private final AppUserRepository users;
@@ -43,14 +42,13 @@ public class PluginController {
 
     public PluginController(PluginRepository plugins, PluginSyncLogRepository syncLogs,
                             PluginPendingActionRepository pending,
-                            LdapGroupRoleMappingRepository groupMappings, AssetRepository assets,
+                            AssetRepository assets,
                             RoleRepository roles, AppUserRepository users, PluginRegistry registry,
                             PluginSyncOrchestrator orchestrator, PluginResolutionService resolution,
                             SecretResolver secrets, AuditService audit) {
         this.plugins = plugins;
         this.syncLogs = syncLogs;
         this.pending = pending;
-        this.groupMappings = groupMappings;
         this.assets = assets;
         this.roles = roles;
         this.users = users;
@@ -66,7 +64,6 @@ public class PluginController {
 
     public record AcceptRequest(Long categoryId, Long locationId) {}
 
-    public record GroupMappingRequest(String groupIdentifier, @NotNull Long roleId) {}
 
     // ------------------------------------------------------------------
     // what can be configured, and what is
@@ -271,51 +268,6 @@ public class PluginController {
     @PreAuthorize("hasAuthority('" + PermissionKeys.PLUGIN_MANAGE + "')")
     public ResponseEntity<Void> reverse(@PathVariable Long linkId) {
         resolution.reverse(linkId);
-        return ResponseEntity.noContent().build();
-    }
-
-    // ------------------------------------------------------------------
-    // directory group → role mappings
-    // ------------------------------------------------------------------
-
-    @GetMapping("/{id}/group-mappings")
-    @PreAuthorize("hasAuthority('" + PermissionKeys.PLUGIN_MANAGE + "')")
-    public List<Map<String, Object>> groupMappings(@PathVariable Long id) {
-        return groupMappings.findByPluginId(plugin(id).getId()).stream().map(mapping -> {
-            Map<String, Object> view = new LinkedHashMap<>();
-            view.put("id", mapping.getId());
-            view.put("groupIdentifier", mapping.getGroupIdentifier());
-            view.put("roleId", mapping.getRoleId());
-            view.put("roleName", roles.findById(mapping.getRoleId()).map(Role::getName).orElse(null));
-            return view;
-        }).toList();
-    }
-
-    @PostMapping("/{id}/group-mappings")
-    @PreAuthorize("hasAuthority('" + PermissionKeys.PLUGIN_MANAGE + "')")
-    @Transactional
-    public Map<String, Object> addGroupMapping(@PathVariable Long id,
-                                               @RequestBody GroupMappingRequest request) {
-        Plugin plugin = plugin(id);
-        if (request.groupIdentifier() == null || request.groupIdentifier().isBlank()) {
-            throw new ApiExceptions.BadRequestException("A mapping needs a directory group.");
-        }
-        if (roles.findById(request.roleId()).isEmpty()) {
-            throw new ApiExceptions.NotFoundException("No such role");
-        }
-        LdapGroupRoleMapping mapping = new LdapGroupRoleMapping();
-        mapping.setPluginId(plugin.getId());
-        mapping.setGroupIdentifier(request.groupIdentifier().trim());
-        mapping.setRoleId(request.roleId());
-        LdapGroupRoleMapping saved = groupMappings.save(mapping);
-        return Map.of("id", saved.getId());
-    }
-
-    @DeleteMapping("/group-mappings/{mappingId}")
-    @PreAuthorize("hasAuthority('" + PermissionKeys.PLUGIN_MANAGE + "')")
-    @Transactional
-    public ResponseEntity<Void> removeGroupMapping(@PathVariable Long mappingId) {
-        groupMappings.deleteById(mappingId);
         return ResponseEntity.noContent().build();
     }
 

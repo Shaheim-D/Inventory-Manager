@@ -33,6 +33,8 @@ const NotificationRulesPage = lazyPage(
   () => import('./pages/settings/NotificationRulesPage'), 'NotificationRulesPage');
 const EmailSettingsPage = lazyPage(
   () => import('./pages/settings/EmailSettingsPage'), 'EmailSettingsPage');
+const RadiusSettingsPage = lazyPage(
+  () => import('./pages/settings/RadiusSettingsPage'), 'RadiusSettingsPage');
 const BackupsPage = lazyPage(() => import('./pages/settings/BackupsPage'), 'BackupsPage');
 const PurchaseOrdersPage = lazyPage(
   () => import('./pages/purchase-orders/PurchaseOrdersPage'), 'PurchaseOrdersPage');
@@ -109,6 +111,10 @@ export function App() {
         <Route
           path="/settings/email"
           element={guard(['notification_rule:manage'], <EmailSettingsPage />)}
+        />
+        <Route
+          path="/settings/radius"
+          element={guard(['user:manage'], <RadiusSettingsPage />)}
         />
         <Route path="/settings/backups" element={guard(['backup:run'], <BackupsPage />)} />
 

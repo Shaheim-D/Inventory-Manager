@@ -335,12 +335,19 @@ surfaces. Do this once per release, before it goes out.
 Either wait it out or, under **Admin → Users**, use **Unlock**.
 
 **Someone forgot their password.** **Admin → Users → Manage → reset**. The new
-password is temporary and must be changed at next sign-in. Directory accounts are
-managed in the directory; Inventory Manager will not reset those.
+password is temporary and must be changed at next sign-in. Network credentials
+are managed on the network; Inventory Manager will not reset those.
 
-**A first-time LDAP/AD user has no access.** Expected. Directory logins are
-provisioned into **Unassigned**, which carries zero permissions, until an
-administrator assigns a real role.
+**A first-time RADIUS user has no access.** Expected. They are provisioned into
+**Unassigned**, which carries zero permissions, until an administrator assigns a
+real role.
+
+**Nobody can sign in with network credentials.** Local accounts are unaffected --
+they are tried first, so an administrator with a password set in the application
+can always get in and look. Then **Settings > RADIUS**, and press **Send a test
+sign-in**: it distinguishes "cannot reach the server" from "the server rejected
+that", which is the fork the sign-in screen cannot show you. If the shared secret
+variable stopped resolving, the screen says so.
 
 **Someone cannot see cost fields.** Also expected, and by design. Field
 visibility is data: check **Admin → Field Visibility Rules** for which permission

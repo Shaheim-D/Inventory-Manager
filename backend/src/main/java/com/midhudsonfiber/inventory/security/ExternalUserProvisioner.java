@@ -12,22 +12,29 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Set;
 
 /**
- * Just-in-time provisioning for directory logins. A first-time LDAP/AD user gets
- * an app_user row with the <b>Unassigned</b> role -- zero permissions -- until an
- * Administrator grants real access. This never writes password_hash,
- * failed_login_attempts, or locked_until for a directory account: authentication
- * against the directory is the directory's business, not ours.
+ * Just-in-time provisioning for accounts authenticated somewhere else. A
+ * first-time RADIUS user gets an app_user row with the <b>Unassigned</b> role --
+ * zero permissions -- until somebody grants real access.
+ *
+ * <p>This never writes password_hash, failed_login_attempts or locked_until for
+ * such an account: whether the credentials were right is NPS's business, not
+ * ours, and a local lockout counter on an account with no local password would
+ * only ever be wrong.
+ *
+ * <p>Named for what it does rather than for the protocol behind it. It was
+ * DirectoryUserProvisioner while LDAP was the only way in; the logic never
+ * mentioned LDAP and did not change when RADIUS replaced it.
  */
 @Service
-public class DirectoryUserProvisioner {
+public class ExternalUserProvisioner {
 
-    private static final Logger log = LoggerFactory.getLogger(DirectoryUserProvisioner.class);
+    private static final Logger log = LoggerFactory.getLogger(ExternalUserProvisioner.class);
     private static final String DEFAULT_ROLE = "Unassigned";
 
     private final AppUserRepository users;
     private final RoleRepository roles;
 
-    public DirectoryUserProvisioner(AppUserRepository users, RoleRepository roles) {
+    public ExternalUserProvisioner(AppUserRepository users, RoleRepository roles) {
         this.users = users;
         this.roles = roles;
     }
@@ -48,7 +55,7 @@ public class DirectoryUserProvisioner {
                     user.setEmail(email);
                     user.setActive(true);
                     roles.findByName(DEFAULT_ROLE).ifPresent(r -> user.setRoles(Set.<Role>of(r)));
-                    log.info("JIT-provisioned directory user '{}' ({}) with the {} role", username, provider, DEFAULT_ROLE);
+                    log.info("JIT-provisioned external user '{}' ({}) with the {} role", username, provider, DEFAULT_ROLE);
                     return users.save(user);
                 });
     }
