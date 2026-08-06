@@ -33,7 +33,7 @@ what looks arbitrary elsewhere follows from the four ideas on that page.
 | **[Administration](Administration.md)** | Users, roles, categories and fields, devices, branding, SMTP |
 | **[Permissions Reference](Permissions.md)** | Every permission key, what it allows, which roles hold it |
 | **[Field Visibility](Field-Visibility.md)** | Hiding fields from roles, and why a hidden field is *absent* rather than blank |
-| **[Plugins](Plugins.md)** | Zabbix, NetBox and directory sync, and the confirmation gate |
+| **[Plugins](Plugins.md)** | Zabbix and NetBox, and the confirmation gate |
 
 ## Operating it
 

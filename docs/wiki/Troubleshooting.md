@@ -107,6 +107,58 @@ unread is the reversible one.
 
 ---
 
+## Signing in
+
+### "My network password does not work"
+
+Three things, in order:
+
+1. **Settings → RADIUS** — is it switched on, and does the shared secret
+   variable resolve? The screen says if it does not.
+2. **Press the test button** with the credentials that are failing. It sends a
+   real sign-in request and distinguishes *could not reach the server* from *the
+   server replied and rejected that* — which the sign-in screen cannot.
+3. **NAS identifier.** If NPS has a network policy matching on it and this
+   application sends a blank one, every correct password is rejected. This is the
+   most common cause of "it works everywhere else".
+
+A password set in this application is unaffected by any of the above and keeps
+working.
+
+### "The sign-in screen says the network server could not be reached"
+
+That is a **503**, not a wrong password — the message is deliberately different
+because "Incorrect username or password" sends people to reset a password that
+was always right. Anyone with a password set in this application can still sign
+in normally.
+
+It is also **not counted as a failed attempt**, so an NPS outage does not lock
+anybody out. When the server comes back, nothing needs unlocking.
+
+### "A new person signed in but can see nothing"
+
+Expected. A first-time RADIUS user is provisioned into **Unassigned**, which
+holds zero permissions, until somebody assigns roles on **Settings → Users**.
+That is the safe direction to default in.
+
+### "I cannot change my password"
+
+An account with no local password cannot use **change password** — its
+credentials live on the network. An administrator can set one for it on
+**Settings → Users**, after which both work.
+
+This is not an oversight: letting anybody who signed in through RADIUS give
+themselves a local password would create a credential that outlives their
+network account.
+
+### "Where did LDAP go?"
+
+Removed in V26, along with the directory-sync plugin, and replaced by RADIUS.
+Accounts that had been provisioned by a directory login were moved to RADIUS
+automatically, keeping their usernames, roles and history.
+
+---
+
 ## Backups
 
 ### `CreateProcess error=2, The system cannot find the file specified`

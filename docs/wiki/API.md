@@ -60,6 +60,8 @@ Every error is the same shape:
 | **400** | Validation failed, or a request that cannot be satisfied |
 | **401** | Not signed in |
 | **403** | Signed in, lacking the permission |
+| **423** | The account is locked |
+| **503** | The RADIUS server could not be reached. Deliberately not 401 — the password may be perfectly good, and this is not counted as a failed attempt |
 | **404** | Not found |
 | **409** | Conflict — a uniqueness violation, or an optimistic lock failure |
 
@@ -94,6 +96,7 @@ as raw PostgreSQL text.
 | `/api/admin/users` · `/api/admin/roles` | Accounts, roles, overrides |
 | `/api/admin/notification-rules` · `/api/admin/mail-settings` | Notifications and SMTP |
 | `/api/admin/plugins` | Plugin configuration, runs, pending actions |
+| `/api/admin/radius-settings` | RADIUS sign-in configuration, and a live test |
 | `/api/admin/backups` | Create, list, download, delete |
 
 ---

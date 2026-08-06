@@ -21,8 +21,8 @@ migration is not done until it has been executed.
 | **Buying** | `purchase_order`, `purchase_order_line_item`, `purchase_order_receipt`, `purchase_order_receipt_line`, `device_model` |
 | **Import** | `import_batch`, `import_batch_row` |
 | **Notifications** | `notification_rule`, `notification_log`, `distribution_target`, `mail_settings` |
-| **Plugins** | `plugin`, `plugin_asset_link`, `plugin_pending_action`, `plugin_sync_log`, `ldap_group_role_mapping` |
-| **Other** | `audit_event`, `branding`, `saved_report_definition` |
+| **Plugins** | `plugin`, `plugin_asset_link`, `plugin_pending_action`, `plugin_sync_log` |
+| **Other** | `audit_event`, `branding`, `saved_report_definition`, `radius_settings` |
 
 ### Seeded reference data
 

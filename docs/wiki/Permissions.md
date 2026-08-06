@@ -84,7 +84,7 @@ readable; use them for everything and nobody will be able to say who can do what
 
 | Key | Allows |
 |---|---|
-| `user:manage` | Create and disable accounts, assign roles |
+| `user:manage` | Create and disable accounts, assign roles, configure RADIUS sign-in |
 | `role:manage` | Manage roles, their permissions, and user overrides |
 | `branding:manage` | Upload the logo and set theme colours |
 | `notification_rule:manage` | Manage notification rules and SMTP settings |

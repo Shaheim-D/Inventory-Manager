@@ -9,6 +9,7 @@ Manager sees categories and notification rules, an Administrator sees all of it.
 | Categories & Fields | `category:manage` |
 | Devices | `asset:read` |
 | Users | `user:manage` |
+| RADIUS | `user:manage` |
 | Roles & Permissions | `role:manage` |
 | Field Visibility Rules | `role:manage` |
 | Notification Rules | `notification_rule:manage` |
@@ -168,6 +169,51 @@ your choice per browser. First visit follows your operating system's setting.
 
 The logo also appears on PDF exports, upper right. A format PDF cannot embed
 falls back to the organization name as text rather than failing the export.
+
+---
+
+## RADIUS
+
+**Settings → RADIUS**. Requires `user:manage` — the same key as creating accounts
+and assigning roles, because deciding who may sign in and how is the same job.
+
+Lets people sign in with their network credentials, checked against RADIUS/NPS.
+
+**It is in addition to local sign-in, never instead of it.** Local accounts are
+tried first, so a RADIUS server that is unreachable, misconfigured or pointed at
+the wrong host can never lock an administrator out of the account they would need
+to fix it. Either credential signs the same person in: somebody with both a
+password set here and a network account can use whichever they type.
+
+| Setting | |
+|---|---|
+| **Server** and **port** | 1812 is standard |
+| **Shared secret variable** | The **name** of an environment variable, never the secret |
+| **Timeout** and **retries** | |
+| **NAS identifier** | Optional. NPS network policies routinely match on it, so a blank one is a common reason a correct password is still rejected |
+
+The secret is never stored in the database, so it is never in a backup. The
+screen can tell you whether the variable resolves without ever holding what it
+resolves to.
+
+**Use the test button.** It sends a real sign-in request, because nothing else
+proves the path: a server can be perfectly reachable and still reject everyone
+because the shared secret is wrong or its network policy excludes this
+application. The test distinguishes *could not reach it* from *it replied and
+said no* — the fork the sign-in screen cannot show you. The credentials you enter
+are used once and never stored.
+
+A first-time RADIUS user is provisioned into **Unassigned**, with zero
+permissions, until somebody assigns roles. No local password is invented for
+them.
+
+Changing a password: an account with no local password cannot use
+**change password** — that is an administrator's job on **Settings → Users**.
+Otherwise anybody who signed in through RADIUS could give themselves a local
+password that keeps working after NPS stops recognising them.
+
+LDAP and Active Directory sign-in were removed in V26. See
+**[Plugins](Plugins.md)** for why authentication is not a plugin.
 
 ---
 

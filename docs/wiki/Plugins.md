@@ -3,8 +3,13 @@
 Integrations that read another system and bring what they find into Inventory
 Manager. **Settings → Plugins**, requires `plugin:manage`.
 
-Three ship: **Zabbix**, **NetBox**, and **Directory sync** (LDAP / Active
-Directory). The schema also allows `RADIUS_NPS`.
+Two ship: **Zabbix** and **NetBox**.
+
+> **Directory sync used to be here and is gone.** LDAP and Active Directory were
+> removed in V26, along with the LDAP/AD sign-in that was configured through
+> environment variables. Signing in with network credentials is now
+> **[RADIUS](Administration.md#radius)**, under Settings — because
+> authentication is core, and a plugin is a thing that may fail safely.
 
 ---
 
@@ -52,9 +57,8 @@ Two other properties live in the orchestrator for the same reason as the gate:
 ## Reviewing proposals
 
 The plugin's detail screen has tabs for **Awaiting confirmation**,
-**Configuration**, **Confirmed**, **Ignored** and **Run history** — plus **Group
-mappings** for a plugin that does not touch assets. The waiting count is a badge
-on the first tab.
+**Configuration**, **Confirmed**, **Ignored** and **Run history**. The waiting
+count is a badge on the first tab.
 
 Each proposal offers three answers, and the difference between the last two
 matters:
@@ -87,7 +91,7 @@ base URL, an API token reference, and a tag filter" and the admin screen renders
 exactly that, and validates against it.
 
 Each plugin also declares a suggested sync interval — monitoring wants minutes, a
-directory sync is happy with hours. Whatever the installation sets in
+an inventory pull is happy with hours. Whatever the installation sets in
 `sync_interval_minutes` wins.
 
 There is a **Test connection** button. Use it before enabling anything.
@@ -106,32 +110,28 @@ showing you what it resolves to.
 
 ---
 
-## Directory sync is not authentication
+## Why authentication is not a plugin
 
-The easiest thing in the platform to get wrong.
+This is the easiest distinction in the platform to lose, and V26 exists because
+it had been half-lost.
 
-**Signing in is authentication.** It is synchronous, happens on every attempt,
-and must fail loudly.
+**Signing in is core.** It is synchronous, happens on every attempt, and must
+fail loudly. That is why RADIUS lives in **Settings → RADIUS** and not here.
 
-**Directory sync is a background refresh of what an account is allowed to do**,
-so a group change in the directory eventually reaches Inventory Manager without
-anybody signing out and in again.
+**A plugin may fail safely.** The orchestrator wraps every call so a plugin that
+throws becomes a `FAILURE` row and nothing else — not a crashed scheduler, not a
+failed request, and above all **not a broken sign-in**. Those are exactly the
+right semantics for reading a monitoring system, and exactly the wrong ones for
+deciding whether somebody may come in.
 
-It touches exactly one thing: `user_role` rows, through the normal audited path.
-It never reads or writes `password_hash`, never clears `locked_until`, never
-resets `failed_login_attempts`, and never creates or deactivates an account.
+The old directory-sync plugin never authenticated anybody; it only kept role
+assignment in step with group membership. It was still confusing enough, sitting
+next to LDAP sign-in configured somewhere else entirely, to be worth removing.
 
-If it fails, or is switched off, or is pointed at a dead server, **everybody
-signs in exactly as before with the roles they already had**.
-
-`PluginFrameworkIntegrationTest` asserts that on every build. A design note is
-not a guarantee.
-
-Group-to-role mapping is configured per plugin: this directory group grants this
-role. Roles are matched by name here because the directory has no other handle on
-them — that is a lookup, not an authorization decision.
-
----
+Group-to-role sync did not come across to RADIUS, deliberately. RADIUS does not
+carry group membership the way LDAP's `memberOf` does, and inventing a mapping
+from NPS reply attributes would be a guess dressed as a feature. Roles are
+assigned by a person, in the same place every other role assignment happens.
 
 ## Adding an integration
 
@@ -151,16 +151,19 @@ The interface asks for:
 | `defaultSyncIntervalMinutes()` | A suggestion; the installation's setting wins |
 | `testConnection(config)` | A cheap round trip |
 | `collect(config)` | Everything you can currently see upstream |
-| `touchesAssets()` | Default true. False for something like directory sync |
+| `touchesAssets()` | Default true. False for a plugin that acts directly rather than proposing asset writes |
 
 `collect` returns records for the orchestrator to match, plus counters and a
 message — the counters exist because a plugin that does its own work and proposes
-nothing (directory sync) still has something to report.
+nothing still has something to report.
 
 **If you find yourself editing core code to add a plugin, the design has been
 broken.** A new plugin type does need widening the `plugin_plugin_type_check`
 constraint in a migration; that is the one exception, and it is a one-line
 migration rather than a change to how anything works.
+
+If what you are adding decides whether somebody may sign in, it is not a plugin.
+See above.
 
 ---
 
@@ -178,6 +181,6 @@ been failing for a week is visible without opening it.
 
 ## See also
 
-- **[Administration](Administration.md)** — the settings screens
+- **[Administration](Administration.md)** — the settings screens, including RADIUS
 - **[Architecture](Architecture.md)** — why the interface is shaped this way
 - **[Permissions Reference](Permissions.md)** — `plugin:manage`

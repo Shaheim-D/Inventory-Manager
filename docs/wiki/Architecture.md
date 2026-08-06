@@ -74,6 +74,15 @@ there and already the thing that must be up.
 Account lockout after 5 consecutive failures, for 15 minutes. Minimum password
 length 8, with no composition rules.
 
+**Sign-in is local accounts first, then RADIUS**, and lockout is counted after
+every provider has been tried rather than per provider. Both orderings matter:
+the first means an unreachable RADIUS server cannot lock an administrator out of
+the account they would need to fix it, and the second means somebody using their
+network password does not accumulate failures against the local provider that
+rejected it on the way past. An unreachable server is reported as an outage and
+is not counted at all, or an NPS failure would lock out everyone who tried during
+it. See **[Administration](Administration.md)**.
+
 ---
 
 ## The decisions that are not up for re-litigation
