@@ -46,12 +46,15 @@ class MigrationValidationTest extends AbstractIntegrationTest {
 
         expected.forEach((role, count) -> {
             // Counted over the 24 keys the design catalogues, so a later addition
-            // (branding:manage in V10, say) does not silently invalidate the record.
+            // does not silently invalidate the record. Two are excluded so far:
+            // branding:manage from V10 and backup:run from V25, both granted to
+            // Administrator only and neither part of the original catalogue.
             Integer actual = jdbc.queryForObject("""
                     SELECT count(*) FROM role_permission rp
                     JOIN role r ON r.id = rp.role_id
                     JOIN permission p ON p.id = rp.permission_id
-                    WHERE r.name = ? AND p.permission_key <> 'branding:manage'
+                    WHERE r.name = ?
+                      AND p.permission_key NOT IN ('branding:manage', 'backup:run')
                     """, Integer.class, role);
             assertThat(actual).as("permission count for %s", role).isEqualTo(count);
         });

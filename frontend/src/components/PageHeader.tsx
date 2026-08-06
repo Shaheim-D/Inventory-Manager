@@ -47,7 +47,16 @@ export function PageHeader({
           {help && <PageHelp text={help} />}
         </Stack>
         {subtitle && (
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: '68ch' }}>
+          // A div, not the paragraph Typography defaults to. Several screens
+          // pass a Stack of chips as their subtitle, and a <div> inside a <p>
+          // is invalid HTML the browser silently reflows — React was warning
+          // about it on the asset and purchase-order detail pages.
+          <Typography
+            variant="body2"
+            component="div"
+            color="text.secondary"
+            sx={{ mt: 0.5, maxWidth: '68ch' }}
+          >
             {subtitle}
           </Typography>
         )}

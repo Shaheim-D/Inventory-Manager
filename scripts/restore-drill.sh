@@ -28,6 +28,23 @@
 #
 # Defaults to DB_NAME from the deployment's .env. Nothing here writes to the
 # source database: it is read once, with CREATE DATABASE ... TEMPLATE.
+#
+# ---------------------------------------------------------------------
+# REQUIRES DIRECT DATABASE ACCESS. Unlike backup.sh and restore.sh, which work
+# in either topology, this needs `psql` on the machine running it and a
+# reachable DB_HOST, because it copies the source database with CREATE DATABASE
+# ... TEMPLATE and copies the attachment directory as a filesystem path.
+#
+# On a Compose deployment neither is true from the host: DB_HOST is `postgres`,
+# a name only resolvable inside the Docker network, and the attachments live in
+# a named volume rather than at a path. To drill a Compose deployment, point
+# IM_ENV_FILE at an environment describing the same database over TCP -- publish
+# the Postgres port temporarily, or run this from a machine that can already
+# reach it, with the attachment directory bind-mounted or copied out first.
+#
+# backup.sh and restore.sh themselves have no such restriction. This is a
+# limitation of the rehearsal harness, not of the procedure it rehearses.
+# ---------------------------------------------------------------------
 # =====================================================================
 set -euo pipefail
 

@@ -15,6 +15,11 @@ spring:
       ddl-auto: validate
 
 app:
+  backups:
+    # Somewhere disposable. The suite really does run pg_dump and really does
+    # write archives, so this must not be the directory a developer's own
+    # backups live in.
+    directory: ${java.io.tmpdir}/inventory-manager-test-backups
   plugins:
     # Spring's "never" cron. Plugins are exercised by triggering them directly;
     # a background tick firing mid-suite would run whichever test's plugin

@@ -43,12 +43,16 @@ services:
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
       APP_ATTACHMENTS_DIRECTORY: /var/lib/inventory-manager/attachments
+      APP_BACKUPS_DIRECTORY: /var/lib/inventory-manager/backups
     volumes:
       # Attachment bytes live on disk, not in Postgres, so they need a volume
       # of their own -- without one, replacing the container during an update
       # would take every uploaded file with it. backup.sh archives this
       # directory alongside the database dump for the same reason.
       - attachment-data:/var/lib/inventory-manager/attachments
+      # Backups taken from Settings > Backups. Its own volume so an update,
+      # which recreates the container, does not take them with it.
+      - backup-data:/var/lib/inventory-manager/backups
     networks:
       - internal
     # No ports: -- the app is reachable only through the reverse proxy.
@@ -59,26 +63,41 @@ services:
     depends_on:
       - app
     ports:
-      - "80:80"
-      - "443:443"
+      # Bound on every interface so the application is reachable from the rest
+      # of the network, which is the point of putting it on a VM. Restrict it
+      # at the VM's firewall or security group, not here.
+      - "${HTTP_BIND:-0.0.0.0}:80:80"
+      - "${HTTPS_BIND:-0.0.0.0}:443:443"
     environment:
-      # Consumed by the image's envsubst pass over the template below.
-      APP_HOSTNAME: ${APP_HOSTNAME}
+      TLS_MODE: ${TLS_MODE:-none}
+      APP_HOSTNAME: ${APP_HOSTNAME:-localhost}
+      TLS_CERT_FILE: ${TLS_CERT_FILE:-/etc/nginx/certs/fullchain.pem}
+      TLS_KEY_FILE: ${TLS_KEY_FILE:-/etc/nginx/certs/privkey.pem}
     volumes:
-      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./nginx/entrypoint.sh:/entrypoint.sh:ro
+      - ./nginx/app-http.conf.template:/etc/nginx/app-templates/app-http.conf.template:ro
+      - ./nginx/app-https.conf.template:/etc/nginx/app-templates/app-https.conf.template:ro
+      - ./nginx/app-proxy.conf:/etc/nginx/app-proxy.conf:ro
       - certbot-certs:/etc/letsencrypt:ro
       - certbot-webroot:/var/www/certbot:ro
+      # Where TLS_MODE=provided looks for an operator-supplied certificate.
+      # Harmless when the directory does not exist in the other modes.
+      - ./nginx/certs:/etc/nginx/certs:ro
     networks:
       - internal
-    # Periodic reload rather than restart, so picking up a renewed certificate
-    # never drops connections mid-request. The image's entrypoint still runs, so
-    # the template above is rendered before nginx starts.
-    command: >
-      sh -c "while :; do sleep 12h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"
+    # Our own entrypoint rather than the image's: it has to choose between the
+    # HTTP and TLS configs based on whether a certificate exists, which the
+    # image's plain envsubst pass cannot do. See nginx/entrypoint.sh.
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
 
   certbot:
     image: certbot/certbot:latest
     restart: unless-stopped
+    # Only started for `docker compose --profile letsencrypt up -d`. An internal
+    # VM has no public hostname to prove ownership of, so leaving certbot
+    # running there would retry forever and fill the log with failures for a
+    # certificate it can never obtain.
+    profiles: ["letsencrypt"]
     volumes:
       - certbot-certs:/etc/letsencrypt
       - certbot-webroot:/var/www/certbot
@@ -90,6 +109,7 @@ services:
 volumes:
   postgres-data:
   attachment-data:
+  backup-data:
   certbot-certs:
   certbot-webroot:
 

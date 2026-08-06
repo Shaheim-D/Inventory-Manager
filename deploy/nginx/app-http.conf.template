@@ -1,0 +1,29 @@
+# Inventory Manager -- plain HTTP.
+#
+# Used in two situations, which is why it exists at all:
+#
+#   * TLS_MODE=none, the internal-VM case. The application is reached over the
+#     organisation's own network and there is no certificate to have.
+#   * TLS_MODE=letsencrypt, *before* the first certificate exists. nginx will
+#     not start with an `ssl_certificate` pointing at a file that is not there,
+#     so the config that asks for one cannot be the config that serves the
+#     ACME challenge that creates it. This one serves the challenge, and the
+#     entrypoint swaps to the TLS config once the certificate appears.
+#
+# The ACME challenge location is present in both modes. It costs nothing when
+# unused, and its absence is exactly what made the first install impossible.
+
+upstream inventory_app {
+    server app:8080;
+}
+
+server {
+    listen 80 default_server;
+    server_name _;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    include /etc/nginx/app-proxy.conf;
+}

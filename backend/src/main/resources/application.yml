@@ -85,6 +85,17 @@ app:
     # dump leaves every attachment row pointing at a file that is not there.
     directory: ${APP_ATTACHMENTS_DIRECTORY:data/attachments}
     max-bytes: ${APP_ATTACHMENTS_MAX_BYTES:26214400}
+  backups:
+    # Where backups taken from Settings > Backups are written. A volume in the
+    # deployed stack, because the whole point is that they outlive the container
+    # -- an update recreates it, and a backup that went with it was never one.
+    #
+    # This is not the same thing as BACKUP_DESTINATION_PATH, which is where the
+    # nightly script copies artefacts *off* the box. Nothing here is off-box:
+    # these sit on the same machine as the database they protect until somebody
+    # downloads them or a sync takes them elsewhere.
+    directory: ${APP_BACKUPS_DIRECTORY:data/backups}
+    timeout-seconds: ${APP_BACKUP_TIMEOUT_SECONDS:900}
   ldap:
     enabled: ${LDAP_ENABLED:false}
     url: ${LDAP_URL:}

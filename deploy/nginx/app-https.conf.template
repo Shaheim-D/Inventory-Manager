@@ -1,0 +1,47 @@
+# Inventory Manager -- TLS.
+#
+# Rendered when a certificate and key actually exist on disk: either issued by
+# certbot (TLS_MODE=letsencrypt) or supplied by the operator from an internal CA
+# or a self-signed pair (TLS_MODE=provided). The entrypoint checks the files are
+# there before choosing this template, because nginx refuses to start at all
+# when `ssl_certificate` names a file that is missing -- and a proxy that will
+# not start is an application nobody can reach.
+
+upstream inventory_app {
+    server app:8080;
+}
+
+# Port 80 exists for the ACME challenge and to send everything else to TLS.
+server {
+    listen 80 default_server;
+    server_name _;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl default_server;
+    http2 on;
+    server_name ${APP_HOSTNAME};
+
+    ssl_certificate     ${TLS_CERT_FILE};
+    ssl_certificate_key ${TLS_KEY_FILE};
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "same-origin" always;
+
+    include /etc/nginx/app-proxy.conf;
+}
