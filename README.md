@@ -147,20 +147,23 @@ code change is picked up by restarting whichever of the two you changed.
 
 **Settings → Backups** runs `pg_dump`, and the PostgreSQL installer for Windows
 does not put its `bin` directory on `PATH` — so the tool is on the machine but
-the application cannot find it by name. Either add it to `PATH`, or name it
-outright:
+not reachable by name.
+
+Normally you do not have to do anything about that: when `pg_dump` is not on
+`PATH`, the application looks through `C:\Program Files\PostgreSQL\*\bin`,
+newest major version first, and uses what it finds. It says which one in the
+log.
+
+Only if that fails — an install somewhere unusual — name it yourself:
 
 ```powershell
-# Option A -- add it to PATH for this session
-$env:PATH += ';C:\Program Files\PostgreSQL\16\bin'
-
-# Option B -- tell the application exactly where it is
 $env:APP_BACKUPS_PG_DUMP_PATH = 'C:\Program Files\PostgreSQL\16\bin\pg_dump.exe'
 ```
 
-Use the `bin` of the **same major version as the server you are running**:
-pg_dump refuses to dump a server newer than itself, and the failure is an
-unrestorable archive rather than a clear error.
+Point it at the **same major version as the server you are running**: pg_dump
+can dump a server older than itself but never a newer one. A named path is used
+exactly as given and never second-guessed, so a wrong one is an error rather
+than a silent fallback to a different binary.
 
 `tar` needs nothing — Windows 11 ships it in `System32`, and the archive it
 writes is a normal gzipped tar. Without the setting above the screen still

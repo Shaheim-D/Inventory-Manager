@@ -85,6 +85,9 @@ public class BackupService {
      */
     private final String pgDumpPath;
     private final String tarPath;
+    /** Resolved on first use; the lookup is not worth repeating per backup. */
+    private volatile String resolvedPgDump;
+    private volatile String resolvedTar;
 
     public BackupService(
             @Value("${app.backups.directory}") String backupDirectory,
@@ -130,7 +133,7 @@ public class BackupService {
         Path files = backupDirectory.resolve(FILES_PREFIX + stamp + FILES_SUFFIX);
 
         try {
-            run(dump, pgDumpPath, "-Fc", "-h", host, "-p", port, "-U", username, database);
+            run(dump, pgDump(), "-Fc", "-h", host, "-p", port, "-U", username, database);
 
             // A zero-byte dump is worse than no dump, because it looks like success.
             if (Files.size(dump) == 0) {
@@ -141,7 +144,7 @@ public class BackupService {
             // An installation that has never had an upload has no directory yet.
             // That is a legitimate empty archive, not a failure.
             Files.createDirectories(attachmentDirectory);
-            run(files, tarPath, "-czf", "-", "-C", attachmentDirectory.toString(), ".");
+            run(files, tar(), "-czf", "-", "-C", attachmentDirectory.toString(), ".");
 
             log.info("Backup created: {} ({} bytes) and {} ({} bytes)",
                     dump.getFileName(), Files.size(dump), files.getFileName(), Files.size(files));
@@ -256,6 +259,106 @@ public class BackupService {
      * it never appears in {@code ps} output for every other process on the box
      * to read.
      */
+    /**
+     * Where pg_dump actually is, worked out once and remembered.
+     *
+     * <p>On the deployed image it is on PATH and the first candidate wins. On a
+     * developer machine it very often is not: the PostgreSQL installer for
+     * Windows puts pg_dump in {@code C:\Program Files\PostgreSQL\<major>\bin}
+     * and adds nothing to PATH, so the tool is installed and unreachable by
+     * name. Reporting that as "the system cannot find the file specified" and
+     * stopping there makes the operator do a search the application could have
+     * done itself.
+     *
+     * <p>So the usual locations are tried, newest major version first, and each
+     * candidate is proved by actually running {@code --version} rather than by
+     * the file merely existing. An explicit setting short-circuits all of it:
+     * if somebody named a path, a silent fallback to a different binary would
+     * be worse than an error.
+     */
+    private String pgDump() {
+        if (resolvedPgDump != null) return resolvedPgDump;
+        if (!"pg_dump".equals(pgDumpPath)) return resolvedPgDump = pgDumpPath;
+
+        List<String> candidates = new ArrayList<>();
+        candidates.add("pg_dump");
+        candidates.addAll(installedPostgresBinaries("pg_dump"));
+
+        for (String candidate : candidates) {
+            if (canRun(candidate)) {
+                if (!"pg_dump".equals(candidate)) {
+                    log.info("pg_dump is not on PATH; using {}", candidate);
+                }
+                return resolvedPgDump = candidate;
+            }
+        }
+        throw new ApiExceptions.BadRequestException(
+                "pg_dump could not be found. It ships with PostgreSQL, so it is normally already "
+                + "on this machine -- the Windows installer just does not put it on PATH. Set "
+                + "APP_BACKUPS_PG_DUMP_PATH to it (for example "
+                + "C:\\Program Files\\PostgreSQL\\16\\bin\\pg_dump.exe), matching the major "
+                + "version of the server. Tried: " + String.join(", ", candidates));
+    }
+
+    private String tar() {
+        if (resolvedTar != null) return resolvedTar;
+        if (!"tar".equals(tarPath)) return resolvedTar = tarPath;
+        // Windows 11 ships bsdtar in System32, which is on PATH, so this
+        // effectively always resolves on the first try.
+        if (canRun("tar")) return resolvedTar = "tar";
+        throw new ApiExceptions.BadRequestException(
+                "tar could not be found. Set APP_BACKUPS_TAR_PATH to it.");
+    }
+
+    /** Every pg_dump under a standard PostgreSQL install, newest major first. */
+    private static List<String> installedPostgresBinaries(String tool) {
+        List<String> found = new ArrayList<>();
+        boolean windows = System.getProperty("os.name", "").toLowerCase().startsWith("windows");
+        String executable = windows ? tool + ".exe" : tool;
+
+        List<Path> roots = windows
+                ? List.of(Path.of("C:\\Program Files\\PostgreSQL"),
+                          Path.of("C:\\Program Files (x86)\\PostgreSQL"))
+                : List.of(Path.of("/usr/lib/postgresql"), Path.of("/usr/pgsql"),
+                          Path.of("/opt/homebrew/opt"), Path.of("/usr/local/opt"));
+
+        for (Path root : roots) {
+            if (!Files.isDirectory(root)) continue;
+            try (Stream<Path> versions = Files.list(root)) {
+                versions.filter(Files::isDirectory)
+                        // Newest major version first: pg_dump can dump a server
+                        // older than itself but never a newer one.
+                        .sorted(Comparator.comparing((Path v) -> v.getFileName().toString()).reversed())
+                        .map(v -> v.resolve("bin").resolve(executable))
+                        .filter(Files::isRegularFile)
+                        .forEach(p -> found.add(p.toString()));
+            } catch (IOException ignored) {
+                // An unreadable directory is simply not a candidate.
+            }
+        }
+
+        for (String fixed : windows ? List.<String>of() : List.of("/usr/bin/" + tool, "/usr/local/bin/" + tool)) {
+            if (Files.isRegularFile(Path.of(fixed))) found.add(fixed);
+        }
+        return found;
+    }
+
+    /** Proves a candidate by running it, rather than trusting that it exists. */
+    private static boolean canRun(String executable) {
+        try {
+            Process probe = new ProcessBuilder(executable, "--version")
+                    .redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            return probe.waitFor(10, TimeUnit.SECONDS) && probe.exitValue() == 0;
+        } catch (IOException notThere) {
+            return false;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
     private void run(Path output, String... command) throws IOException, InterruptedException {
         ProcessBuilder builder = new ProcessBuilder(command)
                 .redirectOutput(output.toFile())
