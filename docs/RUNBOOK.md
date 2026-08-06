@@ -126,6 +126,19 @@ Three things to know:
   a backup. Download them, or point `BACKUP_DESTINATION_PATH` at that volume so
   the nightly job carries them off-box.
 
+**Download is one `.zip`** holding both halves, because two files are two things
+to lose track of. `restore.sh` takes that zip directly:
+
+```
+./scripts/restore.sh /path/to/inventory-manager-backup-<stamp>.zip
+```
+
+It unpacks to a temporary directory, restores, and removes it on the way out —
+so a failed restore does not leave a complete copy of the database in `/tmp`.
+The two artefacts still exist separately on the server, because that is the
+format the nightly job writes and this script reads; the zip is transport, not
+a third format.
+
 Restoring is deliberately **not** in the application. A restore drops the
 database the application is running against — it cannot sensibly do that to
 itself, and putting the most destructive operation in the system behind a

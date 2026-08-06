@@ -186,6 +186,50 @@ public class BackupService {
         return sets;
     }
 
+    /**
+     * Both halves of one backup, zipped into the stream, for people rather than
+     * for scripts.
+     *
+     * <p>The two files stay two files on disk, because that is the format
+     * restore.sh reads and backup.sh writes, and a third stored artefact would
+     * be a third thing to keep in step. The zip is built on the fly purely so
+     * there is one thing to download, attach to a ticket, or copy to a USB
+     * stick — a backup people carry around in two pieces is a backup that
+     * arrives somewhere in one piece.
+     *
+     * <p>The entries keep their original names, which is load-bearing: restore.sh
+     * pairs a dump with its archive by the timestamp in the filename, so it can
+     * unpack this and proceed exactly as if the two files had been handed over
+     * separately.
+     */
+    public void writeArchive(String stamp, java.io.OutputStream out) throws IOException {
+        if (!stamp.matches("^\\d{8}T\\d{6}$")) {
+            throw new ApiExceptions.NotFoundException("No such backup.");
+        }
+        Path dump = backupDirectory.resolve(DUMP_PREFIX + stamp + DUMP_SUFFIX);
+        Path files = backupDirectory.resolve(FILES_PREFIX + stamp + FILES_SUFFIX);
+        if (!Files.isRegularFile(dump) && !Files.isRegularFile(files)) {
+            throw new ApiExceptions.NotFoundException("No such backup.");
+        }
+
+        try (java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(out)) {
+            // Both members are already compressed -- a custom-format dump and a
+            // gzip -- so deflating again costs CPU to save almost nothing.
+            zip.setLevel(java.util.zip.Deflater.NO_COMPRESSION);
+            for (Path member : List.of(dump, files)) {
+                if (!Files.isRegularFile(member)) continue;
+                zip.putNextEntry(new java.util.zip.ZipEntry(member.getFileName().toString()));
+                Files.copy(member, zip);
+                zip.closeEntry();
+            }
+        }
+    }
+
+    /** What a single-file download of this backup is called. */
+    public static String archiveName(String stamp) {
+        return "inventory-manager-backup-" + stamp + ".zip";
+    }
+
     /** The file behind a name this service generated, or a 404. */
     public Path resolve(String name) {
         if (!SAFE_NAME.matcher(name).matches()) {

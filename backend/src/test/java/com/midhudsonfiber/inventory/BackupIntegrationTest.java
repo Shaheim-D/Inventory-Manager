@@ -144,6 +144,33 @@ class BackupIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("one download is a zip holding both halves, named as restore.sh pairs them")
+    void singleFileDownloadHoldsBothHalves() throws Exception {
+        assumeTrue(pgDumpAvailable(), "pg_dump is not installed on this machine");
+        Session admin = admin();
+
+        String stamp = post(admin, "/api/admin/backups", "").getBody().get("stamp").asText();
+        byte[] zipped = getBytes(admin, "/api/admin/backups/" + stamp + "/archive");
+
+        java.util.Map<String, Long> entries = new java.util.LinkedHashMap<>();
+        try (var zip = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(zipped))) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                entries.put(entry.getName(), zip.readAllBytes().length + 0L);
+            }
+        }
+
+        // The names inside are the ones restore.sh pairs on -- it finds the dump
+        // and its archive by pattern after unpacking, so renaming them here
+        // would produce a zip nothing can restore.
+        assertThat(entries.keySet()).containsExactlyInAnyOrder(
+                "inventory-manager-" + stamp + ".dump",
+                "inventory-manager-files-" + stamp + ".tar.gz");
+        entries.forEach((name, length) ->
+                assertThat(length).as("%s is not empty", name).isGreaterThan(0L));
+    }
+
+    @Test
     @DisplayName("a crafted filename cannot walk out of the backup directory")
     void refusesPathTraversal() {
         Session admin = admin();

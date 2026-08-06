@@ -9,6 +9,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -54,6 +55,26 @@ public class BackupController {
         audit.recordCreate(AuditService.ENTITY_BACKUP, idOf(created.stamp()),
                 "Backup taken: " + created.stamp());
         return toView(created);
+    }
+
+    /**
+     * Both halves as one file.
+     *
+     * <p>This is what the screen offers, because a backup somebody has to carry
+     * around in two pieces is a backup that arrives somewhere in one piece. The
+     * two artefacts still exist separately on disk and restore.sh still reads
+     * them; the zip is transport, not a third format.
+     */
+    @GetMapping("/{stamp}/archive")
+    public ResponseEntity<StreamingResponseBody> archive(@PathVariable String stamp) {
+        String filename = BackupService.archiveName(stamp);
+        audit.recordCreate(AuditService.ENTITY_BACKUP, idOf(stamp), "Backup downloaded: " + filename);
+
+        StreamingResponseBody body = out -> backups.writeArchive(stamp, out);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .body(body);
     }
 
     @GetMapping("/{name}")

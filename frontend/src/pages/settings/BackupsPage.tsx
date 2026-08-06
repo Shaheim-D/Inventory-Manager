@@ -10,6 +10,7 @@ import {
   Typography,
 } from '@mui/material';
 import BackupIcon from '@mui/icons-material/CloudDownloadOutlined';
+import DownloadIcon from '@mui/icons-material/FileDownloadOutlined';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import { PageHeader } from '../../components/PageHeader';
@@ -151,19 +152,19 @@ export function BackupsPage() {
           emptyMessage="No backups taken from here yet. Nightly backups run from scripts/backup.sh and land wherever that is configured to put them; this screen only lists the ones taken here."
           rowActions={(row) => (
             <Stack direction="row" spacing={1}>
-              {/* Two files, downloaded separately and on purpose. Offering one
-                  "download backup" button would have to pick a format to bundle
-                  them in, and restore.sh wants the two artefacts as they are. */}
-              {row.dump && (
-                <Button size="small" href={`/api/admin/backups/${row.dump.name}`} download>
-                  Database
-                </Button>
-              )}
-              {row.files && (
-                <Button size="small" href={`/api/admin/backups/${row.files.name}`} download>
-                  Attachments
-                </Button>
-              )}
+              {/* One file to carry, two files inside it. restore.sh takes the
+                  zip directly, so a single download is a complete restore --
+                  the pair is only ever split on the server, where nothing has
+                  to remember to keep the halves together. */}
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<DownloadIcon />}
+                href={`/api/admin/backups/${row.stamp}/archive`}
+                download
+              >
+                Download
+              </Button>
               <Button
                 size="small"
                 color="error"
@@ -178,9 +179,10 @@ export function BackupsPage() {
       </Paper>
 
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>
-        Both files carry the same timestamp because they are one backup. Restoring the database
-        without its attachments brings back every attachment record pointing at a file that is no
-        longer there.
+        A download is one <code>.zip</code> holding both halves — the database and the uploaded
+        files. <code>scripts/restore.sh</code> takes that zip directly, so there is nothing to
+        unpack by hand. They are two files on the server because that is the format the nightly
+        job writes and the restore reads.
       </Typography>
     </>
   );
