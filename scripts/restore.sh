@@ -9,6 +9,7 @@
 # to this script or to the backup format.
 #
 #     ./restore.sh inventory-manager-20260130T021500.dump [inventory-manager-files-20260130T021500.tar.gz]
+#     ./restore.sh inventory-manager-backup-20260130T021500.zip
 #
 # A restore is two artefacts: the database dump and the attachment archive from
 # the same night. Restoring only the dump brings back every attachment row
@@ -42,6 +43,38 @@ fi
 # Resolve to absolute paths before anything changes directory -- compose mode
 # runs from deploy/, and a relative dump path would stop existing there.
 DUMP="$(cd "$(dirname "$DUMP")" && pwd)/$(basename "$DUMP")"
+
+# A single .zip is what Settings > Backups hands you, because two files are two
+# things to lose track of. Unpack it and carry on with the pair inside: the
+# entries keep the names the rest of this script pairs on, so nothing below
+# needs to know a zip was ever involved.
+if [[ "$DUMP" == *.zip ]]; then
+  command -v unzip > /dev/null 2>&1 || {
+    echo "That is a zip, and unzip is not installed. Either install it, or" >&2
+    echo "extract the archive yourself and pass the .dump inside it." >&2
+    exit 1
+  }
+  UNPACKED="$(mktemp -d -t im-restore-XXXXXX)"
+  # Removed on the way out however this ends, so a failed restore does not
+  # leave a complete copy of the database in /tmp.
+  trap 'rm -rf "$UNPACKED"' EXIT
+  echo "Unpacking $(basename "$DUMP")..."
+  unzip -q -j "$DUMP" -d "$UNPACKED"
+
+  ZIPPED_DUMP="$(find "$UNPACKED" -maxdepth 1 -name 'inventory-manager-*.dump' | head -1)"
+  if [[ -z "$ZIPPED_DUMP" ]]; then
+    echo "No inventory-manager-*.dump inside $(basename "$DUMP")." >&2
+    exit 1
+  fi
+  DUMP="$ZIPPED_DUMP"
+  FILES_ARCHIVE="$(find "$UNPACKED" -maxdepth 1 -name 'inventory-manager-files-*.tar.gz' | head -1)"
+  echo "      database    $(basename "$DUMP")"
+  if [[ -n "$FILES_ARCHIVE" ]]; then
+    echo "      attachments $(basename "$FILES_ARCHIVE")"
+  else
+    echo "      attachments (none in the archive)"
+  fi
+fi
 
 # Guess the matching archive from the dump's timestamp, so the common case does
 # not depend on anyone remembering to pass a second argument.

@@ -171,7 +171,8 @@ the screen still loads and taking a backup reports what to set, rather than an
 error number.
 
 Backups land in `backend/data/backups/` when running this way, beside
-`backend/data/attachments/`.
+`backend/data/attachments/`. **Download** gives you one `.zip` containing both
+halves; `scripts/restore.sh` accepts that zip directly.
 
 Then open <http://localhost:5173> and sign in as `admin` with the password you
 chose. If you leave `APP_ADMIN_INITIAL_PASSWORD` unset, one is generated and
