@@ -4,50 +4,50 @@ The authoritative system of record for the physical assets a mid-sized ISP owns
 and manages — routers, switches, vehicles, laptops, fiber equipment, spare parts,
 transceivers, and whatever gets added later.
 
+It answers four questions about every piece of equipment the company owns:
+**what is it, where is it, who has it, and what has happened to it.**
+
+- **Assets** of any kind, without a schema change per type — a new category is
+  created in the admin screens, not in a migration.
+- **Purchase orders** from request through approval, purchase and receiving,
+  where receiving a delivery creates the assets.
+- **Inventory verification** for bulk stock, so quantities that nobody has
+  confirmed recently surface as work to do.
+- **Reporting** with CSV and PDF export, including a custom report builder.
+- **Notifications** in the application and by email, on warranties, purchase
+  orders, imports and asset changes.
+- **Barcode scanning** — scan an asset tag anywhere in the app and land on that
+  asset.
+- **Integrations** that read from Zabbix, NetBox and LDAP/AD, where nothing an
+  integration proposes reaches an asset until a person confirms it.
+
 It is deliberately **not** a monitoring system, IPAM/DCIM tool, ticketing system,
-or CRM. It integrates with Zabbix, NetBox, LDAP/AD, and Jira rather than
-duplicating them.
+or CRM. It integrates with those rather than duplicating them.
 
-The complete design package this is built from lives in [`docs/design/`](docs/design/);
-[`InventoryManager_MOP.md`](docs/design/InventoryManager_MOP.md) is the authoritative spec.
-
----
-
-## Where the build currently stands
-
-Against the roadmap's ten milestones:
-
-| # | Milestone | Status |
-|---|---|---|
-| 0 | Foundation — skeleton, Docker, CI, migrations validated live | **Done** |
-| 1 | Core domain, auth, baseline admin, field visibility | **Done** |
-| 2 | Search, relationships, attachments, audit, bulk import | **Done** |
-| 3 | Purchase Orders | **Done** — request, approve/place, partial receiving, receipts create assets |
-| 4 | Notifications & warranty alerts | **Done** — in-app with an on-screen popup, plus email; dynamic role targets, per-rule email frequency, fourteen triggers across assets, purchase orders, imports and the two scheduled sweeps |
-| 5 | Inventory staleness & verification | **Done** — the queue and its three resolution actions, the scheduled check, and every rule about what counts as somebody having verified something |
-| 6 | Plugin Framework | **Done** — `SyncPlugin` contract, orchestrator with the confirmation gate, Zabbix and NetBox read-only pulls, directory group sync, and the review/ignore screens |
-| 7 | Reporting | **Done** — nine standard reports led by the Device Identification List, a custom builder whose field picker is itself the visibility boundary, saved definitions, CSV and PDF export |
-| 8 | Deployment hardening | **Done** — **the restore rehearsal has been executed for real** and is now a repeatable drill; see `docs/RESTORE_REHEARSAL.md`, including §5 on what it does not yet cover |
-| 9 | Final documentation & handoff | Ongoing |
-
-Milestone 1's demonstrable checkpoint — sign in as each seeded role and confirm
-each sees exactly what its permission set allows — passes, and runs as an
-automated test on every build.
+**📖 Full documentation is the wiki**, kept on the `claude/documentation` branch
+under `docs/wiki/` — how to use every feature, how to administer it, how to
+operate it, and how to work on the code. It is deliberately not merged here, so
+that revising the documentation never touches the application's history.
 
 ---
 
-## Running it locally
+## Requirements
 
-Requires **Java 21**, **Node 22**, and a **PostgreSQL 15+** instance. Maven is not
-required — `mvnw` / `mvnw.cmd` in `backend/` fetches the right version itself.
+| | |
+|---|---|
+| **Java 21** | A full JDK, not a JRE |
+| **Node 22** | Only for local development; the deployed image builds it for you |
+| **PostgreSQL 15+** | 16 recommended |
 
-Java must be a full **JDK**, not a JRE, and `JAVA_HOME` must point at it. Maven's
-launcher reads `JAVA_HOME` specifically; having `java` on `PATH` is not enough,
-and the failure is a bare `The JAVA_HOME environment variable is not defined
-correctly` that says nothing about which of the two is missing.
+Maven is not required — `mvnw` / `mvnw.cmd` in `backend/` fetches the right
+version itself.
+
+`JAVA_HOME` must point at the JDK. Maven's launcher reads that specifically;
+having `java` on `PATH` is not enough, and the failure is a bare
+`The JAVA_HOME environment variable is not defined correctly` that says nothing
+about which of the two is missing.
 
 ```powershell
-# Check what you have
 java -version
 echo "JAVA_HOME = [$env:JAVA_HOME]"
 
@@ -65,7 +65,9 @@ echo "JAVA_HOME = [$JAVA_HOME]"
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64   # adjust to your install
 ```
 
-### Database setup (once)
+---
+
+## Database setup (once)
 
 The application authenticates as its own role, so the **role** must be created as
 well as the database. Creating only the database is the usual mistake: it
@@ -75,52 +77,36 @@ about the missing role.
 Run [`scripts/setup-database.sql`](scripts/setup-database.sql) as a superuser.
 This is SQL, so it goes into a Postgres client — not into a shell.
 
-**Option A — pgAdmin** (installed alongside PostgreSQL on Windows by default):
-open it, connect as `postgres`, then Tools → Query Tool, open the file, and run it.
+**pgAdmin** (installed alongside PostgreSQL on Windows by default): connect as
+`postgres`, then Tools → Query Tool, open the file, and run it.
 
-**Option B — psql:**
+**psql:**
 
 ```bash
 psql -U postgres -f scripts/setup-database.sql
 ```
 
 ```powershell
-psql -U postgres -f scripts\setup-database.sql
-```
-
-On Windows `psql` is often not on `PATH`. If PowerShell reports it is not
-recognised, call it by full path — adjust the version number to match your install:
-
-```powershell
 & "C:\Program Files\PostgreSQL\16\bin\psql.exe" -U postgres -f scripts\setup-database.sql
 ```
 
-The script is safe to re-run; a second run reports that the database already
-exists and changes nothing.
+On Windows `psql` is often not on `PATH`, which is why the full path is shown —
+adjust the version number to match your install.
 
-To use a different role or database instead, set `DB_USER`, `DB_PASSWORD`,
-`DB_NAME`, `DB_HOST`, and `DB_PORT` — nothing is hardcoded. The credentials in
-that file are for local development only; a real deployment sets them in `.env`.
+The script is safe to re-run. Flyway creates the schema itself on first startup;
+do not create tables by hand.
 
-Flyway creates the schema itself on first startup. Do not create tables by hand.
+To use a different role or database, set `DB_USER`, `DB_PASSWORD`, `DB_NAME`,
+`DB_HOST` and `DB_PORT` — nothing is hardcoded.
 
-### macOS / Linux
+---
 
-```bash
-# Backend on :8080
-cd backend
-APP_ADMIN_INITIAL_PASSWORD='choose-a-real-one' ./mvnw spring-boot:run
+## Starting it
 
-# Frontend on :5173, proxying /api to the backend (separate terminal)
-cd frontend
-npm install
-npm run dev
-```
+Two processes in development: the backend serves the API, and Vite serves the
+frontend and proxies `/api` to it.
 
 ### Windows (PowerShell)
-
-PowerShell takes neither bash's inline `VAR=value cmd` form nor `&&` as a
-statement separator, so the same steps are:
 
 ```powershell
 # Backend on :8080
@@ -134,53 +120,33 @@ npm install
 npm run dev
 ```
 
-`npm install` must be run from `frontend/`. There is deliberately no root
-`package.json` — the frontend is its own project, and the repository root is not
-a Node package.
+### macOS / Linux
 
-**Docker is not involved in any of this.** The image and the Compose stack are
-how it *deploys*; running it locally is just a JVM, a Node dev server and a
-PostgreSQL you already have. Nothing above needs rebuilding an image, and a
-code change is picked up by restarting whichever of the two you changed.
+```bash
+# Backend on :8080
+cd backend
+APP_ADMIN_INITIAL_PASSWORD='choose-a-real-one' ./mvnw spring-boot:run
 
-#### For the Backups screen on Windows
-
-**Settings → Backups** runs `pg_dump`, and the PostgreSQL installer for Windows
-does not put its `bin` directory on `PATH` — so the tool is on the machine but
-not reachable by name.
-
-Normally you do not have to do anything about that: when `pg_dump` is not on
-`PATH`, the application looks through `C:\Program Files\PostgreSQL\*\bin`,
-newest major version first, and uses what it finds. It says which one in the
-log.
-
-Only if that fails — an install somewhere unusual — name it yourself:
-
-```powershell
-$env:APP_BACKUPS_PG_DUMP_PATH = 'C:\Program Files\PostgreSQL\16\bin\pg_dump.exe'
+# Frontend on :5173 (separate terminal)
+cd frontend
+npm install
+npm run dev
 ```
 
-Point it at the **same major version as the server you are running**: pg_dump
-can dump a server older than itself but never a newer one. A named path is used
-exactly as given and never second-guessed, so a wrong one is an error rather
-than a silent fallback to a different binary.
-
-`tar` needs nothing — Windows 11 ships it in `System32`, and the archive it
-writes is a normal gzipped tar. If pg_dump genuinely cannot be found anywhere,
-the screen still loads and taking a backup reports what to set, rather than an
-error number.
-
-Backups land in `backend/data/backups/` when running this way, beside
-`backend/data/attachments/`. **Download** gives you one `.zip` containing both
-halves; `scripts/restore.sh` accepts that zip directly.
-
 Then open <http://localhost:5173> and sign in as `admin` with the password you
-chose. If you leave `APP_ADMIN_INITIAL_PASSWORD` unset, one is generated and
-printed to the log **once**, at first startup only.
+chose. Leave `APP_ADMIN_INITIAL_PASSWORD` unset and one is generated and printed
+to the log **once**, at first startup only.
 
-### Running it as it actually ships
+`npm install` must be run from `frontend/`. There is deliberately no root
+`package.json` — the frontend is its own project.
 
-One jar, with the React build inside it, served from a single origin on :8080:
+**Docker is not involved in local development.** The image and the Compose stack
+are how it *deploys*. A code change is picked up by restarting whichever of the
+two processes you changed.
+
+### As it actually ships
+
+One jar with the React build inside it, served from a single origin on `:8080`:
 
 ```bash
 cd backend
@@ -194,6 +160,25 @@ cd backend
 java -jar target\inventory-manager-0.1.0-SNAPSHOT.jar
 ```
 
+---
+
+## Deploying to a server
+
+Three containers, one Compose stack, one VM: nginx (+certbot) → app → postgres.
+
+```bash
+git clone <this repository> /opt/inventory-manager
+cd /opt/inventory-manager
+cp .env.example .env    # fill it in, then: chmod 600 .env
+cd deploy && docker compose up -d
+```
+
+On an internal network the default `TLS_MODE=none` serves plain HTTP and needs
+nothing further. See [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for TLS options and for
+operating it.
+
+---
+
 ## Tests
 
 ```bash
@@ -201,71 +186,17 @@ cd backend && mvn test
 ```
 
 Every test runs against a **real PostgreSQL instance** with the full migration
-chain applied from empty. That is deliberate: this schema carries real behavior
+chain applied from empty. That is deliberate: this schema carries real behaviour
 in triggers and CHECK constraints, and an in-memory substitute would quietly test
 none of it. CI does the same on every push.
 
-## Deploying
-
-See [`docs/RUNBOOK.md`](docs/RUNBOOK.md). Three containers, one Compose stack,
-one VM: nginx (+certbot) → app (Spring Boot with the React build bundled in) →
-postgres.
-
 ---
 
-## How this is put together
+## Documentation
 
-- **Backend** — Java 21, Spring Boot 3.5, modular monolith. Not microservices,
-  not Kubernetes.
-- **Database** — PostgreSQL. JSONB for custom fields, native full-text search and
-  `pg_trgm` for fuzzy matching, so no Elasticsearch. Flyway, forward-only.
-- **Frontend** — React + TypeScript, MUI, TanStack Query, React Router, React
-  Hook Form. The only client-side global state is who is signed in and what they
-  may do; everything else is server state.
-- **Sessions** — Spring Session, JDBC-backed on the same Postgres. Not Redis, not
-  JWT — a single-instance deployment does not need another infrastructure component.
-
-### The parts worth understanding before changing anything
-
-**No per-asset-type tables.** Every physical object is an `asset` row.
-Category-specific behavior is data in category-scoped reference tables, never
-schema. Adding an asset type is an insert through the admin UI.
-
-**Authorization is permission keys, never role names.** Roles are named bundles
-of permissions. Nothing in the codebase branches on a role's name — not the API,
-not the route guards, not the navigation. Individual users can also get one-off
-grants or denials independent of their role, and a denial always wins.
-
-**A restricted field is absent, not blank.** `field_visibility_rule` is resolved
-server-side before serialization; a field the viewer may not see is not a key in
-the JSON at all. Not null, not masked — a disabled input still means the value
-reached the browser, and a mask still confirms the field exists. The frontend
-only ever reacts to what arrived and never re-derives the rule. See
-`FieldVisibilityService` and `AssetViewAssembler`, and the tests in
-`FieldVisibilityIntegrationTest`, which assert absence rather than nullness.
-
-**Reuse the mechanism before adding one.** When a requirement looks like
-"restrict X" or "notify about Y", the answer is nearly always a new row or a
-widened CHECK constraint. That discipline is why Purchase Orders, the Plugin
-Framework, staleness tracking, and reporting were all added mid-design without
-redesigning anything already built.
-
-**Every migration is executed before it is called done.** Not reviewed — run,
-against real PostgreSQL, with its triggers and constraints exercised by real
-inserts. This is not optional for future migrations.
-
-**Assets are soft-deleted, never hard-deleted.** Audit rows deliberately use a
-loose `entity_id` rather than a foreign key, so history outlives whatever it
-describes.
-
-### Branding
-
-The theme's defaults are a finished neutral design, not a placeholder. A real
-logo and palette are uploaded through **Admin → Branding** in the running
-application — they are a theme-level configuration change, not a rebuild, which
-is what the design committed to. The logo is stored in the database, so the
-standard nightly backup captures it and there is no extra volume to remember.
-
-The permission catalog gained a 25th key, `branding:manage`, in `V10`. The design
-anticipated exactly this: extending the catalog is a plain insert, never a
-redesign.
+| | |
+|---|---|
+| **The wiki** — `docs/wiki/` on the `claude/documentation` branch | Using, administering, operating and developing the application. Nineteen pages, starting at `Home.md` |
+| [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | Operational procedures — backups, restore, updates, TLS |
+| [`docs/RESTORE_REHEARSAL.md`](docs/RESTORE_REHEARSAL.md) | The record of the restore rehearsal, and what it does not cover |
+| [`docs/design/`](docs/design/) | The original design package this was built from |
