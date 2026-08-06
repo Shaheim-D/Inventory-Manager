@@ -24,8 +24,10 @@ It answers four questions about every piece of equipment the company owns:
 It is deliberately **not** a monitoring system, IPAM/DCIM tool, ticketing system,
 or CRM. It integrates with those rather than duplicating them.
 
-**📖 Full documentation is in the [wiki](docs/wiki/Home.md)** — how to use every
-feature, how to administer it, how to operate it, and how to work on the code.
+**📖 Full documentation is the wiki**, kept on the `claude/documentation` branch
+under `docs/wiki/` — how to use every feature, how to administer it, how to
+operate it, and how to work on the code. It is deliberately not merged here, so
+that revising the documentation never touches the application's history.
 
 ---
 
@@ -172,8 +174,8 @@ cd deploy && docker compose up -d
 ```
 
 On an internal network the default `TLS_MODE=none` serves plain HTTP and needs
-nothing further. See **[Installation](docs/wiki/Installation.md)** for TLS
-options and [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for operating it.
+nothing further. See [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for TLS options and for
+operating it.
 
 ---
 
@@ -194,7 +196,7 @@ none of it. CI does the same on every push.
 
 | | |
 |---|---|
-| **[Wiki](docs/wiki/Home.md)** | Using, administering, operating and developing the application |
+| **The wiki** — `docs/wiki/` on the `claude/documentation` branch | Using, administering, operating and developing the application. Nineteen pages, starting at `Home.md` |
 | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | Operational procedures — backups, restore, updates, TLS |
 | [`docs/RESTORE_REHEARSAL.md`](docs/RESTORE_REHEARSAL.md) | The record of the restore rehearsal, and what it does not cover |
 | [`docs/design/`](docs/design/) | The original design package this was built from |
