@@ -37,7 +37,8 @@ import org.springframework.stereotype.Component;
  *
  * <p>Walking the configured servers, and deciding that a reject stops the walk
  * while a timeout does not, is {@link RadiusClientRunner}'s job -- shared with
- * the settings screen's test button so the two cannot drift apart.
+ * the settings screen's test button so the two cannot drift apart. Turning the
+ * reply's role attribute into roles is {@link RadiusRoleAssigner}'s.
  */
 @Component
 public class RadiusAuthenticationProvider implements AuthenticationProvider {
@@ -47,15 +48,18 @@ public class RadiusAuthenticationProvider implements AuthenticationProvider {
     private final RadiusSettingsRepository settings;
     private final RadiusClientRunner radius;
     private final ExternalUserProvisioner provisioner;
+    private final RadiusRoleAssigner roleAssigner;
     private final PermissionResolver permissions;
 
     public RadiusAuthenticationProvider(RadiusSettingsRepository settings,
                                         RadiusClientRunner radius,
                                         ExternalUserProvisioner provisioner,
+                                        RadiusRoleAssigner roleAssigner,
                                         PermissionResolver permissions) {
         this.settings = settings;
         this.radius = radius;
         this.provisioner = provisioner;
+        this.roleAssigner = roleAssigner;
         this.permissions = permissions;
     }
 
@@ -94,6 +98,10 @@ public class RadiusAuthenticationProvider implements AuthenticationProvider {
         }
 
         AppUser user = provisioner.provision(username, AppUser.AuthProvider.RADIUS, null, null);
+        // Roles from the reply, before permissions are resolved -- so somebody
+        // moved between groups in NPS gets the new access on this sign-in rather
+        // than the one after it.
+        user = roleAssigner.apply(user, attempt.roleAttributes());
         if (!user.isActive()) {
             // Disabling an account has to hold even though the password was
             // accepted upstream: NPS knows nothing about this application's idea

@@ -1,14 +1,19 @@
 package com.midhudsonfiber.inventory.web;
 
 import com.midhudsonfiber.inventory.audit.AuditService;
+import com.midhudsonfiber.inventory.domain.RadiusRoleMapping;
 import com.midhudsonfiber.inventory.domain.RadiusServer;
 import com.midhudsonfiber.inventory.domain.RadiusSettings;
+import com.midhudsonfiber.inventory.domain.Role;
+import com.midhudsonfiber.inventory.repo.RadiusRoleMappingRepository;
 import com.midhudsonfiber.inventory.repo.RadiusServerRepository;
+import com.midhudsonfiber.inventory.repo.RoleRepository;
 import com.midhudsonfiber.inventory.repo.RadiusSettingsRepository;
 import com.midhudsonfiber.inventory.security.CurrentUser;
 import com.midhudsonfiber.inventory.security.PermissionKeys;
 import com.midhudsonfiber.inventory.security.RadiusClientRunner;
 import com.midhudsonfiber.inventory.security.SecretCipher;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -36,16 +41,21 @@ public class RadiusSettingsController {
 
     private final RadiusSettingsRepository settings;
     private final RadiusServerRepository servers;
+    private final RadiusRoleMappingRepository mappings;
+    private final RoleRepository roles;
     private final SecretCipher cipher;
     private final RadiusClientRunner radius;
     private final AuditService audit;
     private final CurrentUser currentUser;
 
     public RadiusSettingsController(RadiusSettingsRepository settings, RadiusServerRepository servers,
+                                    RadiusRoleMappingRepository mappings, RoleRepository roles,
                                     SecretCipher cipher, RadiusClientRunner radius,
                                     AuditService audit, CurrentUser currentUser) {
         this.settings = settings;
         this.servers = servers;
+        this.mappings = mappings;
+        this.roles = roles;
         this.cipher = cipher;
         this.radius = radius;
         this.audit = audit;
@@ -56,7 +66,10 @@ public class RadiusSettingsController {
     public record ServerRequest(String host, Integer port, String sharedSecret) {}
 
     public record SettingsRequest(boolean enabled, Integer timeoutSeconds, Integer retries,
-                                  String nasIdentifier, List<ServerRequest> servers) {}
+                                  String nasIdentifier, String roleAttribute,
+                                  List<ServerRequest> servers) {}
+
+    public record MappingRequest(String attributeValue, Long roleId) {}
 
     public record TestRequest(String username, String password) {}
 
@@ -124,6 +137,13 @@ public class RadiusSettingsController {
         current.setTimeoutSeconds(request.timeoutSeconds() == null ? 5 : request.timeoutSeconds());
         current.setRetries(request.retries() == null ? 1 : request.retries());
         current.setNasIdentifier(trimmedOrNull(request.nasIdentifier()));
+        if (request.roleAttribute() != null) {
+            if (!List.of("FILTER_ID", "CLASS").contains(request.roleAttribute())) {
+                throw new ApiExceptions.BadRequestException(
+                        "The role attribute must be FILTER_ID or CLASS.");
+            }
+            current.setRoleAttribute(request.roleAttribute());
+        }
         current.setUpdatedBy(currentUser.principal().map(p -> p.getId()).orElse(null));
         current.setUpdatedAt(Instant.now());
         RadiusSettings persisted = settings.save(current);
@@ -182,12 +202,63 @@ public class RadiusSettingsController {
         };
     }
 
+    // ------------------------------------------------------------------
+    // Reply attribute value -> role
+    // ------------------------------------------------------------------
+
+    @PostMapping("/role-mappings")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.USER_MANAGE + "')")
+    @Transactional
+    public Map<String, Object> addMapping(@RequestBody MappingRequest request) {
+        if (request.attributeValue() == null || request.attributeValue().isBlank()) {
+            throw new ApiExceptions.BadRequestException("A mapping needs the value NPS sends.");
+        }
+        Role role = roles.findById(request.roleId())
+                .orElseThrow(() -> new ApiExceptions.NotFoundException("No such role"));
+
+        String value = request.attributeValue().trim();
+        // Checked here as well as by the unique index, so the answer is a
+        // sentence rather than a constraint violation. Case-insensitive, because
+        // that is how the match itself works -- a second mapping differing only
+        // in case would be one that can never fire.
+        boolean taken = mappings.findAll().stream()
+                .anyMatch(m -> m.getAttributeValue().equalsIgnoreCase(value));
+        if (taken) {
+            throw new ApiExceptions.ConflictException(
+                    "'" + value + "' is already mapped. Matching ignores case, so it can only map to one role.");
+        }
+
+        RadiusRoleMapping mapping = new RadiusRoleMapping();
+        mapping.setAttributeValue(value);
+        mapping.setRoleId(role.getId());
+        RadiusRoleMapping saved = mappings.save(mapping);
+
+        audit.recordFieldChanges(AuditService.ENTITY_BRANDING, 1L, List.of(
+                AuditService.FieldChange.of("radius_role_mapping", null,
+                        "'" + value + "' now grants " + role.getName())));
+        return Map.of("id", saved.getId());
+    }
+
+    @DeleteMapping("/role-mappings/{id}")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.USER_MANAGE + "')")
+    @Transactional
+    public ResponseEntity<Void> removeMapping(@PathVariable Long id) {
+        mappings.findById(id).ifPresent(mapping -> {
+            mappings.delete(mapping);
+            audit.recordFieldChanges(AuditService.ENTITY_BRANDING, 1L, List.of(
+                    AuditService.FieldChange.of("radius_role_mapping",
+                            "'" + mapping.getAttributeValue() + "' granted a role", null)));
+        });
+        return ResponseEntity.noContent().build();
+    }
+
     private Map<String, Object> view(RadiusSettings s) {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("enabled", s.isEnabled());
         view.put("timeoutSeconds", s.getTimeoutSeconds());
         view.put("retries", s.getRetries());
         view.put("nasIdentifier", s.getNasIdentifier());
+        view.put("roleAttribute", s.getRoleAttribute());
         view.put("updatedAt", s.getUpdatedAt());
 
         List<Map<String, Object>> serverViews = new ArrayList<>();
@@ -206,6 +277,19 @@ public class RadiusSettingsController {
             serverViews.add(row);
         }
         view.put("servers", serverViews);
+
+        Map<Long, String> roleNames = roles.findAll().stream()
+                .collect(java.util.stream.Collectors.toMap(Role::getId, Role::getName));
+        List<Map<String, Object>> mappingViews = new ArrayList<>();
+        for (RadiusRoleMapping mapping : mappings.findAllByOrderByAttributeValueAsc()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", mapping.getId());
+            row.put("attributeValue", mapping.getAttributeValue());
+            row.put("roleId", mapping.getRoleId());
+            row.put("roleName", roleNames.get(mapping.getRoleId()));
+            mappingViews.add(row);
+        }
+        view.put("roleMappings", mappingViews);
         return view;
     }
 

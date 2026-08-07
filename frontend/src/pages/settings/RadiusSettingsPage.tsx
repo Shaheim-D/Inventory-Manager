@@ -9,17 +9,24 @@ import {
   IconButton,
   InputAdornment,
   LinearProgress,
+  MenuItem,
   Paper,
   Stack,
   Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
   TextField,
   Typography,
 } from '@mui/material';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
-import type { RadiusSettings } from '../../api/types';
+import type { RadiusSettings, Role } from '../../api/types';
 import { PageHeader } from '../../components/PageHeader';
 
 /**
@@ -70,7 +77,9 @@ export function RadiusSettingsPage() {
     timeoutSeconds: '5',
     retries: '1',
     nasIdentifier: '',
+    roleAttribute: 'FILTER_ID' as 'FILTER_ID' | 'CLASS',
   });
+  const [newMapping, setNewMapping] = useState({ attributeValue: '', roleId: '' });
   const [servers, setServers] = useState<ServerForm[]>([emptyServer(), emptyServer()]);
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
   const [testUsername, setTestUsername] = useState('');
@@ -85,6 +94,7 @@ export function RadiusSettingsPage() {
       timeoutSeconds: String(data.timeoutSeconds ?? 5),
       retries: String(data.retries ?? 1),
       nasIdentifier: data.nasIdentifier ?? '',
+      roleAttribute: data.roleAttribute ?? 'FILTER_ID',
     });
     setServers(
       SLOTS.map((slot) => {
@@ -104,6 +114,34 @@ export function RadiusSettingsPage() {
   const updateServer = (index: number, patch: Partial<ServerForm>) =>
     setServers((current) => current.map((s, i) => (i === index ? { ...s, ...patch } : s)));
 
+  const rolesQuery = useQuery({
+    queryKey: ['roles'],
+    queryFn: () => api.get<Role[]>('/api/admin/roles'),
+  });
+
+  const addMapping = useMutation({
+    mutationFn: () =>
+      api.post('/api/admin/radius-settings/role-mappings', {
+        attributeValue: newMapping.attributeValue.trim(),
+        roleId: Number(newMapping.roleId),
+      }),
+    onSuccess: () => {
+      setNewMapping({ attributeValue: '', roleId: '' });
+      setBanner(null);
+      void queryClient.invalidateQueries({ queryKey: ['radius-settings'] });
+    },
+    onError: (error: unknown) =>
+      setBanner({
+        kind: 'error',
+        text: error instanceof ApiError ? error.message : 'Could not add that mapping.',
+      }),
+  });
+
+  const removeMapping = useMutation({
+    mutationFn: (id: number) => api.del(`/api/admin/radius-settings/role-mappings/${id}`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['radius-settings'] }),
+  });
+
   const save = useMutation({
     mutationFn: () =>
       api.put<RadiusSettings>('/api/admin/radius-settings', {
@@ -111,6 +149,7 @@ export function RadiusSettingsPage() {
         timeoutSeconds: Number(form.timeoutSeconds) || 5,
         retries: Number(form.retries) || 1,
         nasIdentifier: form.nasIdentifier.trim() || null,
+        roleAttribute: form.roleAttribute,
         servers: servers.map((s) => ({
           host: s.host.trim() || null,
           port: Number(s.port) || 1812,
@@ -306,6 +345,123 @@ export function RadiusSettingsPage() {
             <Button variant="contained" onClick={() => save.mutate()} disabled={save.isPending}>
               Save
             </Button>
+          </Stack>
+
+          <Divider />
+
+          <Stack spacing={2}>
+            <Typography variant="subtitle1">Roles from the reply</Typography>
+            <Typography variant="body2" color="text.secondary">
+              When NPS accepts a sign-in it can return an attribute naming the group the
+              person matched. Map those values to roles here and a network account arrives
+              with the right access instead of waiting for somebody to grant it.
+            </Typography>
+
+            <Alert severity="warning">
+              For accounts that arrived through RADIUS, <strong>the reply decides</strong>:
+              their roles are replaced on every sign-in, so removing somebody from a group
+              in NPS removes their access here the next time they sign in. A value nothing
+              matches leaves them on <strong>Unassigned</strong> — assets and the dashboard,
+              read-only.
+              <br />
+              <br />
+              Accounts created in this application are never touched by any of this, which
+              is what stops an NPS profile demoting your own administrator.
+            </Alert>
+
+            <TextField
+              select
+              label="Attribute to read"
+              value={form.roleAttribute}
+              onChange={(event) =>
+                setForm({ ...form, roleAttribute: event.target.value as 'FILTER_ID' | 'CLASS' })
+              }
+              sx={{ maxWidth: 360 }}
+              helperText="Both are standard and NPS can set either from the same place in a network policy."
+            >
+              <MenuItem value="FILTER_ID">Filter-Id (11)</MenuItem>
+              <MenuItem value="CLASS">Class (25)</MenuItem>
+            </TextField>
+
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Value NPS sends</TableCell>
+                  <TableCell>Grants this role</TableCell>
+                  <TableCell align="right" />
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {(settings.data?.roleMappings ?? []).map((mapping) => (
+                  <TableRow key={mapping.id}>
+                    <TableCell><code>{mapping.attributeValue}</code></TableCell>
+                    <TableCell>{mapping.roleName ?? '—'}</TableCell>
+                    <TableCell align="right">
+                      <IconButton
+                        size="small"
+                        aria-label={`Remove the mapping for ${mapping.attributeValue}`}
+                        onClick={() => removeMapping.mutate(mapping.id)}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {(settings.data?.roleMappings ?? []).length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={3}>
+                      <Typography variant="body2" color="text.secondary">
+                        Nothing mapped, so everyone signing in through RADIUS lands on
+                        Unassigned.
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+
+            <Grid container spacing={2} alignItems="flex-start">
+              <Grid item xs={12} sm={5}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Value NPS sends"
+                  value={newMapping.attributeValue}
+                  onChange={(event) =>
+                    setNewMapping({ ...newMapping, attributeValue: event.target.value })
+                  }
+                  placeholder="inventory-neteng"
+                  helperText="Matching ignores case. It must be exactly what the network policy returns."
+                />
+              </Grid>
+              <Grid item xs={12} sm={5}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  select
+                  label="Grants this role"
+                  value={newMapping.roleId}
+                  onChange={(event) => setNewMapping({ ...newMapping, roleId: event.target.value })}
+                >
+                  {(rolesQuery.data ?? []).map((role) => (
+                    <MenuItem key={role.id} value={String(role.id)}>
+                      {role.name}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+              <Grid item xs={12} sm={2}>
+                <Button
+                  variant="outlined"
+                  onClick={() => addMapping.mutate()}
+                  disabled={
+                    !newMapping.attributeValue.trim() || !newMapping.roleId || addMapping.isPending
+                  }
+                >
+                  Add
+                </Button>
+              </Grid>
+            </Grid>
           </Stack>
 
           <Divider />
