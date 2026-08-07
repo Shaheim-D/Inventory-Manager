@@ -11,11 +11,11 @@ import java.time.Instant;
  * RADIUS/NPS sign-in configuration. One row, id fixed at 1 by a CHECK, the same
  * shape {@code mail_settings} and {@code branding} already use.
  *
- * <p>{@code sharedSecretRef} holds the <b>name of an environment variable</b>,
- * never the secret. That is the rule the plugin framework already follows and it
- * matters more here: this table is in every backup, and a backup is readable by
- * whoever holds it. {@code SecretResolver} reads the value when a sign-in
- * actually needs it.
+ * <p>The servers themselves are rows in {@code radius_server} (V27), because
+ * there are two of them and a second is a row rather than a second set of
+ * columns. What stays here is what applies to all of them: whether sign-in is
+ * on at all, the timeout and retry budget, and the NAS identifier this
+ * application presents.
  */
 @Entity
 @Table(name = "radius_settings")
@@ -26,15 +26,6 @@ public class RadiusSettings {
 
     @Column(name = "is_enabled", nullable = false)
     private boolean enabled;
-
-    private String host;
-
-    @Column(nullable = false)
-    private int port = 1812;
-
-    /** The NAME of the environment variable holding the shared secret. */
-    @Column(name = "shared_secret_ref")
-    private String sharedSecretRef;
 
     @Column(name = "timeout_seconds", nullable = false)
     private int timeoutSeconds = 5;
@@ -61,15 +52,6 @@ public class RadiusSettings {
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
-
-    public String getHost() { return host; }
-    public void setHost(String host) { this.host = host; }
-
-    public int getPort() { return port; }
-    public void setPort(int port) { this.port = port; }
-
-    public String getSharedSecretRef() { return sharedSecretRef; }
-    public void setSharedSecretRef(String sharedSecretRef) { this.sharedSecretRef = sharedSecretRef; }
 
     public int getTimeoutSeconds() { return timeoutSeconds; }
     public void setTimeoutSeconds(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }

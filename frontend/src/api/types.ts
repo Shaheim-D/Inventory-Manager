@@ -439,16 +439,24 @@ export interface MailSettings {
   updatedAt: string | null;
 }
 
-/** Settings > RADIUS. The shared secret is never here — only the variable's name. */
+/** One RADIUS server. The secret is never sent to the browser — only its state. */
+export interface RadiusServerView {
+  id: number;
+  ordinal: number;
+  host: string;
+  port: number;
+  /** A secret is stored. */
+  secretSet: boolean;
+  /** And this instance can still decrypt it. False after a restore without the key. */
+  secretReadable: boolean;
+}
+
+/** Settings > RADIUS. Shared secrets are stored encrypted and never returned. */
 export interface RadiusSettings {
   enabled: boolean;
-  host: string | null;
-  port: number;
-  sharedSecretRef: string | null;
-  /** Whether that variable currently resolves. Never what it resolves to. */
-  sharedSecretResolves: boolean;
   timeoutSeconds: number;
   retries: number;
   nasIdentifier: string | null;
   updatedAt: string | null;
+  servers: RadiusServerView[];
 }

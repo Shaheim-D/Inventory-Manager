@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   Button,
+  Chip,
   Divider,
   FormControlLabel,
   Grid,
+  IconButton,
+  InputAdornment,
   LinearProgress,
   Paper,
   Stack,
@@ -12,22 +15,48 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { RadiusSettings } from '../../api/types';
 import { PageHeader } from '../../components/PageHeader';
 
 /**
- * RADIUS/NPS sign-in.
+ * RADIUS/NPS sign-in, against a primary and a secondary server.
  *
- * Configured here rather than in environment variables so it can be corrected
- * or switched off without a restart — which is exactly when you need to, since
+ * Configured here rather than in environment variables so it can be corrected or
+ * switched off without a restart — which is exactly when you need to, since
  * getting it wrong is what stops people signing in.
  *
- * The shared secret is never held by this screen. The form takes the *name* of
- * an environment variable and the server says only whether that name currently
- * resolves.
+ * Shared secrets are stored encrypted and never sent back to the browser. A
+ * stored one shows as a masked placeholder; leaving it alone keeps it, so a port
+ * can be changed without retyping a credential.
  */
+
+/** Two slots always render. A blank secondary is simply not saved. */
+const SLOTS = [
+  { ordinal: 1, label: 'Primary server' },
+  { ordinal: 2, label: 'Secondary server' },
+];
+
+interface ServerForm {
+  host: string;
+  port: string;
+  /** Only ever what the user just typed. A stored secret never arrives here. */
+  sharedSecret: string;
+  secretSet: boolean;
+  secretReadable: boolean;
+}
+
+const emptyServer = (): ServerForm => ({
+  host: '',
+  port: '1812',
+  sharedSecret: '',
+  secretSet: false,
+  secretReadable: false,
+});
+
 export function RadiusSettingsPage() {
   const queryClient = useQueryClient();
 
@@ -38,13 +67,12 @@ export function RadiusSettingsPage() {
 
   const [form, setForm] = useState({
     enabled: false,
-    host: '',
-    port: '1812',
-    sharedSecretRef: '',
     timeoutSeconds: '5',
     retries: '1',
     nasIdentifier: '',
   });
+  const [servers, setServers] = useState<ServerForm[]>([emptyServer(), emptyServer()]);
+  const [revealed, setRevealed] = useState<Record<number, boolean>>({});
   const [testUsername, setTestUsername] = useState('');
   const [testPassword, setTestPassword] = useState('');
   const [banner, setBanner] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
@@ -54,28 +82,45 @@ export function RadiusSettingsPage() {
     if (!data) return;
     setForm({
       enabled: data.enabled,
-      host: data.host ?? '',
-      port: String(data.port ?? 1812),
-      sharedSecretRef: data.sharedSecretRef ?? '',
       timeoutSeconds: String(data.timeoutSeconds ?? 5),
       retries: String(data.retries ?? 1),
       nasIdentifier: data.nasIdentifier ?? '',
     });
+    setServers(
+      SLOTS.map((slot) => {
+        const stored = data.servers.find((s) => s.ordinal === slot.ordinal);
+        if (!stored) return emptyServer();
+        return {
+          host: stored.host,
+          port: String(stored.port),
+          sharedSecret: '',
+          secretSet: stored.secretSet,
+          secretReadable: stored.secretReadable,
+        };
+      }),
+    );
   }, [settings.data]);
+
+  const updateServer = (index: number, patch: Partial<ServerForm>) =>
+    setServers((current) => current.map((s, i) => (i === index ? { ...s, ...patch } : s)));
 
   const save = useMutation({
     mutationFn: () =>
       api.put<RadiusSettings>('/api/admin/radius-settings', {
         enabled: form.enabled,
-        host: form.host.trim() || null,
-        port: Number(form.port) || 1812,
-        sharedSecretRef: form.sharedSecretRef.trim() || null,
         timeoutSeconds: Number(form.timeoutSeconds) || 5,
         retries: Number(form.retries) || 1,
         nasIdentifier: form.nasIdentifier.trim() || null,
+        servers: servers.map((s) => ({
+          host: s.host.trim() || null,
+          port: Number(s.port) || 1812,
+          // Blank means "keep what is stored". The server reads it that way.
+          sharedSecret: s.sharedSecret ? s.sharedSecret : null,
+        })),
       }),
     onSuccess: () => {
       setBanner({ kind: 'success', text: 'Saved.' });
+      setRevealed({});
       void queryClient.invalidateQueries({ queryKey: ['radius-settings'] });
     },
     onError: (error: unknown) =>
@@ -102,8 +147,7 @@ export function RadiusSettingsPage() {
       }),
   });
 
-  const secretMissing =
-    form.sharedSecretRef.trim().length > 0 && settings.data?.sharedSecretResolves === false;
+  const unreadableSecret = servers.some((s) => s.secretSet && !s.secretReadable);
 
   return (
     <>
@@ -112,9 +156,10 @@ export function RadiusSettingsPage() {
         help={
           <>
             Lets people sign in with their network credentials, checked against RADIUS/NPS.
-            A first-time user gets an account with no permissions until somebody assigns
-            roles. Passwords set in this application keep working either way — this is in
-            addition to local sign-in, never instead of it.
+            Two servers can be configured; the secondary is used when the primary does not
+            answer. A first-time user gets an account with no permissions until somebody
+            assigns roles. Passwords set in this application keep working either way — this
+            is in addition to local sign-in, never instead of it.
           </>
         }
       />
@@ -123,6 +168,13 @@ export function RadiusSettingsPage() {
       {banner && (
         <Alert severity={banner.kind} sx={{ mb: 2 }} onClose={() => setBanner(null)}>
           {banner.text}
+        </Alert>
+      )}
+      {unreadableSecret && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          A stored shared secret cannot be decrypted with this installation's encryption key.
+          That normally means the database was restored onto a host without the original key
+          file. Enter the secret again to fix it — nothing else is affected.
         </Alert>
       )}
 
@@ -144,49 +196,91 @@ export function RadiusSettingsPage() {
             off changes nothing for anyone who has a password set in this application.
           </Alert>
 
+          {SLOTS.map((slot, index) => (
+            <Stack key={slot.ordinal} spacing={2}>
+              <Divider textAlign="left">
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Typography variant="subtitle2">{slot.label}</Typography>
+                  {index === 1 && (
+                    <Chip size="small" variant="outlined" label="Optional" />
+                  )}
+                </Stack>
+              </Divider>
+
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={5}>
+                  <TextField
+                    fullWidth
+                    label="Server"
+                    value={servers[index].host}
+                    onChange={(event) => updateServer(index, { host: event.target.value })}
+                    placeholder={index === 0 ? 'nps01.example.local' : 'nps02.example.local'}
+                    helperText={
+                      index === 0
+                        ? 'Tried first.'
+                        : 'Tried only when the primary does not answer. Leave blank for one server.'
+                    }
+                  />
+                </Grid>
+                <Grid item xs={12} sm={3}>
+                  <TextField
+                    fullWidth
+                    label="Port"
+                    value={servers[index].port}
+                    onChange={(event) => updateServer(index, { port: event.target.value })}
+                    helperText="1812 is standard."
+                  />
+                </Grid>
+                <Grid item xs={12} sm={4}>
+                  <TextField
+                    fullWidth
+                    label="Shared secret"
+                    type={revealed[index] ? 'text' : 'password'}
+                    value={servers[index].sharedSecret}
+                    onChange={(event) => updateServer(index, { sharedSecret: event.target.value })}
+                    placeholder={servers[index].secretSet ? '••••••••  (unchanged)' : ''}
+                    autoComplete="new-password"
+                    InputProps={{
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <IconButton
+                            aria-label={revealed[index] ? 'Hide what you typed' : 'Show what you typed'}
+                            onClick={() =>
+                              setRevealed((current) => ({ ...current, [index]: !current[index] }))
+                            }
+                            edge="end"
+                            size="small"
+                            // Only ever reveals what is in the box now. A stored
+                            // secret is not sent to the browser, so there is
+                            // nothing here to reveal until somebody types.
+                            disabled={!servers[index].sharedSecret}
+                          >
+                            {revealed[index] ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                          </IconButton>
+                        </InputAdornment>
+                      ),
+                    }}
+                    helperText={
+                      servers[index].secretSet
+                        ? 'Stored and encrypted. Leave blank to keep it; type to replace it.'
+                        : 'Stored encrypted, and never shown again after saving.'
+                    }
+                  />
+                </Grid>
+              </Grid>
+            </Stack>
+          ))}
+
+          <Divider />
+
           <Grid container spacing={2}>
-            <Grid item xs={12} sm={8}>
-              <TextField
-                fullWidth
-                label="Server"
-                value={form.host}
-                onChange={(event) => setForm({ ...form, host: event.target.value })}
-                placeholder="nps01.example.local"
-                helperText="Host name or IP address of the RADIUS/NPS server."
-              />
-            </Grid>
-            <Grid item xs={12} sm={4}>
-              <TextField
-                fullWidth
-                label="Port"
-                value={form.port}
-                onChange={(event) => setForm({ ...form, port: event.target.value })}
-                helperText="1812 is the standard."
-              />
-            </Grid>
-
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="Shared secret variable"
-                value={form.sharedSecretRef}
-                onChange={(event) => setForm({ ...form, sharedSecretRef: event.target.value })}
-                placeholder="RADIUS_SHARED_SECRET"
-                error={secretMissing}
-                helperText={
-                  secretMissing
-                    ? `Nothing in this application's environment is named ${form.sharedSecretRef}. Set it and restart.`
-                    : 'The NAME of an environment variable, not the secret itself. The secret is never stored in the database, so it is never in a backup.'
-                }
-              />
-            </Grid>
-
             <Grid item xs={12} sm={4}>
               <TextField
                 fullWidth
                 label="Timeout (seconds)"
                 value={form.timeoutSeconds}
                 onChange={(event) => setForm({ ...form, timeoutSeconds: event.target.value })}
+                helperText="Per server, before trying the next."
               />
             </Grid>
             <Grid item xs={12} sm={4}>
@@ -219,9 +313,10 @@ export function RadiusSettingsPage() {
           <Stack spacing={2}>
             <Typography variant="subtitle1">Test it</Typography>
             <Typography variant="body2" color="text.secondary">
-              Sends a real sign-in request using the saved settings. Nothing else proves the
-              whole path works — a server can be reachable and still reject everyone because
-              the shared secret is wrong or its network policy excludes this application. The
+              Sends a real sign-in request using the saved settings, through the same code
+              signing in uses. Nothing else proves the whole path — a server can be reachable
+              and still reject everyone because the shared secret is wrong or its network
+              policy excludes this application. The result names which server answered. The
               credentials you enter are used once and never stored.
             </Typography>
             <Grid container spacing={2}>

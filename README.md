@@ -20,8 +20,8 @@ It answers four questions about every piece of equipment the company owns:
   asset.
 - **Integrations** that read from Zabbix and NetBox, where nothing an
   integration proposes reaches an asset until a person confirms it.
-- **RADIUS sign-in** against NPS, in addition to passwords set in the
-  application — either credential signs the same person in.
+- **RADIUS sign-in** against a primary and secondary NPS, in addition to
+  passwords set in the application — either credential signs the same person in.
 
 It is deliberately **not** a monitoring system, IPAM/DCIM tool, ticketing system,
 or CRM. It integrates with those rather than duplicating them.

@@ -346,8 +346,16 @@ real role.
 they are tried first, so an administrator with a password set in the application
 can always get in and look. Then **Settings > RADIUS**, and press **Send a test
 sign-in**: it distinguishes "cannot reach the server" from "the server rejected
-that", which is the fork the sign-in screen cannot show you. If the shared secret
-variable stopped resolving, the screen says so.
+that", which is the fork the sign-in screen cannot show you, and it names which
+of the two servers answered.
+
+**A shared secret shows as unreadable after a restore.** Expected, and the
+screen says so rather than failing at the next sign-in. Shared secrets are
+encrypted with a key that is deliberately **not in the database** -- so a leaked
+`pg_dump` is inert, and a restore onto a host without the key cannot read them.
+Either carry `APP_ENCRYPTION_KEY` (or `data/secret.key`) across with the dump, or
+re-enter the secrets on **Settings > RADIUS**. Nothing else in the application
+uses that key.
 
 **Someone cannot see cost fields.** Also expected, and by design. Field
 visibility is data: check **Admin → Field Visibility Rules** for which permission

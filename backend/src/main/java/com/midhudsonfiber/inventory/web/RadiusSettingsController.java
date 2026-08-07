@@ -1,20 +1,20 @@
 package com.midhudsonfiber.inventory.web;
 
 import com.midhudsonfiber.inventory.audit.AuditService;
+import com.midhudsonfiber.inventory.domain.RadiusServer;
 import com.midhudsonfiber.inventory.domain.RadiusSettings;
-import com.midhudsonfiber.inventory.plugin.SecretResolver;
+import com.midhudsonfiber.inventory.repo.RadiusServerRepository;
 import com.midhudsonfiber.inventory.repo.RadiusSettingsRepository;
 import com.midhudsonfiber.inventory.security.CurrentUser;
 import com.midhudsonfiber.inventory.security.PermissionKeys;
-import jakarta.validation.constraints.NotNull;
+import com.midhudsonfiber.inventory.security.RadiusClientRunner;
+import com.midhudsonfiber.inventory.security.SecretCipher;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
-import org.tinyradius.packet.AccessRequest;
-import org.tinyradius.packet.RadiusPacket;
-import org.tinyradius.util.RadiusClient;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,30 +24,39 @@ import java.util.Map;
  * accounts and assigning roles, because deciding who may sign in and how is the
  * same job.
  *
- * <p>The shared secret is never accepted or returned here. The form takes the
- * <b>name of an environment variable</b>, and the response says only whether
- * that name currently resolves to something.
+ * <p><b>A shared secret goes in and never comes out.</b> The response says only
+ * whether one is set and whether this instance can still read it. Submitting a
+ * server without a secret leaves the stored one alone, which is what makes it
+ * possible to change a port without retyping a credential -- and means the
+ * screen never has to hold the plaintext in order to save the rest of the form.
  */
 @RestController
 @RequestMapping("/api/admin/radius-settings")
 public class RadiusSettingsController {
 
     private final RadiusSettingsRepository settings;
-    private final SecretResolver secrets;
+    private final RadiusServerRepository servers;
+    private final SecretCipher cipher;
+    private final RadiusClientRunner radius;
     private final AuditService audit;
     private final CurrentUser currentUser;
 
-    public RadiusSettingsController(RadiusSettingsRepository settings, SecretResolver secrets,
+    public RadiusSettingsController(RadiusSettingsRepository settings, RadiusServerRepository servers,
+                                    SecretCipher cipher, RadiusClientRunner radius,
                                     AuditService audit, CurrentUser currentUser) {
         this.settings = settings;
-        this.secrets = secrets;
+        this.servers = servers;
+        this.cipher = cipher;
+        this.radius = radius;
         this.audit = audit;
         this.currentUser = currentUser;
     }
 
-    public record SettingsRequest(boolean enabled, String host, @NotNull Integer port,
-                                  String sharedSecretRef, Integer timeoutSeconds,
-                                  Integer retries, String nasIdentifier) {}
+    /** A blank or absent sharedSecret means "keep whatever is stored". */
+    public record ServerRequest(String host, Integer port, String sharedSecret) {}
+
+    public record SettingsRequest(boolean enabled, Integer timeoutSeconds, Integer retries,
+                                  String nasIdentifier, List<ServerRequest> servers) {}
 
     public record TestRequest(String username, String password) {}
 
@@ -61,66 +70,91 @@ public class RadiusSettingsController {
     @PreAuthorize("hasAuthority('" + PermissionKeys.USER_MANAGE + "')")
     @Transactional
     public Map<String, Object> save(@RequestBody SettingsRequest request) {
-        RadiusSettings current = settings.current();
+        List<ServerRequest> submitted = request.servers() == null ? List.of() : request.servers();
+        List<RadiusServer> existing = servers.findAllByOrderByOrdinalAsc();
 
-        // The same rule the CHECK constraint enforces, stated here so the answer
-        // is a readable message rather than a constraint violation.
-        if (request.enabled()) {
-            if (request.host() == null || request.host().isBlank()) {
-                throw new ApiExceptions.BadRequestException(
-                        "A server address is needed before RADIUS sign-in can be switched on.");
-            }
-            if (request.sharedSecretRef() == null || request.sharedSecretRef().isBlank()) {
-                throw new ApiExceptions.BadRequestException(
-                        "Name the environment variable holding the shared secret before switching this on.");
-            }
+        // Rows with nothing in them are how an empty "secondary server" section
+        // comes back from a form nobody filled in. Dropping them here is what
+        // lets the screen always render two slots without inventing a server.
+        List<ServerRequest> wanted = submitted.stream()
+                .filter(s -> s.host() != null && !s.host().isBlank())
+                .toList();
+
+        if (request.enabled() && wanted.isEmpty()) {
+            throw new ApiExceptions.BadRequestException(
+                    "Add at least one server before switching RADIUS sign-in on.");
         }
 
+        List<RadiusServer> saved = new ArrayList<>();
+        for (int i = 0; i < wanted.size(); i++) {
+            ServerRequest submission = wanted.get(i);
+            int ordinal = i + 1;
+
+            // Matched by position, not by id, because the screen is two fixed
+            // slots rather than a list somebody reorders. Ordinal 1 is the
+            // primary; whatever is in the first slot is what that means.
+            RadiusServer server = i < existing.size() ? existing.get(i) : new RadiusServer();
+            server.setOrdinal(ordinal);
+            server.setHost(submission.host().trim());
+            server.setPort(submission.port() == null ? 1812 : submission.port());
+
+            if (submission.sharedSecret() != null && !submission.sharedSecret().isBlank()) {
+                server.setSharedSecretEnc(cipher.encrypt(submission.sharedSecret()));
+            } else if (server.getId() == null) {
+                throw new ApiExceptions.BadRequestException(
+                        "A shared secret is needed for " + server.getHost() + ".");
+            }
+            // else: left alone, which is what an untouched masked field means.
+
+            saved.add(servers.save(server));
+        }
+
+        // Anything beyond what was submitted has been removed from the form.
+        for (int i = wanted.size(); i < existing.size(); i++) {
+            servers.delete(existing.get(i));
+        }
+
+        if (request.enabled() && saved.stream().allMatch(s -> s.getSharedSecretEnc() == null)) {
+            throw new ApiExceptions.BadRequestException(
+                    "No server has a shared secret set, so nothing could sign in.");
+        }
+
+        RadiusSettings current = settings.current();
         current.setEnabled(request.enabled());
-        current.setHost(trimmedOrNull(request.host()));
-        current.setPort(request.port() == null ? 1812 : request.port());
-        current.setSharedSecretRef(trimmedOrNull(request.sharedSecretRef()));
         current.setTimeoutSeconds(request.timeoutSeconds() == null ? 5 : request.timeoutSeconds());
         current.setRetries(request.retries() == null ? 1 : request.retries());
         current.setNasIdentifier(trimmedOrNull(request.nasIdentifier()));
         current.setUpdatedBy(currentUser.principal().map(p -> p.getId()).orElse(null));
         current.setUpdatedAt(Instant.now());
+        RadiusSettings persisted = settings.save(current);
 
-        RadiusSettings saved = settings.save(current);
-        // The same convention mail_settings uses: the fact of the change, never
-        // anything that could be a credential. There is nothing secret to leak
-        // here anyway -- only the NAME of an environment variable is stored --
-        // but the audit trail should not become the first exception to that.
+        // The fact of the change and the servers by name. Never a secret, and
+        // never anything from which one could be reconstructed.
         audit.recordFieldChanges(AuditService.ENTITY_BRANDING, 1L, List.of(
                 AuditService.FieldChange.of("radius_settings", null,
-                        saved.isEnabled()
-                                ? "RADIUS sign-in enabled against " + saved.getHost() + ":" + saved.getPort()
+                        persisted.isEnabled()
+                                ? "RADIUS sign-in enabled against "
+                                    + saved.stream().map(RadiusServer::label).reduce((a, b) -> a + ", " + b).orElse("nothing")
                                 : "RADIUS sign-in disabled")));
-        return view(saved);
+
+        return view(persisted);
     }
 
     /**
-     * A real Access-Request with a real credential, because that is the only
-     * thing that proves the whole path works. A reachability check would pass
-     * against a server whose shared secret is wrong, whose network policy
-     * excludes this NAS, or which rejects PAP -- all of which look like a wrong
+     * A real Access-Request with a real credential, through the same code sign-in
+     * uses. Nothing less proves the path: a server can be reachable and still
+     * reject everyone because the shared secret is wrong, its network policy
+     * excludes this NAS, or it will not do PAP -- all of which look like a wrong
      * password later, to somebody who cannot see this screen.
      *
-     * <p>The credential is used and discarded. It is never stored, never logged,
-     * and never returned.
+     * <p>The credential is used and discarded. Never stored, never logged, never
+     * returned.
      */
     @PostMapping("/test")
     @PreAuthorize("hasAuthority('" + PermissionKeys.USER_MANAGE + "')")
     public Map<String, Object> test(@RequestBody TestRequest request) {
-        RadiusSettings config = settings.current();
-        if (config.getHost() == null || config.getHost().isBlank()) {
-            return Map.of("ok", false, "message", "Set a server address first.");
-        }
-        String secret = secrets.resolve(config.getSharedSecretRef());
-        if (secret == null) {
-            return Map.of("ok", false, "message",
-                    "'" + config.getSharedSecretRef() + "' is not set in this application's environment, "
-                            + "or is empty. Set it and restart the application.");
+        if (servers.count() == 0) {
+            return Map.of("ok", false, "message", "Add a server first.");
         }
         if (request.username() == null || request.username().isBlank()
                 || request.password() == null || request.password().isEmpty()) {
@@ -128,62 +162,54 @@ public class RadiusSettingsController {
                     "Enter a username and password to test with. They are used once and not stored.");
         }
 
-        RadiusClient client = new RadiusClient(config.getHost(), secret);
-        try {
-            client.setAuthPort(config.getPort());
-            client.setRetryCount(Math.max(1, config.getRetries()));
-            client.setSocketTimeout(config.getTimeoutSeconds() * 1000);
+        RadiusClientRunner.Attempt attempt =
+                radius.authenticate(settings.current(), request.username(), request.password());
 
-            AccessRequest accessRequest = new AccessRequest(request.username(), request.password());
-            accessRequest.setAuthProtocol(AccessRequest.AUTH_PAP);
-            if (config.getNasIdentifier() != null && !config.getNasIdentifier().isBlank()) {
-                accessRequest.addAttribute("NAS-Identifier", config.getNasIdentifier());
-            }
-
-            RadiusPacket reply = client.authenticate(accessRequest);
-            if (reply != null && reply.getPacketType() == RadiusPacket.ACCESS_ACCEPT) {
-                return Map.of("ok", true, "message", "Accepted. RADIUS sign-in is working.");
-            }
-            // A reject is a working server saying no, which is still proof the
-            // path is sound -- and is worth distinguishing from not reaching it.
-            return Map.of("ok", false, "message",
-                    "The server replied, and rejected those credentials. The connection and shared "
-                            + "secret are working; the username or password is what it did not like.");
-        } catch (Exception e) {
-            return Map.of("ok", false, "message",
-                    "Could not complete the exchange with " + config.getHost() + ":" + config.getPort()
-                            + " -- " + rootMessage(e)
-                            + ". A timeout here usually means a firewall, the wrong port, or a shared "
-                            + "secret that does not match.");
-        } finally {
-            client.close();
-        }
+        String where = attempt.serverLabel() == null ? "" : " (" + attempt.serverLabel() + ")";
+        return switch (attempt.outcome()) {
+            case ACCEPTED -> Map.of("ok", true, "message",
+                    "Accepted by " + attempt.serverLabel() + ". RADIUS sign-in is working.");
+            // A reject still proves the connection and the shared secret work,
+            // which is worth separating from never having got there.
+            case REJECTED -> Map.of("ok", false, "message",
+                    "The server replied and rejected those credentials" + where
+                            + ". The connection and shared secret are working; the username or "
+                            + "password is what it did not like.");
+            case UNREACHABLE -> Map.of("ok", false, "message",
+                    attempt.detail() + " A timeout usually means a firewall, the wrong port, or a "
+                            + "shared secret that does not match.");
+            case NOT_CONFIGURED -> Map.of("ok", false, "message", attempt.detail());
+        };
     }
 
     private Map<String, Object> view(RadiusSettings s) {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("enabled", s.isEnabled());
-        view.put("host", s.getHost());
-        view.put("port", s.getPort());
-        view.put("sharedSecretRef", s.getSharedSecretRef());
-        // Whether it resolves, never what to. The screen has to be able to show
-        // "that variable is not set" without ever holding the secret.
-        view.put("sharedSecretResolves", secrets.isSet(s.getSharedSecretRef()));
         view.put("timeoutSeconds", s.getTimeoutSeconds());
         view.put("retries", s.getRetries());
         view.put("nasIdentifier", s.getNasIdentifier());
         view.put("updatedAt", s.getUpdatedAt());
+
+        List<Map<String, Object>> serverViews = new ArrayList<>();
+        for (RadiusServer server : servers.findAllByOrderByOrdinalAsc()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", server.getId());
+            row.put("ordinal", server.getOrdinal());
+            row.put("host", server.getHost());
+            row.put("port", server.getPort());
+            // Two booleans instead of the secret. "Set" and "readable" are
+            // different states: after a restore onto a host without the original
+            // encryption key, a secret is still stored and no longer usable, and
+            // the screen has to be able to say so.
+            row.put("secretSet", server.getSharedSecretEnc() != null);
+            row.put("secretReadable", cipher.canDecrypt(server.getSharedSecretEnc()));
+            serverViews.add(row);
+        }
+        view.put("servers", serverViews);
         return view;
     }
 
     private static String trimmedOrNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
-    }
-
-    private static String rootMessage(Throwable e) {
-        Throwable root = e;
-        while (root.getCause() != null && root.getCause() != root) root = root.getCause();
-        String message = root.getMessage();
-        return message == null || message.isBlank() ? root.getClass().getSimpleName() : message;
     }
 }
