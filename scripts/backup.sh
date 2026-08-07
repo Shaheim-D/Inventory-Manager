@@ -16,6 +16,17 @@
 # database. A backup that only ever lived next to the thing it protects is not
 # a backup. The destination is configured, never hardcoded.
 #
+# WHAT THIS DELIBERATELY DOES NOT CAPTURE: the encryption key (APP_ENCRYPTION_KEY
+# or data/secret.key). It encrypts the RADIUS shared secrets stored in the
+# database, and putting it next to the ciphertext it protects would make the
+# encryption pointless -- one leaked archive would then be one leaked secret.
+#
+# The project rule is that a backup must never SILENTLY omit anything, so this
+# is stated here and printed on every run, and restore.sh's smoke test asks you
+# to check it. Everything else about a restore works without it; two RADIUS
+# secrets have to be re-entered, and Settings > RADIUS says so plainly rather
+# than failing at the next sign-in.
+#
 # Where the database and the attachments actually are is DEPLOY_MODE's problem,
 # not this script's -- see scripts/lib/runtime.sh.
 #
@@ -59,6 +70,16 @@ if ! tar -tzf "${STAGING}/${FILES_ARCHIVE}" > /dev/null 2>&1; then
   exit 1
 fi
 echo "[$(date -Is)] Wrote ${STAGING}/${FILES_ARCHIVE} ($(du -h "${STAGING}/${FILES_ARCHIVE}" | cut -f1))"
+
+# Said out loud on every run rather than only in a comment. The one thing not
+# in these two files is the one thing somebody will not think to copy.
+if [[ -n "${APP_ENCRYPTION_KEY:-}" ]]; then
+  echo "[$(date -Is)] Note: APP_ENCRYPTION_KEY is set in the environment and is NOT in this backup."
+  echo "[$(date -Is)]       Restoring elsewhere needs it too, or the RADIUS secrets must be re-entered."
+elif [[ -f "${ROOT}/backend/data/secret.key" || -f "${ROOT}/data/secret.key" ]]; then
+  echo "[$(date -Is)] Note: the encryption key file (data/secret.key) is NOT in this backup, by design."
+  echo "[$(date -Is)]       Copy it somewhere safe separately, or the RADIUS secrets must be re-entered."
+fi
 
 case "${BACKUP_DESTINATION_TYPE:-LOCAL_PATH}" in
   LOCAL_PATH)

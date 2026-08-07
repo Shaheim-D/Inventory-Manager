@@ -41,4 +41,6 @@ logging:
 # same way an environment variable would in a deployment.
 TEST_ZABBIX_TOKEN: test-zabbix-token
 TEST_NETBOX_TOKEN: test-netbox-token
-TEST_RADIUS_SECRET: test-shared-secret
+# The encryption key the test run uses, so ciphertext is stable within a run
+# and SecretCipher does not create a key file in the build directory.
+APP_ENCRYPTION_KEY: aW52ZW50b3J5LW1hbmFnZXItdGVzdC1rZXktMzJieXQ=

@@ -31,6 +31,11 @@ smoke_test_instructions() {
   echo "  4. Open an asset with an attachment and download it. A file that"
   echo "     reports as missing means the archive did not come back with"
   echo "     the database."
+  echo "  5. If RADIUS sign-in is configured: Settings > RADIUS. A secret"
+  echo "     reported as unreadable means this host does not have the"
+  echo "     encryption key the secrets were written with -- deliberately not"
+  echo "     in the backup, so a leaked dump is inert. Carry APP_ENCRYPTION_KEY"
+  echo "     or data/secret.key across, or re-enter the secrets."
 }
 
 DUMP="${1:-}"

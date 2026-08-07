@@ -89,13 +89,17 @@ class MigrationValidationTest extends AbstractIntegrationTest {
         // nightly check re-sends the same alert forever — and somewhere to keep
         // the SMTP relay the client asked to configure from the UI.
         //
-        // V26 leaves the total alone, which is a coincidence and not a sign the
+        // V26 left the total alone, which was a coincidence and not a sign the
         // migration did nothing: it dropped ldap_group_role_mapping along with
         // directory sync and added radius_settings for the sign-in that replaced
         // it. One out, one in. Worth writing down, because a number that does
         // not move is the kind of thing somebody later reads as "no schema
         // change here" and trusts.
-        assertThat(tables).isEqualTo(39);
+        //
+        // V27 is the one that moves it, to 40: radius_server, because there are
+        // two RADIUS servers and a second is a row rather than a second set of
+        // columns on the settings row.
+        assertThat(tables).isEqualTo(40);
     }
 
     @Test
