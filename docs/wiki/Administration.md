@@ -185,23 +185,57 @@ the wrong host can never lock an administrator out of the account they would nee
 to fix it. Either credential signs the same person in: somebody with both a
 password set here and a network account can use whichever they type.
 
+### Two servers
+
+A **primary** and a **secondary**, each with its own host, port and shared
+secret. The secondary is optional — leave it blank for one server.
+
+**Failover is for a server that does not answer, not one that says no.** A
+timeout, an unreachable host, or a reply that cannot be verified moves on to the
+next server. A **reject is authoritative and stops there.**
+
+That distinction is not fussiness. Retrying a rejected password against every
+server would turn one mistyped password into a failed attempt on each of them —
+which is exactly how an account gets locked out in Active Directory by an
+application nobody suspects.
+
 | Setting | |
 |---|---|
-| **Server** and **port** | 1812 is standard |
-| **Shared secret variable** | The **name** of an environment variable, never the secret |
-| **Timeout** and **retries** | |
+| **Server** and **port** | 1812 is standard. Primary is tried first |
+| **Shared secret** | Typed in, stored encrypted, never shown again |
+| **Timeout** and **retries** | Per server, before trying the next |
 | **NAS identifier** | Optional. NPS network policies routinely match on it, so a blank one is a common reason a correct password is still rejected |
 
-The secret is never stored in the database, so it is never in a backup. The
-screen can tell you whether the variable resolves without ever holding what it
-resolves to.
+### The shared secret
 
-**Use the test button.** It sends a real sign-in request, because nothing else
-proves the path: a server can be perfectly reachable and still reject everyone
-because the shared secret is wrong or its network policy excludes this
-application. The test distinguishes *could not reach it* from *it replied and
-said no* — the fork the sign-in screen cannot show you. The credentials you enter
-are used once and never stored.
+Typed into this screen and stored **encrypted** (AES-256-GCM). It is never sent
+back to the browser: a stored secret shows as a masked placeholder, and leaving
+that field alone keeps it — so a port can be corrected without retyping a
+credential.
+
+**The encryption key is deliberately not in the database.** It comes from
+`APP_ENCRYPTION_KEY`, or a `data/secret.key` file the application creates on
+first start. `pg_dump` captures the table the secrets live in, so this
+separation is what makes a leaked database backup **inert** rather than a leaked
+shared secret.
+
+> **The key is not in your backups either, and that is on purpose.** Putting it
+> beside the ciphertext it protects would make the encryption pointless.
+> Restoring onto a new host needs the key carried across separately — otherwise
+> the secrets have to be entered again. `backup.sh` says this on every run, and
+> `restore.sh`'s smoke test asks you to check it, so it is never a silent
+> omission. Two RADIUS secrets is an inconvenience; a silent one would not be.
+
+If a secret cannot be decrypted, the screen says so plainly rather than failing
+at the next sign-in.
+
+**Use the test button.** It sends a real sign-in request through the same code
+signing in uses, because nothing else proves the path: a server can be perfectly
+reachable and still reject everyone because the shared secret is wrong or its
+network policy excludes this application. The test distinguishes *could not reach
+it* from *it replied and said no* — the fork the sign-in screen cannot show you —
+and **names which server answered**. The credentials you enter are used once and
+never stored.
 
 A first-time RADIUS user is provisioned into **Unassigned**, with zero
 permissions, until somebody assigns roles. No local password is invented for

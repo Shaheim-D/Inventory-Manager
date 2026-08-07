@@ -22,7 +22,7 @@ migration is not done until it has been executed.
 | **Import** | `import_batch`, `import_batch_row` |
 | **Notifications** | `notification_rule`, `notification_log`, `distribution_target`, `mail_settings` |
 | **Plugins** | `plugin`, `plugin_asset_link`, `plugin_pending_action`, `plugin_sync_log` |
-| **Other** | `audit_event`, `branding`, `saved_report_definition`, `radius_settings` |
+| **Other** | `audit_event`, `branding`, `saved_report_definition`, `radius_settings`, `radius_server` |
 
 ### Seeded reference data
 
@@ -148,6 +148,20 @@ because the two relationships are.
 
 Assets themselves are **soft-deleted**: `is_deleted`, `deleted_at`. Every live
 index is partial on `is_deleted = false`.
+
+---
+
+## The encryption key is a third thing on disk
+
+`radius_server.shared_secret_enc` is AES-256-GCM ciphertext. The key is **not in
+the database** — `APP_ENCRYPTION_KEY`, or a `data/secret.key` file — which is
+what makes a leaked `pg_dump` inert rather than a leaked shared secret.
+
+It is deliberately **not** in the backup pair either, because storing a key
+beside the ciphertext it protects is not encryption. That is the one exception to
+"everything on disk joins the backup", and it is made loudly: `backup.sh` prints
+it on every run and `restore.sh`'s smoke test asks you to check it. The rule is
+that a backup must never *silently* omit something.
 
 ---
 

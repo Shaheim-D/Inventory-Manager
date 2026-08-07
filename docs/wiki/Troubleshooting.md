@@ -113,11 +113,12 @@ unread is the reversible one.
 
 Three things, in order:
 
-1. **Settings → RADIUS** — is it switched on, and does the shared secret
-   variable resolve? The screen says if it does not.
+1. **Settings → RADIUS** — is it switched on, and is a shared secret set and
+   readable on each server? The screen says if one is not.
 2. **Press the test button** with the credentials that are failing. It sends a
    real sign-in request and distinguishes *could not reach the server* from *the
-   server replied and rejected that* — which the sign-in screen cannot.
+   server replied and rejected that* — which the sign-in screen cannot — and
+   names which server answered.
 3. **NAS identifier.** If NPS has a network policy matching on it and this
    application sends a blank one, every correct password is rejected. This is the
    most common cause of "it works everywhere else".
@@ -134,6 +135,32 @@ in normally.
 
 It is also **not counted as a failed attempt**, so an NPS outage does not lock
 anybody out. When the server comes back, nothing needs unlocking.
+
+### "A shared secret shows as unreadable"
+
+The database was almost certainly restored onto a host that does not have the
+encryption key the secrets were written with. That key is deliberately **not** in
+the database and **not** in the backup — which is what makes a leaked dump inert.
+
+Carry `APP_ENCRYPTION_KEY` or `data/secret.key` across from the original host, or
+just enter the secrets again. Nothing else in the application uses that key, so
+nothing else is affected.
+
+### "The primary is down and nobody can sign in"
+
+The secondary should have answered. Check that it has a host **and** a shared
+secret of its own — a secondary with no secret is skipped, and the screen shows
+*secret set* per server for exactly this reason.
+
+If both are genuinely unreachable, sign-in returns 503 and local passwords still
+work.
+
+### "A wrong password locked out an AD account"
+
+It should not, and this is why: a **reject** from a RADIUS server is
+authoritative and stops there. Only a server that does not answer causes failover
+to the next one. If a rejected password were retried against both servers, one
+mistyped password would become two failed attempts upstream.
 
 ### "A new person signed in but can see nothing"
 
