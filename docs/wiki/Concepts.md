@@ -80,9 +80,10 @@ That is how one person gets access to one extra thing without inventing a role
 for them.
 
 The seeded roles are **Administrator, Asset Manager, Network Engineer,
-Purchaser, Management, Customer Service** and **Unassigned**. Unassigned holds
-nothing at all, deliberately — it is where a first-time directory login lands
-until somebody assigns a real role.
+Purchaser, Management, Customer Service** and **Unassigned**. Unassigned is a
+read-only floor — assets, locations and the dashboard, nothing writable — and is
+where somebody signing in through RADIUS lands when their reply carries no group
+this application maps.
 
 See **[Permissions Reference](Permissions.md)** for every key and who holds it.
 

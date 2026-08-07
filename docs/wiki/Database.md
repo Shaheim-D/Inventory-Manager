@@ -22,12 +22,13 @@ migration is not done until it has been executed.
 | **Import** | `import_batch`, `import_batch_row` |
 | **Notifications** | `notification_rule`, `notification_log`, `distribution_target`, `mail_settings` |
 | **Plugins** | `plugin`, `plugin_asset_link`, `plugin_pending_action`, `plugin_sync_log` |
-| **Other** | `audit_event`, `branding`, `saved_report_definition`, `radius_settings`, `radius_server` |
+| **Other** | `audit_event`, `branding`, `saved_report_definition`, `radius_settings`, `radius_server`, `radius_role_mapping` |
 
 ### Seeded reference data
 
 18 categories · 11 location types · 10 lifecycle states · 7 relationship types ·
-26 permissions · 7 roles · 14 notification rules (3 enabled).
+26 permissions · 7 roles · 14 notification rules (3 enabled) · 4 RADIUS role
+mappings.
 
 `MigrationValidationTest` re-asserts these on every build, so the numbers stay
 facts. Change a seed and update that test in the same commit, with a comment

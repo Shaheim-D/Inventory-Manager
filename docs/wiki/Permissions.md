@@ -103,7 +103,7 @@ readable; use them for everything and nobody will be able to say who can do what
 | **Purchaser** | 10 | The buying side: raise, approve, place, receive, and see what it cost |
 | **Management** | 9 | Read-only across assets, orders, costs, vehicle details, reports and audit |
 | **Customer Service** | 3 | Look things up: dashboard, assets, locations. Nothing else |
-| **Unassigned** | 0 | A signed-in account that can do nothing yet |
+| **Unassigned** | 3 | A read-only floor: assets, locations and the dashboard. Nothing writable |
 
 Three of those are worth explaining, because the shapes are not obvious:
 
@@ -117,9 +117,23 @@ describe jobs, not rank.
 `purchase_order:create`. Full visibility including costs, vehicle details and
 audit history.
 
-**Unassigned holds nothing at all.** It exists so a newly created or
-directory-provisioned account is inert until somebody decides what it should be,
-rather than defaulting to something and being wrong in the dangerous direction.
+**Unassigned is the read-only floor**, and it used to hold nothing at all. It
+held zero permissions while it only meant "nobody has decided about this account
+yet" — inert until somebody chose, rather than defaulting to something and being
+wrong in the dangerous direction.
+
+RADIUS role mapping gave it a second job. It is now also where somebody lands
+when their NPS reply carries a value nothing maps, and *that* person is a real
+employee who has just signed in — for whom a screen refusing everything reads as
+broken software rather than as a boundary. So it holds `asset:read`,
+`location:read` and `dashboard:view`: look at things, change none of them.
+
+`location:read` is in there because the asset list filters by location. "Can
+view assets" with a broken filter is not viewing assets.
+
+That makes it identical to Customer Service today, which is fine — they answer
+different questions ("what this job needs" against "what anyone who got through
+the door may see") and either can move without the other.
 
 ### Where each key lives
 

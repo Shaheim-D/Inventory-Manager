@@ -237,9 +237,53 @@ it* from *it replied and said no* — the fork the sign-in screen cannot show yo
 and **names which server answered**. The credentials you enter are used once and
 never stored.
 
-A first-time RADIUS user is provisioned into **Unassigned**, with zero
-permissions, until somebody assigns roles. No local password is invented for
-them.
+### Roles from the reply
+
+When NPS accepts a sign-in it can return an attribute naming the group the person
+matched. Map those values to roles here and a network account arrives with the
+right access instead of waiting for somebody to grant it.
+
+**Filter-Id** (11) by default, **Class** (25) as the alternative. Both are
+standard, both arrive as free text, and NPS can set either from the same place in
+a network policy. Vendor-specific attributes are deliberately not supported —
+they need a dictionary per vendor and buy nothing here.
+
+Four mappings ship as starting points, and are editable:
+
+| Value NPS sends | Grants |
+|---|---|
+| `inventory-admin` | Administrator |
+| `inventory-csr` | Customer Service |
+| `inventory-neteng` | Network Engineer |
+| `inventory-purchaser` | Purchaser |
+
+The string must be exactly what the network policy returns. Matching ignores
+case; nothing else about it is fuzzy. Somebody in two groups gets both roles.
+
+Three rules govern what happens next, and each one earns its place:
+
+**Only accounts that arrived through RADIUS.** An account created in this
+application keeps the roles somebody gave it here, even if that person also signs
+in through RADIUS. Without that line, an administrator whose NPS profile carries
+no matching attribute would be demoted by their own sign-in — and the local
+password that should have rescued them would then belong to an account with no
+permissions. The bootstrap admin is local, so nothing NPS does can touch it.
+
+**The reply is authoritative.** For the accounts it applies to, roles are
+replaced on every sign-in, so removing somebody from a group in NPS removes their
+access here. Directory-driven access that only ever grants is not access control,
+it is an accumulation.
+
+**No recognised value means Unassigned** — assets, locations and the dashboard,
+read-only. Not "no access": somebody whose reply carries nothing this application
+maps is a real employee who has just signed in, and a screen refusing everything
+reads as broken software.
+
+Every role change from a reply is written to the audit log, because a role
+arriving from somewhere else is exactly the kind of thing somebody later needs to
+explain.
+
+No local password is invented for a RADIUS user.
 
 Changing a password: an account with no local password cannot use
 **change password** — that is an administrator's job on **Settings → Users**.

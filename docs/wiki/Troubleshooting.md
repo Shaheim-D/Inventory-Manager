@@ -164,9 +164,22 @@ mistyped password would become two failed attempts upstream.
 
 ### "A new person signed in but can see nothing"
 
-Expected. A first-time RADIUS user is provisioned into **Unassigned**, which
-holds zero permissions, until somebody assigns roles on **Settings → Users**.
-That is the safe direction to default in.
+Their roles come from the attribute NPS returns on the Access-Accept, mapped on
+**Settings → RADIUS**. If nothing matched — or the reply carried no attribute —
+they land on **Unassigned**: assets, locations and the dashboard, read-only.
+
+Check the NPS network policy returns the exact string the mapping expects.
+Matching ignores case, but nothing else about it is fuzzy.
+
+### "Somebody's roles changed by themselves"
+
+By design, for accounts that arrived through RADIUS: the reply is authoritative
+and roles are replaced on every sign-in, so removing somebody from a group in NPS
+removes their access here.
+
+**Accounts created in this application are never re-roled by a RADIUS sign-in.**
+That is what stops an NPS profile demoting your own administrator — and it means
+if you want somebody's roles managed here, create them here.
 
 ### "I cannot change my password"
 
