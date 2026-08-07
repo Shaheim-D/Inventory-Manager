@@ -338,9 +338,18 @@ Either wait it out or, under **Admin → Users**, use **Unlock**.
 password is temporary and must be changed at next sign-in. Network credentials
 are managed on the network; Inventory Manager will not reset those.
 
-**A first-time RADIUS user has no access.** Expected. They are provisioned into
-**Unassigned**, which carries zero permissions, until an administrator assigns a
-real role.
+**A RADIUS user has less access than expected.** Their roles come from the reply
+attribute NPS returns -- Filter-Id by default, Class as the alternative -- mapped
+on **Settings > RADIUS**. A value nothing matches, or no attribute at all, leaves
+them on **Unassigned**: assets and the dashboard, read-only. Check the NPS
+network policy returns the exact string the mapping expects; matching ignores
+case but nothing else.
+
+**A RADIUS user's roles changed by themselves.** By design. For accounts that
+arrived through RADIUS the reply is authoritative and roles are replaced on every
+sign-in, so removing somebody from a group in NPS removes their access here.
+Accounts created in this application are never re-roled by a RADIUS sign-in --
+which is what stops an NPS profile demoting your own administrator.
 
 **Nobody can sign in with network credentials.** Local accounts are unaffected --
 they are tried first, so an administrator with a password set in the application

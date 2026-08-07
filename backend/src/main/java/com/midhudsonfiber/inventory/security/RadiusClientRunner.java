@@ -6,10 +6,13 @@ import com.midhudsonfiber.inventory.repo.RadiusServerRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.tinyradius.attribute.RadiusAttribute;
 import org.tinyradius.packet.AccessRequest;
 import org.tinyradius.packet.RadiusPacket;
 import org.tinyradius.util.RadiusClient;
 
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -40,11 +43,20 @@ public class RadiusClientRunner {
     }
 
     /**
-     * @param outcome     what happened, once the walk stopped
-     * @param serverLabel which server produced it, or null when none answered
-     * @param detail      something to show a person; never contains a credential
+     * @param outcome        what happened, once the walk stopped
+     * @param serverLabel    which server produced it, or null when none answered
+     * @param detail         something to show a person; never contains a credential
+     * @param roleAttributes every value of the configured role attribute the
+     *                       Access-Accept carried, in the order it carried them.
+     *                       Empty for anything that is not an accept.
      */
-    public record Attempt(Outcome outcome, String serverLabel, String detail) {
+    public record Attempt(Outcome outcome, String serverLabel, String detail,
+                          List<String> roleAttributes) {
+
+        Attempt(Outcome outcome, String serverLabel, String detail) {
+            this(outcome, serverLabel, detail, List.of());
+        }
+
         public boolean accepted() { return outcome == Outcome.ACCEPTED; }
     }
 
@@ -102,7 +114,8 @@ public class RadiusClientRunner {
 
                 RadiusPacket reply = client.authenticate(request);
                 if (reply != null && reply.getPacketType() == RadiusPacket.ACCESS_ACCEPT) {
-                    return new Attempt(Outcome.ACCEPTED, server.label(), "Accepted.");
+                    return new Attempt(Outcome.ACCEPTED, server.label(), "Accepted.",
+                            roleAttributes(reply, settings.roleAttributeNumber()));
                 }
                 // It answered, and said no. Authoritative -- see the class note.
                 return new Attempt(Outcome.REJECTED, server.label(),
@@ -125,6 +138,29 @@ public class RadiusClientRunner {
         }
         return new Attempt(Outcome.UNREACHABLE, null,
                 "No configured RADIUS server answered. Last was " + lastFailure + ".");
+    }
+
+    /**
+     * Every value of the configured attribute on the reply.
+     *
+     * <p>Read as raw bytes and decoded as UTF-8 rather than through the
+     * dictionary, because Filter-Id is defined as text and Class as opaque
+     * octets -- and NPS is routinely configured to put a readable group name in
+     * either. Decoding both the same way means the mapping table does not have
+     * to care which one an installation picked.
+     *
+     * <p>A list, not a single value, because a person in two groups gets two
+     * attributes and should end up with both roles.
+     */
+    private static List<String> roleAttributes(RadiusPacket reply, int attributeNumber) {
+        List<String> values = new ArrayList<>();
+        for (Object attribute : reply.getAttributes(attributeNumber)) {
+            byte[] data = ((RadiusAttribute) attribute).getAttributeData();
+            if (data == null || data.length == 0) continue;
+            String value = new String(data, StandardCharsets.UTF_8).trim();
+            if (!value.isEmpty()) values.add(value);
+        }
+        return values;
     }
 
     static String rootMessage(Throwable e) {

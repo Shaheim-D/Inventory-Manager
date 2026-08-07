@@ -33,6 +33,14 @@ class MigrationValidationTest extends AbstractIntegrationTest {
         // and the purchaser is the person who receives them; before V21 they had
         // nowhere to put them.
         //
+        // Unassigned is 3 rather than 0 because V28 made it a read-only floor:
+        // asset:read, dashboard:view, location:read. It held nothing while it
+        // meant "nobody has decided about this account yet". Once roles started
+        // arriving from an NPS reply it also became where somebody lands whose
+        // reply carries no value this application maps -- a real employee who
+        // has just signed in, for whom a screen that refuses everything reads as
+        // broken software rather than as a permission boundary.
+        //
         // Every other role still matches the design exactly, which is the point
         // of re-asserting them here.
         Map<String, Integer> expected = Map.of(
@@ -42,7 +50,7 @@ class MigrationValidationTest extends AbstractIntegrationTest {
                 "Purchaser", 10,
                 "Customer Service", 3,
                 "Management", 9,
-                "Unassigned", 0);
+                "Unassigned", 3);
 
         expected.forEach((role, count) -> {
             // Counted over the 24 keys the design catalogues, so a later addition
@@ -96,10 +104,12 @@ class MigrationValidationTest extends AbstractIntegrationTest {
         // not move is the kind of thing somebody later reads as "no schema
         // change here" and trusts.
         //
-        // V27 is the one that moves it, to 40: radius_server, because there are
-        // two RADIUS servers and a second is a row rather than a second set of
-        // columns on the settings row.
-        assertThat(tables).isEqualTo(40);
+        // V27 moved it to 40: radius_server, because there are two RADIUS
+        // servers and a second is a row rather than a second set of columns on
+        // the settings row. V28 moves it to 41 with radius_role_mapping, for the
+        // same reason one level up -- a value NPS returns and the role it grants
+        // is a row, so a fifth mapping is an insert and not a migration.
+        assertThat(tables).isEqualTo(41);
     }
 
     @Test

@@ -451,12 +451,23 @@ export interface RadiusServerView {
   secretReadable: boolean;
 }
 
+/** One reply-attribute value and the role it grants. Matching ignores case. */
+export interface RadiusRoleMapping {
+  id: number;
+  attributeValue: string;
+  roleId: number;
+  roleName: string | null;
+}
+
 /** Settings > RADIUS. Shared secrets are stored encrypted and never returned. */
 export interface RadiusSettings {
   enabled: boolean;
   timeoutSeconds: number;
   retries: number;
   nasIdentifier: string | null;
+  /** Which reply attribute carries the role. */
+  roleAttribute: 'FILTER_ID' | 'CLASS';
   updatedAt: string | null;
   servers: RadiusServerView[];
+  roleMappings: RadiusRoleMapping[];
 }

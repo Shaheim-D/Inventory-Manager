@@ -41,6 +41,13 @@ public class RadiusSettings {
     @Column(name = "nas_identifier")
     private String nasIdentifier;
 
+    /**
+     * Which reply attribute carries the role: {@code FILTER_ID} (11) or
+     * {@code CLASS} (25). Both are standard and both arrive as free text.
+     */
+    @Column(name = "role_attribute", nullable = false)
+    private String roleAttribute = "FILTER_ID";
+
     @Column(name = "updated_by")
     private Long updatedBy;
 
@@ -61,6 +68,14 @@ public class RadiusSettings {
 
     public String getNasIdentifier() { return nasIdentifier; }
     public void setNasIdentifier(String nasIdentifier) { this.nasIdentifier = nasIdentifier; }
+
+    public String getRoleAttribute() { return roleAttribute; }
+    public void setRoleAttribute(String roleAttribute) { this.roleAttribute = roleAttribute; }
+
+    /** The RFC 2865 attribute number this setting names. */
+    public int roleAttributeNumber() {
+        return "CLASS".equals(roleAttribute) ? 25 : 11;
+    }
 
     public Long getUpdatedBy() { return updatedBy; }
     public void setUpdatedBy(Long updatedBy) { this.updatedBy = updatedBy; }

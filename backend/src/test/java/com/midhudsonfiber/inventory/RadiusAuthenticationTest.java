@@ -46,12 +46,19 @@ class RadiusAuthenticationTest extends AbstractIntegrationTest {
 
     @AfterEach
     void tearDown() {
+        // The database first, so a server that misbehaves on stop cannot leave
+        // rows pointing at a dead port for whatever runs next.
+        jdbc.update("DELETE FROM radius_server");
         started.forEach(FakeRadiusServer::stop);
         started.clear();
         // Leave RADIUS off: these tests share a database with every other test,
         // and a stray enabled row would send their sign-ins at a dead port.
         jdbc.update("DELETE FROM radius_server");
-        jdbc.update("UPDATE radius_settings SET is_enabled = false WHERE id = 1");
+        // role_attribute back to the default as well. One test switches it to
+        // CLASS, and these tests share a database -- leaving it switched made
+        // every Filter-Id test afterwards read the wrong attribute and land on
+        // Unassigned, which looks exactly like the feature not working.
+        jdbc.update("UPDATE radius_settings SET is_enabled = false, role_attribute = 'FILTER_ID' WHERE id = 1");
     }
 
     /** A running server that accepts one credential, registered at this ordinal. */
@@ -63,8 +70,17 @@ class RadiusAuthenticationTest extends AbstractIntegrationTest {
         return server;
     }
 
-    /** A server row pointing at a port, with the shared secret stored encrypted. */
+    /**
+     * A server row pointing at a port, with the shared secret stored encrypted.
+     *
+     * <p>Replaces any row already at that ordinal rather than assuming an empty
+     * table. These tests share a database with every other test and several of
+     * them register a server more than once; a helper that only ever inserts
+     * turns "a row was left behind" into a duplicate-key error three tests
+     * later, which says nothing about what actually went wrong.
+     */
     private void addServer(int ordinal, int port) {
+        jdbc.update("DELETE FROM radius_server WHERE ordinal = ?", ordinal);
         jdbc.update("INSERT INTO radius_server (ordinal, host, port, shared_secret_enc) VALUES (?, '127.0.0.1', ?, ?)",
                 ordinal, port, cipher.encrypt(SHARED_SECRET));
         enable();
@@ -195,17 +211,19 @@ class RadiusAuthenticationTest extends AbstractIntegrationTest {
                 "SELECT password_hash IS NULL FROM app_user WHERE id = ?", Boolean.class, userId))
                 .as("no local password is invented for them").isTrue();
 
-        // Unassigned holds no permissions, so the account exists and can do
-        // nothing until somebody decides what it should be.
+        // Unassigned, which since V28 is a read-only floor rather than nothing
+        // at all: look at assets and the dashboard, change none of it.
         assertThat(jdbc.queryForObject("""
                 SELECT count(*) FROM user_role ur JOIN role r ON r.id = ur.role_id
                  WHERE ur.user_id = ? AND r.name = 'Unassigned'
                 """, Integer.class, userId)).isEqualTo(1);
-        assertThat(jdbc.queryForObject("""
-                SELECT count(*) FROM user_role ur
+        assertThat(jdbc.queryForList("""
+                SELECT DISTINCT p.permission_key FROM user_role ur
                   JOIN role_permission rp ON rp.role_id = ur.role_id
-                 WHERE ur.user_id = ?
-                """, Integer.class, userId)).isZero();
+                  JOIN permission p ON p.id = rp.permission_id
+                 WHERE ur.user_id = ? ORDER BY p.permission_key
+                """, String.class, userId))
+                .containsExactly("asset:read", "dashboard:view", "location:read");
     }
 
     @Test
@@ -223,6 +241,168 @@ class RadiusAuthenticationTest extends AbstractIntegrationTest {
         assertThat(signInStatus(username, "NetworkPassword456"))
                 .as("NPS knows nothing about this application's idea of a disabled account")
                 .isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    // -----------------------------------------------------------------
+    // Roles from the reply attribute
+    // -----------------------------------------------------------------
+
+    private static final int FILTER_ID = 11;
+    private static final int CLASS = 25;
+
+    /** A server that accepts and returns the given attribute values. */
+    private FakeRadiusServer radiusReturning(String username, String password,
+                                             int attributeType, String... values) throws Exception {
+        FakeRadiusServer server = new FakeRadiusServer(username, password);
+        for (String value : values) server.returns(attributeType, value);
+        server.start();
+        started.add(server);
+        addServer(1, server.port());
+        return server;
+    }
+
+    private List<String> rolesOf(String username) {
+        return jdbc.queryForList("""
+                SELECT r.name FROM user_role ur
+                  JOIN role r ON r.id = ur.role_id
+                  JOIN app_user u ON u.id = ur.user_id
+                 WHERE u.username = ? ORDER BY r.name
+                """, String.class, username);
+    }
+
+    @Test
+    @DisplayName("each of the four mapped values grants its role")
+    void mappedValuesGrantTheirRoles() throws Exception {
+        for (String[] pair : new String[][]{
+                {"inventory-admin", "Administrator"},
+                {"inventory-csr", "Customer Service"},
+                {"inventory-neteng", "Network Engineer"},
+                {"inventory-purchaser", "Purchaser"}}) {
+            String username = unique("avp-" + pair[1].replace(' ', '-'));
+            FakeRadiusServer server = radiusReturning(username, "NetworkPassword456", FILTER_ID, pair[0]);
+
+            assertThat(signInStatus(username, "NetworkPassword456")).isEqualTo(HttpStatus.OK);
+            assertThat(rolesOf(username))
+                    .as("Filter-Id '%s'", pair[0])
+                    .containsExactly(pair[1]);
+
+            server.stop();
+            jdbc.update("DELETE FROM radius_server");
+        }
+    }
+
+    @Test
+    @DisplayName("matching ignores case, because NPS casing is not something anyone controls")
+    void matchingIgnoresCase() throws Exception {
+        String username = unique("avp-case");
+        radiusReturning(username, "NetworkPassword456", FILTER_ID, "Inventory-NetEng");
+
+        assertThat(signInStatus(username, "NetworkPassword456")).isEqualTo(HttpStatus.OK);
+        assertThat(rolesOf(username)).containsExactly("Network Engineer");
+    }
+
+    @Test
+    @DisplayName("two attributes grant both roles")
+    void twoValuesGrantBothRoles() throws Exception {
+        String username = unique("avp-both");
+        radiusReturning(username, "NetworkPassword456", FILTER_ID,
+                "inventory-neteng", "inventory-purchaser");
+
+        assertThat(signInStatus(username, "NetworkPassword456")).isEqualTo(HttpStatus.OK);
+        assertThat(rolesOf(username)).containsExactly("Network Engineer", "Purchaser");
+    }
+
+    @Test
+    @DisplayName("no attribute at all lands on Unassigned: assets and dashboard, read-only")
+    void noAttributeMeansReadOnly() throws Exception {
+        String username = unique("avp-none");
+        radiusAccepts(username, "NetworkPassword456");   // accepts, returns nothing
+
+        assertThat(signInStatus(username, "NetworkPassword456")).isEqualTo(HttpStatus.OK);
+        assertThat(rolesOf(username)).containsExactly("Unassigned");
+
+        // The floor: look at things, change nothing. location:read is in there
+        // because the asset list filters by location -- "can view assets" with a
+        // broken filter is not viewing assets.
+        List<String> permissions = jdbc.queryForList("""
+                SELECT DISTINCT p.permission_key FROM user_role ur
+                  JOIN role_permission rp ON rp.role_id = ur.role_id
+                  JOIN permission p ON p.id = rp.permission_id
+                  JOIN app_user u ON u.id = ur.user_id
+                 WHERE u.username = ? ORDER BY p.permission_key
+                """, String.class, username);
+        assertThat(permissions).containsExactly("asset:read", "dashboard:view", "location:read");
+        assertThat(permissions).noneMatch(key -> key.contains(":write") || key.contains(":delete")
+                || key.contains(":manage") || key.contains(":run"));
+    }
+
+    @Test
+    @DisplayName("an unrecognised value is Unassigned, not an outage and not a refusal")
+    void unknownValueMeansUnassigned() throws Exception {
+        String username = unique("avp-unknown");
+        radiusReturning(username, "NetworkPassword456", FILTER_ID, "some-other-nps-policy");
+
+        assertThat(signInStatus(username, "NetworkPassword456"))
+                .as("they still get in -- a string nobody mapped is not a bad password")
+                .isEqualTo(HttpStatus.OK);
+        assertThat(rolesOf(username)).containsExactly("Unassigned");
+    }
+
+    @Test
+    @DisplayName("the reply is authoritative: losing the group loses the access")
+    void rolesAreReplacedOnEverySignIn() throws Exception {
+        String username = unique("avp-demote");
+
+        FakeRadiusServer withRole = radiusReturning(username, "NetworkPassword456",
+                FILTER_ID, "inventory-admin");
+        assertThat(signInStatus(username, "NetworkPassword456")).isEqualTo(HttpStatus.OK);
+        assertThat(rolesOf(username)).containsExactly("Administrator");
+
+        // Same person, next sign-in, no longer in the group.
+        withRole.stop();
+        jdbc.update("DELETE FROM radius_server");
+        radiusAccepting(1, username, "NetworkPassword456");
+
+        assertThat(signInStatus(username, "NetworkPassword456")).isEqualTo(HttpStatus.OK);
+        assertThat(rolesOf(username))
+                .as("access removed in NPS is access removed here, not access that lingers")
+                .containsExactly("Unassigned");
+    }
+
+    @Test
+    @DisplayName("Class works as well as Filter-Id")
+    void classAttributeAlsoWorks() throws Exception {
+        jdbc.update("UPDATE radius_settings SET role_attribute = 'CLASS' WHERE id = 1");
+        String username = unique("avp-class");
+        radiusReturning(username, "NetworkPassword456", CLASS, "inventory-csr");
+        jdbc.update("UPDATE radius_settings SET role_attribute = 'CLASS' WHERE id = 1");
+
+        assertThat(signInStatus(username, "NetworkPassword456")).isEqualTo(HttpStatus.OK);
+        assertThat(rolesOf(username)).containsExactly("Customer Service");
+    }
+
+    @Test
+    @DisplayName("an account created in this application is never re-roled by a RADIUS sign-in")
+    void localAccountsKeepTheirRoles() throws Exception {
+        Session admin = admin();
+        String username = unique("local-admin");
+        Long assetManager = jdbc.queryForObject(
+                "SELECT id FROM role WHERE name = 'Asset Manager'", Long.class);
+
+        post(admin, "/api/admin/users", """
+                {"username":"%s","password":"LocalPassword123","roleIds":[%d]}
+                """.formatted(username, assetManager));
+
+        // NPS knows them, and its reply carries nothing this application maps.
+        // If that demoted them, an administrator could be locked out of their own
+        // application by an NPS profile -- and the local password that should
+        // have rescued them would now belong to an account with no permissions.
+        radiusReturning(username, "NetworkPassword456", FILTER_ID, "some-other-nps-policy");
+
+        assertThat(signInStatus(username, "NetworkPassword456")).isEqualTo(HttpStatus.OK);
+        assertThat(rolesOf(username))
+                .as("roles assigned here stay assigned here")
+                .containsExactly("Asset Manager");
     }
 
     // -----------------------------------------------------------------
@@ -387,6 +567,9 @@ class RadiusAuthenticationTest extends AbstractIntegrationTest {
     private static final class FakeRadiusServer {
         private final String username;
         private final String password;
+        /** Attributes to attach to an Access-Accept: type number -> values. */
+        private final List<int[]> attributeTypes = new ArrayList<>();
+        private final List<String> attributeValues = new ArrayList<>();
         private DatagramSocket socket;
         private Thread thread;
         private volatile boolean running = true;
@@ -396,6 +579,13 @@ class RadiusAuthenticationTest extends AbstractIntegrationTest {
         FakeRadiusServer(String username, String password) {
             this.username = username;
             this.password = password;
+        }
+
+        /** e.g. returns(11, "inventory-neteng") for Filter-Id. Chainable. */
+        FakeRadiusServer returns(int attributeType, String value) {
+            attributeTypes.add(new int[]{attributeType});
+            attributeValues.add(value);
+            return this;
         }
 
         int port() { return socket.getLocalPort(); }
@@ -426,17 +616,26 @@ class RadiusAuthenticationTest extends AbstractIntegrationTest {
                     requests.incrementAndGet();
                     boolean ok = accepts(request);
 
-                    // Access-Accept (2) or Access-Reject (3), 20 bytes, with the
-                    // response authenticator the client verifies.
-                    byte[] reply = new byte[20];
+                    // Attributes only ever ride on an accept, which is also true
+                    // of a real server: a reject carries no authorization.
+                    byte[] attributes = ok ? encodedAttributes() : new byte[0];
+
+                    // Access-Accept (2) or Access-Reject (3). The response
+                    // authenticator is MD5 over the header, the REQUEST
+                    // authenticator, the attributes and the secret -- so the
+                    // attributes are covered by it, and a client that verifies
+                    // the reply is verifying them too.
+                    byte[] reply = new byte[20 + attributes.length];
                     reply[0] = (byte) (ok ? 2 : 3);
                     reply[1] = request[1];                       // echo the identifier
-                    reply[2] = 0;
-                    reply[3] = 20;
+                    reply[2] = (byte) ((reply.length >> 8) & 0xFF);
+                    reply[3] = (byte) (reply.length & 0xFF);
+                    System.arraycopy(attributes, 0, reply, 20, attributes.length);
 
                     MessageDigest md5 = MessageDigest.getInstance("MD5");
                     md5.update(reply, 0, 4);
                     md5.update(request, 4, 16);                  // the request authenticator
+                    md5.update(attributes);
                     md5.update(SHARED_SECRET.getBytes("UTF-8"));
                     System.arraycopy(md5.digest(), 0, reply, 4, 16);
 
@@ -446,6 +645,18 @@ class RadiusAuthenticationTest extends AbstractIntegrationTest {
                     if (!running) return;   // closed socket during teardown
                 }
             }
+        }
+
+        /** Type, length-including-header, value -- RFC 2865 §5. */
+        private byte[] encodedAttributes() throws Exception {
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            for (int i = 0; i < attributeValues.size(); i++) {
+                byte[] value = attributeValues.get(i).getBytes("UTF-8");
+                out.write(attributeTypes.get(i)[0]);
+                out.write(value.length + 2);
+                out.write(value);
+            }
+            return out.toByteArray();
         }
 
         private boolean accepts(byte[] request) throws Exception {

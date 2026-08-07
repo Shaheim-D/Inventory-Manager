@@ -137,14 +137,22 @@ class BarcodeLookupTest extends AbstractIntegrationTest {
         String tag = unique("IM").toUpperCase();
         createAsset(admin, tag);
 
-        // Unassigned holds no permissions at all -- the state a directory-provisioned
-        // account arrives in, and so the sharpest test that this endpoint is gated.
+        // A role built here holding nothing at all, rather than Unassigned.
+        // Unassigned used to hold nothing and was the obvious choice; V28 gave it
+        // asset:read so that somebody arriving from RADIUS with no matching group
+        // lands on a read-only view rather than a screen that refuses everything.
+        // That makes it the wrong instrument for this test -- the claim being
+        // made is "this endpoint needs asset:read", so the role has to be one
+        // that genuinely does not have it, whatever the seeded roles mean today.
+        String roleName = unique("no-permissions");
+        Long emptyRole = post(admin, "/api/admin/roles", """
+                {"name":"%s","permissionIds":[]}
+                """.formatted(roleName)).getBody().get("id").asLong();
+
         String username = unique("scanner");
-        Long unassigned = jdbc.queryForObject(
-                "SELECT id FROM role WHERE name = 'Unassigned'", Long.class);
         post(admin, "/api/admin/users", """
                 {"username":"%s","password":"ScannerPass123","roleIds":[%d]}
-                """.formatted(username, unassigned));
+                """.formatted(username, emptyRole));
 
         Session nobody = signIn(username, "ScannerPass123");
         assertThat(get(nobody, "/api/assets/lookup?assetTag=" + tag).getStatusCode())
