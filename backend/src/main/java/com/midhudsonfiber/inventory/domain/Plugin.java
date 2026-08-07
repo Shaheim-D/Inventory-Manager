@@ -26,7 +26,12 @@ import java.util.Map;
 @Table(name = "plugin")
 public class Plugin {
 
-    public enum PluginType { ZABBIX, NETBOX, LDAP, ACTIVE_DIRECTORY, RADIUS_NPS }
+    /**
+     * LDAP, ACTIVE_DIRECTORY and RADIUS_NPS were removed in V26. Directory sync
+     * is gone and RADIUS is authentication, which is core and lives in Settings
+     * rather than being a plugin that may fail safely.
+     */
+    public enum PluginType { ZABBIX, NETBOX }
 
     public enum SyncStatus { RUNNING, SUCCESS, PARTIAL, FAILURE }
 

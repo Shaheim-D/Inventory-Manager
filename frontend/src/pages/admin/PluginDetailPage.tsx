@@ -28,10 +28,9 @@ import { PageHeader } from '../../components/PageHeader';
 import { PluginConfigForm } from './PluginConfigForm';
 import { CategoryPicker } from '../../components/CategoryPicker';
 import { locationOptions, locationOptionSx, locationPath } from '../../components/locationTree';
-import type { Location, Role } from '../../api/types';
+import type { Location } from '../../api/types';
 import {
   statusColor,
-  type GroupMapping,
   type PendingAction,
   type PluginInstance,
   type PluginLink,
@@ -163,7 +162,6 @@ export function PluginDetailPage() {
         <Tab label="Confirmed" />
         <Tab label="Ignored" />
         <Tab label="Run history" />
-        {!instance.touchesAssets && <Tab label="Group mappings" />}
       </Tabs>
 
       {tab === 0 && <PendingQueue pluginId={instance.id} actions={pending.data ?? []} onResolved={refresh} />}
@@ -178,7 +176,6 @@ export function PluginDetailPage() {
       {tab === 2 && <LinkList pluginId={instance.id} kind="links" onChanged={refresh} />}
       {tab === 3 && <LinkList pluginId={instance.id} kind="ignored" onChanged={refresh} />}
       {tab === 4 && <RunHistory pluginId={instance.id} />}
-      {tab === 5 && !instance.touchesAssets && <GroupMappings pluginId={instance.id} />}
     </>
   );
 }
@@ -586,104 +583,5 @@ function RunHistory({ pluginId }: { pluginId: number }) {
         emptyMessage="This plugin has not run yet."
       />
     </Paper>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// directory group mappings
-// ---------------------------------------------------------------------------
-
-function GroupMappings({ pluginId }: { pluginId: number }) {
-  const queryClient = useQueryClient();
-  const [group, setGroup] = useState('');
-  const [roleId, setRoleId] = useState('');
-  const [error, setError] = useState<string | null>(null);
-
-  const mappings = useQuery({
-    queryKey: ['plugin-group-mappings', String(pluginId)],
-    queryFn: () => api.get<GroupMapping[]>(`/api/admin/plugins/${pluginId}/group-mappings`),
-  });
-  const roles = useQuery({ queryKey: ['roles'], queryFn: () => api.get<Role[]>('/api/admin/roles') });
-
-  const refresh = () =>
-    void queryClient.invalidateQueries({ queryKey: ['plugin-group-mappings', String(pluginId)] });
-
-  const add = useMutation({
-    mutationFn: () =>
-      api.post(`/api/admin/plugins/${pluginId}/group-mappings`, {
-        groupIdentifier: group.trim(), roleId: Number(roleId),
-      }),
-    onSuccess: () => {
-      setGroup('');
-      setRoleId('');
-      setError(null);
-      refresh();
-    },
-    onError: (caught) =>
-      setError(caught instanceof ApiError ? caught.message : 'Could not add that mapping.'),
-  });
-
-  const remove = useMutation({
-    mutationFn: (id: number) => api.del(`/api/admin/plugins/group-mappings/${id}`),
-    onSuccess: refresh,
-  });
-
-  return (
-    <Stack spacing={2}>
-      {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
-
-      <Alert severity="info">
-        These decide what somebody may do, never whether they can sign in. Signing in is checked
-        against the directory every time regardless, and a sync that fails changes nobody's access.
-      </Alert>
-
-      <Paper variant="outlined" sx={{ p: 2 }}>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="flex-start">
-          <TextField
-            label="Directory group"
-            value={group}
-            onChange={(event) => setGroup(event.target.value)}
-            helperText="The group's distinguished name, e.g. CN=Asset Managers,OU=Groups,DC=example,DC=local"
-          />
-          <TextField
-            select
-            label="Grants this role"
-            value={roleId}
-            onChange={(event) => setRoleId(event.target.value)}
-            sx={{ maxWidth: 260 }}
-          >
-            {(roles.data ?? []).map((role) => (
-              <MenuItem key={role.id} value={String(role.id)}>{role.name}</MenuItem>
-            ))}
-          </TextField>
-          <Button
-            variant="contained"
-            sx={{ mt: 0.5 }}
-            disabled={!group.trim() || !roleId || add.isPending}
-            onClick={() => add.mutate()}
-          >
-            Add
-          </Button>
-        </Stack>
-      </Paper>
-
-      <Paper variant="outlined">
-        <EntityTable
-          columns={[
-            { header: 'Directory group', render: (mapping: GroupMapping) => mapping.groupIdentifier },
-            { header: 'Role', render: (mapping: GroupMapping) => mapping.roleName ?? '—' },
-          ]}
-          rows={mappings.data ?? []}
-          rowKey={(mapping) => mapping.id}
-          loading={mappings.isLoading}
-          emptyMessage="No mappings yet. Without one, this plugin has nothing to grant and changes nothing."
-          rowActions={(mapping) => (
-            <Button size="small" color="error" onClick={() => remove.mutate(mapping.id)}>
-              Remove
-            </Button>
-          )}
-        />
-      </Paper>
-    </Stack>
   );
 }

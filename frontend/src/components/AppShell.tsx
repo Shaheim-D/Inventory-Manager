@@ -21,6 +21,7 @@ import {
   useMediaQuery,
   useTheme,
 } from '@mui/material';
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import MenuIcon from '@mui/icons-material/Menu';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
@@ -167,6 +168,12 @@ const NAV: NavSection[] = [
         to: '/settings/email',
         icon: <MailIcon />,
         permissions: ['notification_rule:manage'],
+      },
+      {
+        label: 'RADIUS',
+        to: '/settings/radius',
+        icon: <VpnKeyIcon />,
+        permissions: ['user:manage'],
       },
       {
         label: 'Backups',

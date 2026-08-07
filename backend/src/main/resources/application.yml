@@ -2,16 +2,6 @@ spring:
   application:
     name: inventory-manager
 
-  autoconfigure:
-    # Spring LDAP is on the classpath for the authentication providers, which
-    # brings LdapAutoConfiguration along with it -- and that would create an
-    # LdapTemplate (plus a health indicator) pointed at a default localhost:389,
-    # reporting an installation with no directory configured as unhealthy. The
-    # providers in SecurityConfig build their own context source from
-    # app.ldap.* / app.active-directory.*, and only when those are enabled.
-    exclude:
-      - org.springframework.boot.autoconfigure.ldap.LdapAutoConfiguration
-
   datasource:
     # The app only ever reaches Postgres through these variables -- nothing
     # assumes the database is same-host or in the same Compose stack, which is
@@ -96,17 +86,11 @@ app:
     # downloads them or a sync takes them elsewhere.
     directory: ${APP_BACKUPS_DIRECTORY:data/backups}
     timeout-seconds: ${APP_BACKUP_TIMEOUT_SECONDS:900}
-  ldap:
-    enabled: ${LDAP_ENABLED:false}
-    url: ${LDAP_URL:}
-    user-search-base: ${LDAP_USER_SEARCH_BASE:}
-    user-search-filter: ${LDAP_USER_SEARCH_FILTER:(uid={0})}
-    bind-dn: ${LDAP_BIND_DN:}
-    bind-password: ${LDAP_BIND_PASSWORD:}
-  active-directory:
-    enabled: ${AD_ENABLED:false}
-    domain: ${AD_DOMAIN:}
-    url: ${AD_URL:}
+  # RADIUS sign-in has no properties here on purpose: it is configured in
+  # Settings > RADIUS and stored in radius_settings, so it can be changed
+  # without a restart and is visible to the people who administer it. The only
+  # thing that stays in the environment is the shared secret itself, named by
+  # radius_settings.shared_secret_ref and never stored in the database.
 
 logging:
   level:

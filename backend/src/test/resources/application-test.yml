@@ -41,4 +41,4 @@ logging:
 # same way an environment variable would in a deployment.
 TEST_ZABBIX_TOKEN: test-zabbix-token
 TEST_NETBOX_TOKEN: test-netbox-token
-TEST_BIND_PASSWORD: test-bind-password
+TEST_RADIUS_SECRET: test-shared-secret

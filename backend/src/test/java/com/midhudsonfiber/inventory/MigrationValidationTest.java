@@ -88,6 +88,13 @@ class MigrationValidationTest extends AbstractIntegrationTest {
         // actually sent — which no existing table answers, and without which a
         // nightly check re-sends the same alert forever — and somewhere to keep
         // the SMTP relay the client asked to configure from the UI.
+        //
+        // V26 leaves the total alone, which is a coincidence and not a sign the
+        // migration did nothing: it dropped ldap_group_role_mapping along with
+        // directory sync and added radius_settings for the sign-in that replaced
+        // it. One out, one in. Worth writing down, because a number that does
+        // not move is the kind of thing somebody later reads as "no schema
+        // change here" and trusts.
         assertThat(tables).isEqualTo(39);
     }
 

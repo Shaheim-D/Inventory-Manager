@@ -10,7 +10,8 @@ import java.util.Set;
 @Table(name = "app_user")
 public class AppUser {
 
-    public enum AuthProvider { LOCAL, LDAP, ACTIVE_DIRECTORY }
+    /** LDAP and ACTIVE_DIRECTORY were retired in V26; those rows were moved to RADIUS. */
+    public enum AuthProvider { LOCAL, RADIUS }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

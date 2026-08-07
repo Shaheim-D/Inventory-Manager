@@ -1,16 +1,12 @@
 package com.midhudsonfiber.inventory;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.midhudsonfiber.inventory.plugin.impl.DirectorySyncPlugin;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -18,9 +14,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -37,32 +31,6 @@ class PluginFrameworkIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbc;
-
-    /**
-     * A directory that answers from a map. The boundary this plugin must not
-     * cross is worth testing on every build, which means it cannot need an LDAP
-     * server to be running.
-     */
-    @TestConfiguration
-    static class StubDirectory {
-        static final Map<String, Set<String>> MEMBERSHIPS = new HashMap<>();
-
-        @Bean
-        @Primary
-        DirectorySyncPlugin.DirectoryReader stubReader() {
-            return new DirectorySyncPlugin.DirectoryReader() {
-                @Override
-                public Map<String, Set<String>> groupsByUsername(Settings settings) {
-                    return new HashMap<>(MEMBERSHIPS);
-                }
-
-                @Override
-                public int countUsers(Settings settings) {
-                    return MEMBERSHIPS.size();
-                }
-            };
-        }
-    }
 
     private HttpServer zabbix;
     private String zabbixUrl;
@@ -316,79 +284,24 @@ class PluginFrameworkIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("directory sync moves roles and touches nothing else about an account")
-    void directorySyncNeverTouchesCredentials() {
-        Session admin = admin();
-        String username = unique("directory-user");
-        Long assetManagerRole = jdbc.queryForObject(
-                "SELECT id FROM role WHERE name = 'Asset Manager'", Long.class);
-        Long customerServiceRole = jdbc.queryForObject(
-                "SELECT id FROM role WHERE name = 'Customer Service'", Long.class);
-
-        post(admin, "/api/admin/users", """
-                {"username":"%s","password":"DirectoryPass123","roleIds":[%d]}
-                """.formatted(username, customerServiceRole));
-        Long userId = jdbc.queryForObject(
-                "SELECT id FROM app_user WHERE username = ?", Long.class, username);
-
-        // A locked-out account with a known password hash: exactly the state a
-        // careless sync would trample.
-        jdbc.update("""
-                UPDATE app_user SET failed_login_attempts = 3, locked_until = now() + interval '10 minutes'
-                WHERE id = ?
-                """, userId);
-        String hashBefore = jdbc.queryForObject(
-                "SELECT password_hash FROM app_user WHERE id = ?", String.class, userId);
-
-        Long pluginId = post(admin, "/api/admin/plugins", """
-                {"name":"%s","pluginType":"LDAP","enabled":true,
-                 "configuration":{"url":"ldaps://directory.invalid","bind_dn":"cn=reader",
-                                  "bind_password_ref":"TEST_BIND_PASSWORD",
-                                  "user_search_base":"OU=Staff,DC=example,DC=local"}}
-                """.formatted(unique("Directory"))).getBody().get("id").asLong();
-
-        post(admin, "/api/admin/plugins/" + pluginId + "/group-mappings", """
-                {"groupIdentifier":"CN=Asset Managers,OU=Groups,DC=example,DC=local","roleId":%d}
-                """.formatted(assetManagerRole));
-
-        StubDirectory.MEMBERSHIPS.clear();
-        StubDirectory.MEMBERSHIPS.put(username.toLowerCase(),
-                Set.of("CN=Asset Managers,OU=Groups,DC=example,DC=local"));
-
-        JsonNode run = post(admin, "/api/admin/plugins/" + pluginId + "/sync", "{}").getBody();
-        assertThat(run.get("status").asText()).isEqualTo("SUCCESS");
-        assertThat(run.get("updated").asInt()).isPositive();
-
-        // The role arrived.
-        assertThat(jdbc.queryForObject("""
-                SELECT count(*) FROM user_role WHERE user_id = ? AND role_id = ?
-                """, Integer.class, userId, assetManagerRole)).isEqualTo(1);
-
-        // And nothing about getting in was touched. This is the boundary the
-        // design called the easiest thing to get wrong, so it is asserted rather
-        // than assumed: the password hash, the lockout, and the failed-attempt
-        // counter are all exactly as they were.
-        assertThat(jdbc.queryForObject(
-                "SELECT password_hash FROM app_user WHERE id = ?", String.class, userId))
-                .isEqualTo(hashBefore);
-        assertThat(jdbc.queryForObject(
-                "SELECT failed_login_attempts FROM app_user WHERE id = ?", Integer.class, userId))
-                .isEqualTo(3);
-        assertThat(jdbc.queryForObject(
-                "SELECT locked_until IS NOT NULL FROM app_user WHERE id = ?", Boolean.class, userId))
-                .as("a sync must never unlock an account").isTrue();
-        assertThat(jdbc.queryForObject(
-                "SELECT is_active FROM app_user WHERE id = ?", Boolean.class, userId)).isTrue();
-    }
-
-    @Test
     @DisplayName("a plugin's configuration form is its own, and secrets stay out of the database")
     void configurationIsSchemaDrivenAndSecretsAreReferences() {
         Session admin = admin();
 
         JsonNode types = get(admin, "/api/admin/plugins/types").getBody();
+        // Two since V26 removed directory sync. Asserted as a floor rather than
+        // an exact count so adding an integration does not fail this test --
+        // which is the whole claim the plugin framework makes.
         assertThat(types.size()).as("every implementation on the classpath is offered")
-                .isGreaterThanOrEqualTo(3);
+                .isGreaterThanOrEqualTo(2);
+        // And the retired ones are genuinely gone, not merely unlisted: RADIUS is
+        // authentication now, and authentication is core rather than a plugin
+        // that may fail safely.
+        for (JsonNode type : types) {
+            assertThat(type.get("type").asText())
+                    .as("no directory or RADIUS plugin type survives")
+                    .isNotIn("LDAP", "ACTIVE_DIRECTORY", "RADIUS_NPS");
+        }
 
         JsonNode zabbixType = null;
         for (JsonNode type : types) {
