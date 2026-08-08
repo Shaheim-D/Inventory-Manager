@@ -57,6 +57,46 @@ services:
       - internal
     # No ports: -- the app is reachable only through the reverse proxy.
 
+  # The other half of the ping-pong. Identical to `app` in every way that
+  # matters -- same env, same volumes, same network -- because a version tested
+  # in a container configured differently from the one that will serve it has
+  # not been tested. The ONLY differences are the image tag, the restart policy
+  # and the profile that keeps it stopped when no update is running.
+  #
+  # It shares the attachment and backup volumes deliberately: both versions must
+  # see the same uploaded files, or a swap would lose them.
+  app-next:
+    image: ${APP_NEXT_IMAGE:-${APP_IMAGE:-inventory-manager:0.1.0}}
+    # `no`, not `unless-stopped`: this container only exists during an update.
+    # A restart policy would resurrect a half-finished one after a reboot and
+    # leave two versions running against one database.
+    restart: "no"
+    profiles: ["swap"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ../.env
+    environment:
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      APP_ATTACHMENTS_DIRECTORY: /var/lib/inventory-manager/attachments
+      APP_BACKUPS_DIRECTORY: /var/lib/inventory-manager/backups
+    volumes:
+      # Attachment bytes live on disk, not in Postgres, so they need a volume
+      # of their own -- without one, replacing the container during an update
+      # would take every uploaded file with it. backup.sh archives this
+      # directory alongside the database dump for the same reason.
+      - attachment-data:/var/lib/inventory-manager/attachments
+      # Backups taken from Settings > Backups. Its own volume so an update,
+      # which recreates the container, does not take them with it.
+      - backup-data:/var/lib/inventory-manager/backups
+    networks:
+      - internal
+    # No ports: -- reached only through the reverse proxy, and only once
+    # update.sh has pointed the upstream at it.
+
+
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
@@ -78,6 +118,11 @@ services:
       - ./nginx/app-http.conf.template:/etc/nginx/app-templates/app-http.conf.template:ro
       - ./nginx/app-https.conf.template:/etc/nginx/app-templates/app-https.conf.template:ro
       - ./nginx/app-proxy.conf:/etc/nginx/app-proxy.conf:ro
+      # NOT read-only, and the only mount that is not: scripts/update.sh
+      # rewrites upstream.conf in here to move traffic between app and
+      # app-next, then reloads nginx. Its own directory, ignored by git, so a
+      # file that changes on the host never collides with a `git pull`.
+      - ./nginx/runtime:/etc/nginx/runtime
       - certbot-certs:/etc/letsencrypt:ro
       - certbot-webroot:/var/www/certbot:ro
       # Where TLS_MODE=provided looks for an operator-supplied certificate.

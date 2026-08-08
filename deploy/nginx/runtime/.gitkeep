@@ -1,0 +1,4 @@
+Runtime nginx state, written by the container and by scripts/update.sh.
+Nothing in here is tracked: upstream.conf is rewritten during an update, and a
+tracked file that changes on the host turns the next `git pull` into a conflict
+on the one day somebody is trying to deploy a fix.

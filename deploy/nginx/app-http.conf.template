@@ -13,9 +13,10 @@
 # The ACME challenge location is present in both modes. It costs nothing when
 # unused, and its absence is exactly what made the first install impossible.
 
-upstream inventory_app {
-    server app:8080;
-}
+# The upstream lives in its own file so scripts/update.sh can point it at
+# the other container and reload, which is what makes an update not an
+# outage. See nginx/upstream.conf.
+include /etc/nginx/runtime/upstream.conf;
 
 server {
     listen 80 default_server;

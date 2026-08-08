@@ -75,18 +75,69 @@ certificate was ever issued.
 
 ## 2. Applying an update
 
+Set `APP_IMAGE` in `.env` to the version you want, then:
+
 ```
-/opt/inventory-manager/scripts/update.sh
+/opt/inventory-manager/scripts/update.sh --check    # changes nothing
+/opt/inventory-manager/scripts/update.sh            # zero downtime
 ```
 
-It takes a backup first, pulls the image tag in `.env`, recreates only the `app`
-container, and waits for health. The Postgres volume and `.env` are untouched.
+**By default nobody notices it ran.** The new version starts alongside the
+running one, and traffic only moves once it reports healthy — with an `nginx -s
+reload`, which finishes in-flight requests on the old worker before retiring it.
+No request is dropped, and nobody is signed out, because sessions are rows in
+Postgres rather than memory in the container.
 
-Before running it:
+**If the new version never becomes healthy, traffic never moves.** The old one
+carries on serving and the update is a non-event.
 
-- Set `APP_IMAGE` to a **specific version tag**, never `latest`. An update should
-  be a decision to move to a known version.
-- Read that version's release notes, particularly whether it includes a migration.
+### Which mode
+
+| | |
+|---|---|
+| `--check` | Runs every preflight check and changes nothing. Safe any time |
+| *(default)* | Zero downtime. Both versions are briefly live against one database |
+| `--restart` | One version at a time. About a minute of downtime |
+
+**Use `--restart` when the release's migrations remove or narrow something the
+running version still reads** — a dropped column, a tightened CHECK, a rename.
+For the few seconds between the migration finishing and traffic moving, the old
+version is running against the new schema; if a migration only *adds* things,
+which is nearly all of them here, it neither notices nor cares.
+
+That is the trade in one line: seconds of downtime, or seconds of errors.
+
+### What it checks before touching anything
+
+The image tag is real and not `latest`; the image can be pulled; the application
+is healthy **now** (updating away from a broken state hides which change broke
+it); there is disk for a backup; the database answers; and traffic is where it
+should be between updates. A failure here costs nothing. The same failure found
+halfway through costs an outage.
+
+### The three moves
+
+1. The new version starts as `app-next`, alongside `app` still serving.
+2. Traffic moves to `app-next`.
+3. `app` is recreated on the new image, traffic moves back, `app-next` stops.
+
+Step 3 looks redundant and is not. Without it the stack would come to rest with
+traffic on `app-next`, which exists only during an update and has no restart
+policy — so the next reboot would start nginx pointing at a container that is
+not there. **nginx resolves upstream names when it loads its config, not per
+request, so it would refuse to start at all.** A stalled update would become a
+total outage days later, on a reboot nobody would connect to it.
+
+Two things guard that anyway: `--check` fails loudly if traffic is resting on
+`app-next`, and nginx's entrypoint resets the upstream to `app` if it starts and
+finds `app-next` missing.
+
+### Before running it
+
+- `APP_IMAGE` must be a **specific version tag**, never `latest`. An update
+  should be a decision to move to a known version. The script refuses otherwise.
+- Read that version's release notes, particularly whether it includes a
+  migration that takes something away.
 - Supported update paths are N, N-1, N-2. From anything older, step through an
   intermediate version. Longer jumps have not been tested and should not be
   presented as if they had.
