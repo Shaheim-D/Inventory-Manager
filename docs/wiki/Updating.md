@@ -1,32 +1,100 @@
 # Updating
 
-An update is: take a backup, pull a new image, recreate the container. Flyway
-runs at startup, so there is no separate "and then migrate" step to forget.
+Set `APP_IMAGE` to the version you want, then:
 
 ```bash
-# 1. set APP_IMAGE to the new version tag in .env
-# 2.
-./scripts/update.sh
+./scripts/update.sh --check    # every check, changes nothing
+./scripts/update.sh            # zero downtime
 ```
+
+**By default nobody notices it ran.** The new version starts alongside the
+running one, and traffic only moves once it reports healthy — with an `nginx -s
+reload`, which finishes in-flight requests on the old worker before retiring it.
+No request is dropped, and nobody is signed out, because sessions are rows in
+Postgres rather than memory in the container.
+
+**If the new version never becomes healthy, traffic never moves.** The old one
+carries on serving. A failed update costs nothing, which is the whole point.
+
+Measured, not assumed: 1116 requests in flight across a swap against a real
+nginx, 0 failed, 367 answered by the old version and 749 by the new.
 
 ---
 
-## What the script does
+## Which mode
 
-1. **Refuses to run in `direct` mode.** `update.sh` manages the Compose stack. If
-   the database or the application runs outside Compose, update it the way it is
-   run — but take a backup first.
-2. **Refuses `:latest` or an untagged image.** More on that below.
-3. **Reads the currently running image** and stops if it already matches.
-4. **Takes a backup**, and aborts the update if it fails.
-5. **Writes `last-update.txt`** beside the backups: when, from what tag, to what
-   tag.
-6. `docker compose pull` and `docker compose up -d`.
-7. **Waits up to five minutes for the health check.** If it never goes healthy,
-   it prints the rollback steps rather than leaving you to work them out.
+| | |
+|---|---|
+| `--check` | Runs every preflight check and changes nothing. Safe any time |
+| *(default)* | Zero downtime. Both versions briefly live against one database |
+| `--restart` | One version at a time. About a minute of downtime |
 
-Nothing touches the PostgreSQL data directory and nothing spins up a parallel
-instance. Same stack, same named volume, same `.env`, new application image.
+### When to use `--restart`
+
+For a few seconds during a swap, **both versions run against one database and
+the new one has already migrated it.**
+
+That is fine when a migration only *adds* — a table, a nullable column, a row, a
+widened CHECK. The old version simply does not know about the addition. Nearly
+every migration in this project has been of that kind.
+
+It is **not** fine when a migration removes or narrows something the old version
+still reads: a dropped column, a tightened CHECK, a rename. For those seconds the
+old version is running against a schema it no longer matches.
+
+So: **seconds of downtime, or seconds of errors.** `--restart` takes the
+downtime. Read the release notes; when in doubt, take the minute.
+
+---
+
+## What it checks first
+
+Everything checkable is checked before anything is touched, because a failure
+found here costs nothing and the same failure found halfway through costs an
+outage.
+
+- `APP_IMAGE` is set and is **not** `:latest`
+- the image can be pulled
+- **the application is healthy now** — updating away from a broken state hides
+  which change broke it
+- there is disk for a backup
+- the database answers
+- traffic is resting where it should be between updates
+
+Then it takes a backup, and aborts if that fails. Rollback is
+restore-from-backup, so an update without one is a bet.
+
+---
+
+## The three moves
+
+1. The new version starts as **`app-next`**, alongside `app` still serving.
+2. Traffic moves to `app-next`.
+3. `app` is recreated on the new image, traffic moves **back**, `app-next` stops.
+
+Step 3 looks redundant and is not.
+
+Without it the stack would come to rest with traffic on `app-next` — which
+exists only during an update and carries no restart policy. **nginx resolves
+upstream names when it loads its config, not per request**, so the next reboot
+would start nginx pointing at a container that is not there, and it would refuse
+to start at all. A stalled update becoming a total outage days later, on a reboot
+nobody would connect to it.
+
+Two guards behind that anyway:
+
+- `--check` fails loudly if traffic is resting on `app-next`.
+- nginx's entrypoint resets the upstream to `app` if it starts and finds
+  `app-next` missing — while leaving it alone if `app-next` *is* running, so
+  restarting the proxy mid-update does not yank traffic off a working container.
+
+### Why `nginx -t` is not the only guard
+
+`nginx -t` validates syntax and resolves hostnames. It **passes** an upstream
+whose port has nothing behind it — a container that started but never bound.
+
+So the swap checks health *through the proxy* after the reload as well, and
+reverts if nothing answers. Verified: 502, reverted, 200 again.
 
 ---
 
@@ -46,6 +114,11 @@ tells you nothing you can go back to.
 
 Rollback is **restore-from-backup plus starting the previous image tag**. Both
 halves, and both have to be available at the moment they are needed.
+
+Note what this is *for*. A swap that fails needs no rollback at all — traffic
+never moved, the old version is still serving, and the only thing to do is stop
+`app-next` and read its logs. Rollback is for a version that came up healthy and
+then turned out to be wrong.
 
 ```bash
 # 1. set APP_IMAGE back to the previous tag in .env
@@ -122,6 +195,8 @@ authority it did not have. Updating needs authority over the host.
 - Sign in.
 - Open an asset and check its fields.
 - Confirm a restricted role still cannot see cost fields.
+- `./scripts/update.sh --check` — confirms traffic came to rest on `app`, which
+  is what makes the next reboot safe.
 - Take a backup, so the next rollback point is on the new schema.
 
 If anything in `backup.sh`, `restore.sh`, the artefact format or the deployment
