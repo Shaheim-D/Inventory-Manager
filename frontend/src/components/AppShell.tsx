@@ -74,6 +74,11 @@ interface NavItem {
    * when you are looking at an asset, and noise when you are in Devices.
    */
   createTo?: string;
+  /**
+   * What the + creates, when it is not the singular of the row's own label.
+   * Dashboard is the asset list now, so its + makes an asset, not a dashboard.
+   */
+  createLabel?: string;
   createPermissions?: string[];
 }
 
@@ -83,6 +88,11 @@ interface NavSection {
   /** Folds under one clickable heading instead of listing everything always. */
   collapsible?: boolean;
   icon?: React.ReactNode;
+}
+
+/** The + tooltip: the item's own label singularised, unless it says otherwise. */
+function createLabel(item: NavItem): string {
+  return `New ${(item.createLabel ?? item.label.replace(/s$/, '')).toLowerCase()}`;
 }
 
 const NAV: NavSection[] = [
@@ -99,6 +109,7 @@ const NAV: NavSection[] = [
         permissions: ['dashboard:view', 'asset:read'],
         createTo: '/assets/new',
         createPermissions: ['asset:write'],
+        createLabel: 'asset',
       },
       {
         label: 'Locations',
@@ -304,7 +315,7 @@ export function AppShell() {
           />
         )}
         {showCreate && (
-          <Tooltip title={`New ${item.label.replace(/s$/, '').toLowerCase()}`}>
+          <Tooltip title={createLabel(item)}>
             <IconButton
               size="small"
               edge="end"

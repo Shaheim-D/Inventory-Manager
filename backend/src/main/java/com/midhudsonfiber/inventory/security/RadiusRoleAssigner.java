@@ -17,7 +17,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -125,12 +124,5 @@ public class RadiusRoleAssigner {
             roles.findById(roleId).ifPresent(resolved::add);
         }
         return resolved;
-    }
-
-    /** Exposed for the settings screen, which shows what a value would grant. */
-    public Function<String, String> roleNameLookup() {
-        Map<Long, String> names = roles.findAll().stream()
-                .collect(Collectors.toMap(Role::getId, Role::getName));
-        return id -> names.get(Long.valueOf(id));
     }
 }

@@ -7,10 +7,14 @@ import com.midhudsonfiber.inventory.repo.CustomFieldDefinitionRepository;
 import com.midhudsonfiber.inventory.service.CategoryFieldService;
 import org.springframework.stereotype.Component;
 
+import com.midhudsonfiber.inventory.domain.AppUser;
+
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 /**
  * Serializes an Asset as a map so a restricted field can be genuinely absent
@@ -38,7 +42,26 @@ public class AssetViewAssembler {
             "purchase_price", "invoice_number", "purchase_link",
             "assignee_text", "assignee_user_id");
 
+    /**
+     * A page of assets, with the per-asset lookups done once for the whole page.
+     *
+     * <p>Rendering a list used to ask the database for custom field definitions
+     * once per asset and for the assignee's name once per asset. Twenty-five
+     * rows meant fifty round trips for what is a handful of distinct categories
+     * and a handful of distinct people -- and since the asset list became the
+     * home page, that is the first thing everybody loads.
+     */
+    public List<Map<String, Object>> toViews(List<Asset> assets, FieldVisibilityService.Decision decision) {
+        Lookups lookups = lookupsFor(assets);
+        return assets.stream().map(asset -> toView(asset, decision, lookups)).toList();
+    }
+
     public Map<String, Object> toView(Asset asset, FieldVisibilityService.Decision decision) {
+        return toView(asset, decision, lookupsFor(List.of(asset)));
+    }
+
+    private Map<String, Object> toView(Asset asset, FieldVisibilityService.Decision decision,
+                                       Lookups lookups) {
         Long categoryId = asset.getCategory().getId();
         Map<String, Object> view = new LinkedHashMap<>();
 
@@ -96,7 +119,7 @@ public class AssetViewAssembler {
         // to show. This resolves whichever of the two is populated into one name,
         // and stays gated by the same rules as the underlying fields.
         putUnlessHidden(view, "assigneeDisplay", "assignee_text", categoryId, decision,
-                () -> assigneeDisplay(asset));
+                () -> assigneeDisplay(asset, lookups));
 
         view.put("quantity", asset.getQuantity());
         view.put("purchaseOrderId", asset.getPurchaseOrderId());
@@ -106,7 +129,7 @@ public class AssetViewAssembler {
         view.put("createdAt", asset.getCreatedAt());
         view.put("updatedAt", asset.getUpdatedAt());
 
-        view.put("customFields", visibleCustomFields(asset, decision));
+        view.put("customFields", visibleCustomFields(asset, decision, lookups));
         // Lets the frontend lay out only the fields it actually received, without
         // ever re-deriving why something is missing.
         view.put("hiddenFields", decision.hiddenCoreFieldsFor(categoryId));
@@ -114,22 +137,51 @@ public class AssetViewAssembler {
         return view;
     }
 
-    private String assigneeDisplay(Asset asset) {
+    /**
+     * The two things {@link #toView} needs per asset that are not on the asset:
+     * the custom field definitions for its category, and the name behind an
+     * assignee id. Fetched once for a page rather than once per row.
+     */
+    private record Lookups(Map<Long, List<CustomFieldDefinition>> customFieldsByCategory,
+                           Map<Long, String> usernamesById) {}
+
+    private Lookups lookupsFor(List<Asset> assets) {
+        Set<Long> categoryIds = assets.stream()
+                .map(asset -> asset.getCategory().getId())
+                .collect(Collectors.toSet());
+        Map<Long, List<CustomFieldDefinition>> byCategory = categoryIds.isEmpty()
+                ? Map.of()
+                : customFields.findByCategoryIdInOrderBySortOrderAscIdAsc(categoryIds).stream()
+                        .collect(Collectors.groupingBy(definition -> definition.getCategory().getId()));
+
+        Set<Long> assigneeIds = assets.stream()
+                .map(Asset::getAssigneeUserId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, String> usernames = assigneeIds.isEmpty()
+                ? Map.of()
+                : users.findAllById(assigneeIds).stream()
+                        .collect(Collectors.toMap(AppUser::getId, AppUser::getUsername));
+
+        return new Lookups(byCategory, usernames);
+    }
+
+    private String assigneeDisplay(Asset asset, Lookups lookups) {
         return switch (asset.getAssigneeType()) {
             case NONE -> null;
             case EMPLOYEE, CUSTOMER -> asset.getAssigneeText();
             case USER -> asset.getAssigneeUserId() == null ? null
-                    : users.findById(asset.getAssigneeUserId())
-                        .map(com.midhudsonfiber.inventory.domain.AppUser::getUsername)
-                        // The account may have been removed; the assignment still happened.
-                        .orElse("user #" + asset.getAssigneeUserId());
+                    // The account may have been removed; the assignment still happened.
+                    : lookups.usernamesById().getOrDefault(
+                            asset.getAssigneeUserId(), "user #" + asset.getAssigneeUserId());
         };
     }
 
-    private Map<String, Object> visibleCustomFields(Asset asset, FieldVisibilityService.Decision decision) {
+    private Map<String, Object> visibleCustomFields(Asset asset, FieldVisibilityService.Decision decision,
+                                                   Lookups lookups) {
         Map<String, Object> values = new LinkedHashMap<>();
         List<CustomFieldDefinition> definitions =
-                customFields.findByCategoryIdOrderBySortOrderAscIdAsc(asset.getCategory().getId());
+                lookups.customFieldsByCategory().getOrDefault(asset.getCategory().getId(), List.of());
         for (CustomFieldDefinition definition : definitions) {
             if (decision.hidesCustomField(definition.getId())) continue;
             Object value = asset.getCustomFields().get(definition.getFieldName());

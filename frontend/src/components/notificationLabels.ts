@@ -9,7 +9,11 @@ import type { AppNotification, NotificationFrequency, NotificationTrigger } from
  * them to prose and nothing else, so adding a trigger backend-side surfaces as
  * a raw enum name rather than disappearing from the picker.
  */
-export const TRIGGER_LABELS: Record<NotificationTrigger, string> = {
+// Not exported: callers go through triggerLabel() and friends below, which
+// handle a trigger the frontend has not been taught about yet -- a server one
+// version ahead sends a string this map has no key for, and a raw lookup would
+// render "undefined" where a person expected words.
+const TRIGGER_LABELS: Record<NotificationTrigger, string> = {
   WARRANTY_EXPIRATION: 'Warranty coming up for expiry',
   INVENTORY_STALENESS_CHECK: 'Bulk stock overdue for verification',
   PURCHASE_ORDER_SUBMITTED: 'Purchase request submitted',
@@ -27,7 +31,7 @@ export const TRIGGER_LABELS: Record<NotificationTrigger, string> = {
 };
 
 /** The chip on a notification: the area it came from, not the whole sentence. */
-export const TRIGGER_CHIPS: Record<NotificationTrigger, string> = {
+const TRIGGER_CHIPS: Record<NotificationTrigger, string> = {
   WARRANTY_EXPIRATION: 'Warranty',
   INVENTORY_STALENESS_CHECK: 'Verification',
   PURCHASE_ORDER_SUBMITTED: 'Purchase request',
@@ -92,7 +96,7 @@ export function triggerHasCategory(trigger: NotificationTrigger | string): boole
     || String(trigger).startsWith('ASSET_');
 }
 
-export const FREQUENCY_LABELS: Record<NotificationFrequency, string> = {
+const FREQUENCY_LABELS: Record<NotificationFrequency, string> = {
   IMMEDIATE: 'As it happens',
   HOURLY: 'Hourly summary',
   DAILY: 'Daily summary',
