@@ -51,6 +51,16 @@ export function CategoriesPage() {
     <>
       <PageHeader
         title="Categories & custom fields"
+        // The count belongs up here rather than at the bottom of a long list:
+        // "how many kinds of thing do we track" is a question somebody asks
+        // before scrolling, not after.
+        subtitle={
+          categories.data
+            ? `${categories.data.length.toLocaleString()} ${
+                categories.data.length === 1 ? 'category' : 'categories'
+              }`
+            : 'Loading…'
+        }
         help="Categories are data, not schema: adding one, or changing what it tracks, never needs a deployment."
         actions={
           <Button variant="contained" onClick={() => setEditing({ serialized: true })}>

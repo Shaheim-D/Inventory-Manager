@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { LinearProgress } from '@mui/material';
 import { AppShell } from './components/AppShell';
 import { RequirePermission } from './auth/RequirePermission';
@@ -22,7 +22,6 @@ import { LoginPage } from './pages/LoginPage';
 
 const ChangePasswordPage = lazyPage(() => import('./pages/ChangePasswordPage'), 'ChangePasswordPage');
 const DashboardPage = lazyPage(() => import('./pages/DashboardPage'), 'DashboardPage');
-const AssetListPage = lazyPage(() => import('./pages/AssetListPage'), 'AssetListPage');
 const AssetDetailPage = lazyPage(() => import('./pages/AssetDetailPage'), 'AssetDetailPage');
 const AssetFormPage = lazyPage(() => import('./pages/AssetFormPage'), 'AssetFormPage');
 const LocationsPage = lazyPage(() => import('./pages/LocationsPage'), 'LocationsPage');
@@ -65,10 +64,16 @@ export function App() {
           </RequirePermission>
         }
       >
-        <Route path="/" element={guard(['dashboard:view'], <DashboardPage />)} />
+        {/* Dashboard and assets are one page. Either permission opens it and
+            the page renders whichever half the viewer may see -- a Purchaser
+            holds asset:read without dashboard:view. */}
+        <Route path="/" element={guard(['dashboard:view', 'asset:read'], <DashboardPage />)} />
         <Route path="/change-password" element={page(<ChangePasswordPage />)} />
 
-        <Route path="/assets" element={guard(['asset:read'], <AssetListPage />)} />
+        {/* /assets is where a barcode scan that matched nothing sends you, and
+            where an order's "Show items" links. Both carry query parameters
+            that have to survive, so this redirect keeps the search string. */}
+        <Route path="/assets" element={<RedirectToDashboard />} />
         <Route path="/assets/new" element={guard(['asset:write'], <AssetFormPage />)} />
         <Route path="/assets/:id" element={guard(['asset:read'], <AssetDetailPage />)} />
         <Route path="/assets/:id/edit" element={guard(['asset:write'], <AssetFormPage />)} />
@@ -141,6 +146,16 @@ export function App() {
  */
 function guard(permissions: string[], element: React.ReactNode) {
   return <RequirePermission permissions={permissions}>{page(element)}</RequirePermission>;
+}
+
+/**
+ * Assets moved onto the dashboard, so the old path forwards rather than 404s.
+ * The search string comes with it: /assets?q=… is where an unmatched barcode
+ * scan lands, and /assets?purchaseOrderId=… is an order's "Show items".
+ */
+function RedirectToDashboard() {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: '/', search }} replace />;
 }
 
 /** A lazy screen with no permission of its own still needs the boundary. */
