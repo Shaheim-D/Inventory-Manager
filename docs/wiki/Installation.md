@@ -101,11 +101,32 @@ A Linux VM with Docker Engine and the Compose plugin. **4 vCPU / 8 GB RAM** is
 the starting point — measured against real data it is generous, and the tables
 that grow are the audit and notification logs rather than the asset table.
 
-### 2. Configure
+### 2. Build the image
+
+**There is no registry, so nothing pulls the image for you.** CI builds it and
+never pushes it, and `deploy/docker-compose.yml` has an `image:` with no
+`build:` — so Compose will not build it either. Skip this step and the stack
+fails with "image not found".
 
 ```bash
 git clone <this repository> /opt/inventory-manager
 cd /opt/inventory-manager
+docker build -t inventory-manager:0.1.0 .
+```
+
+Tag it with a real version. `update.sh` refuses `latest` outright.
+
+To keep the source off the VM, build it on a workstation and ship the image
+instead. You still need `deploy/` and `scripts/` on the VM — just not
+`backend/` or `frontend/`:
+
+```bash
+docker save inventory-manager:0.1.0 | gzip | ssh vm 'gunzip | docker load'
+```
+
+### 3. Configure
+
+```bash
 cp .env.example .env
 chmod 600 .env
 ```
@@ -115,16 +136,28 @@ chmod 600 .env
 | Variable | What it is |
 |---|---|
 | `DB_PASSWORD` | Anything but the default |
-| `APP_IMAGE` | A specific version tag, never `latest` |
+| `APP_IMAGE` | A specific version tag, never `latest`, matching what you just built |
+| `APP_ENCRYPTION_KEY` | `openssl rand -base64 32`. See below — this one is not in your backups |
 | `TLS_MODE` | See below |
 | `APP_HOSTNAME` | The name people will type |
+
+**`APP_ENCRYPTION_KEY` deserves a moment.** It encrypts the secrets somebody
+types into a settings screen — currently the RADIUS shared secrets — and it
+lives here rather than in the database on purpose: `pg_dump` captures the table
+those secrets are in, so a leaked backup without this key is inert.
+
+The consequence is that **it is not in your backups**, deliberately. Restoring
+onto a new host needs the key as well as the dump, or those secrets have to be
+re-entered. Leave it blank and the application generates one at first start and
+writes it to `data/secret.key` — which then has to be backed up separately, by
+hand, forever. Setting it here is the easier of the two.
 
 `DB_USER` **must be able to `DROP` and `CREATE` the database**, because that is
 step 2 of every restore. In the default stack this is true because `DB_USER` is
 the Postgres container's own superuser. Against an external database you must
 grant it.
 
-### 3. Choose how it is served
+### 4. Choose how it is served
 
 `TLS_MODE` decides whether the application is reachable at all, so it is worth a
 moment.
@@ -162,24 +195,55 @@ challenge be answered — and switches itself to TLS once it appears.
 problem and serves HTTP instead, because a proxy that will not start is an
 application nobody can reach.
 
-### 4. Start it
+### 5. Start it
 
 ```bash
 cd deploy
-docker compose up -d
+docker compose --env-file ../.env up -d
 docker compose logs -f app
 ```
+
+**`--env-file ../.env` is not optional.** `.env` lives at the repository root
+because that is where the backup and restore scripts read it, but Compose looks
+for a `.env` beside the compose file — so a bare `docker compose up -d` from
+`deploy/` resolves `${DB_NAME}`, `${DB_USER}` and `${DB_PASSWORD}` to empty
+strings. `docker compose config` shows it plainly:
+
+```
+POSTGRES_DB: ""
+POSTGRES_PASSWORD: ""
+test: ['CMD-SHELL', 'pg_isready -U  -d ']
+```
+
+The Postgres container then exits demanding a password and the stack never
+comes up. The `app` service is unaffected either way — it reads the file
+directly through `env_file` — which is what makes this confusing rather than
+obvious: the application looks correctly configured while the database it needs
+never starts.
+
+The scripts do not need the flag. They `source` the file and export it before
+calling Compose, so the variables are already in the environment.
 
 Watch for Flyway applying migrations, and for the generated bootstrap password if
 you left `APP_ADMIN_INITIAL_PASSWORD` blank.
 
-### 5. First sign-in
+### 6. First sign-in
 
 1. Browse to the VM — `http://<its address>/`.
 2. Sign in as the bootstrap administrator and change the password when prompted.
-3. Create real accounts under **Settings → Users**.
+3. Create real accounts under **Manage → Users**.
 4. Upload the logo and palette under **Settings → Branding**.
-5. Set up the nightly backup — see **[Backups and Restore](Backups.md)**.
+5. **Install the backup cron entry** — nothing else installs it, and a
+   deployment without it has no nightly backup no matter what the settings
+   screen says:
+
+   ```
+   5 * * * * /opt/inventory-manager/scripts/backup.sh --if-due >> /var/log/im-backup.log 2>&1
+   ```
+
+   Then turn the schedule on under **Settings → Backups**. See
+   **[Backups and Restore](Backups.md)**.
+6. Run `scripts/restore-drill.sh` once, now, while nothing is at stake.
 
 ### Reachability
 

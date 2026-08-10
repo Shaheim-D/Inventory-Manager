@@ -23,6 +23,62 @@ them as missing rather than pretend, but they are gone.
 The two halves must come **from the same night**. Everything below preserves that
 pairing, which is the single most important property of the whole arrangement.
 
+**A third thing is deliberately not in either of them: the encryption key.**
+`APP_ENCRYPTION_KEY` (or `data/secret.key`) encrypts the RADIUS shared secrets
+stored in the database, and putting it beside the ciphertext it protects would
+make the encryption pointless — one leaked archive would then be one leaked
+secret. Restoring onto a new host needs the key carried across separately, or
+those secrets have to be re-entered. `backup.sh` prints this on every run and
+**Settings → RADIUS** says so plainly rather than failing at the next sign-in.
+
+---
+
+## Setting the schedule
+
+**Settings → Backups**. Turn "Back up every night" on, pick a time, say where
+the copies go, choose how long to keep them, and save. The card also reports
+whether the last run succeeded, which is the part that actually gets looked at.
+
+| Destination | What goes in the path box |
+|---|---|
+| A mounted path | A NAS share or second disk already mounted on this VM — anything that is not the disk PostgreSQL runs on |
+| SFTP | `user@host:/path`, with an `.env` entry named in the credential box holding the key path |
+| S3 or compatible | `s3://bucket/prefix`. AWS, Backblaze B2, MinIO — anything speaking S3 |
+
+The credential box takes the **name** of an `.env` entry, never a secret. That
+is the same rule the plugins follow, and it is why a database dump carries no
+way to reach the place the dumps are kept.
+
+### The application does not take the scheduled backup
+
+`scripts/backup.sh` does, from the host. That is deliberate: it keeps working on
+a morning when the application will not start, which is the morning last night's
+dump matters. A scheduler inside the application would be unable to back up in
+precisely the situation backups exist for.
+
+So there is still one cron entry, installed once at first installation and never
+edited again:
+
+```
+5 * * * * /opt/inventory-manager/scripts/backup.sh --if-due >> /var/log/im-backup.log 2>&1
+```
+
+`--if-due` exits immediately unless the time set on that screen has passed
+without a run today. Hourly rather than at a fixed minute so a **missed window
+is caught up rather than skipped** — a VM that was powered off at 02:15 backs up
+at the next tick instead of waiting a day.
+
+`backup.sh` with no arguments still backs up immediately, whatever the schedule
+says. That is what a person runs by hand, and what the drill exercises.
+
+### `.env` is the fallback, not the setting
+
+The `BACKUP_*` entries in `.env` still supply anything the screen has not set,
+which is everything until somebody saves that form once. That is what makes an
+existing installation safe to upgrade: nothing is silently redirected on the
+next run. The screen prefills from those values, so turning the schedule on is
+one click rather than re-typing what the deployment already knew.
+
 ---
 
 ## Taking a backup from the application
@@ -78,24 +134,27 @@ replaced.
 
 ## Taking a backup from the shell
 
-`scripts/backup.sh` is the one to run on a schedule. It does what the in-app
+`scripts/backup.sh` is the one that runs on a schedule. It does what the in-app
 button does, plus the part that makes it a real backup: **it copies both
-artefacts off the box.**
+artefacts off the box.** A backup that only ever lived on the disk it protects
+is not a backup.
 
-```
-15 2 * * * /opt/inventory-manager/scripts/backup.sh >> /var/log/im-backup.log 2>&1
-```
+Where they go and how long they are kept is configured in **Settings → Backups**
+(above), falling back to `BACKUP_DESTINATION_TYPE`, `BACKUP_DESTINATION_PATH`
+and `BACKUP_RETENTION_DAYS` in `.env` for anything that screen has not set.
+Retention is a plain rolling window, 180 days by default.
 
-A backup that only ever lived on the disk it protects is not a backup. Configure
-the destination in `.env`:
+At the end of every run — **including a failed one** — it writes the outcome
+back so the settings screen can report it. A schedule whose result nobody can
+see is a schedule nobody trusts, and silence reads as success.
 
-| `BACKUP_DESTINATION_TYPE` | `BACKUP_DESTINATION_PATH` |
-|---|---|
-| `LOCAL_PATH` | A mounted path that is not the database's disk — a NAS share, another volume |
-| `SFTP` | `user@host:/path`, with the key path named by `BACKUP_DESTINATION_CREDENTIALS_REF` |
-| `S3` | An `s3://` URL. Works with AWS, Backblaze B2, MinIO, anything S3-compatible |
-
-Retention is a rolling window: `BACKUP_RETENTION_DAYS`, 180 by default.
+`IM_IGNORE_DB_SETTINGS=1` makes it ignore the stored settings entirely and use
+only its environment. One caller sets it: `restore-drill.sh`, which builds a
+throwaway environment around a clone of production. Without it the drill reads
+the settings it just cloned and copies its own artefacts into the **real**
+off-box destination — which is exactly what happened the first time the drill
+was run after the settings moved into the database, and exactly why the rule
+below exists.
 
 The script fails loudly rather than keeping a useless file — a zero-byte dump is
 worse than no dump, because it looks like success. An *empty* attachment archive
