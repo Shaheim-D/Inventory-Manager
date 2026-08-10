@@ -11,6 +11,7 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  ListSubheader,
   Collapse,
   Menu,
   MenuItem,
@@ -119,16 +120,18 @@ const NAV: NavSection[] = [
         permissions: ['asset:write'],
       },
       { label: 'Reports', to: '/reports', icon: <AssessmentIcon />, permissions: ['report:view'] },
-      { label: 'Audit History', to: '/audit', icon: <HistoryIcon />, permissions: ['audit:view'] },
     ],
   },
   {
-    // One collapsible group rather than two flat sections. Everything here is
-    // configuration somebody sets up once and then rarely touches, so it earns
-    // a fold rather than nine permanent rows above the work.
-    heading: 'Settings',
-    icon: <SettingsIcon />,
-    collapsible: true,
+    // The things that are looked after regularly rather than set up once: the
+    // catalogue, the shape of an asset, the people, and the record of what
+    // everyone did. They sat under Settings, which put a weekly job behind a
+    // fold meant for a yearly one -- and Audit History sat up with the work,
+    // which is not what it is.
+    //
+    // Not collapsible: a fold is for things you rarely open, and the point of
+    // moving these was that they are not that.
+    heading: 'Manage',
     items: [
       {
         label: 'Categories & Fields',
@@ -145,6 +148,17 @@ const NAV: NavSection[] = [
         createPermissions: ['category:manage'],
       },
       { label: 'Users', to: '/admin/users', icon: <PeopleIcon />, permissions: ['user:manage'] },
+      { label: 'Audit History', to: '/audit', icon: <HistoryIcon />, permissions: ['audit:view'] },
+    ],
+  },
+  {
+    // One collapsible group rather than two flat sections. Everything here is
+    // configuration somebody sets up once and then rarely touches, so it earns
+    // a fold rather than eight permanent rows above the work.
+    heading: 'Settings',
+    icon: <SettingsIcon />,
+    collapsible: true,
+    items: [
       {
         label: 'Roles & Permissions',
         to: '/admin/roles',
@@ -316,6 +330,26 @@ export function AppShell() {
         if (!section.collapsible) {
           return (
             <List key={section.heading ?? index}>
+              {/* A heading on a flat section is a label, not a control. In the
+                  rail there is no room for the word, so the divider carries the
+                  separation on its own rather than leaving the group looking
+                  like a continuation of the one above. */}
+              {section.heading && <Divider sx={{ mx: 2, mt: 1, mb: expanded ? 0 : 1 }} />}
+              {section.heading && expanded && (
+                <ListSubheader
+                  disableSticky
+                  sx={{
+                    bgcolor: 'transparent',
+                    lineHeight: 2.2,
+                    fontSize: 11,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    color: 'text.secondary',
+                  }}
+                >
+                  {section.heading}
+                </ListSubheader>
+              )}
               {section.items.map((item) => renderItem(item, false))}
             </List>
           );
