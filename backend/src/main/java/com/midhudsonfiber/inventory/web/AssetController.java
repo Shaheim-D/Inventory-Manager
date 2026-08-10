@@ -73,7 +73,9 @@ public class AssetController {
 
         FieldVisibilityService.Decision decision = decision();
         return Map.of(
-                "content", result.getContent().stream().map(a -> assembler.toView(a, decision)).toList(),
+                // toViews, not a stream of toView: the assembler does the
+                // per-asset lookups once for the whole page.
+                "content", assembler.toViews(result.getContent(), decision),
                 "page", result.getNumber(),
                 "size", result.getSize(),
                 "totalElements", result.getTotalElements(),

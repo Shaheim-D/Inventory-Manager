@@ -131,11 +131,19 @@ public class ReportService {
         customFields.findAll().forEach(definition ->
                 customFieldNames.put(definition.getId(), definition.getFieldName()));
 
+        // The same maps the asset endpoint would return for this viewer:
+        // withheld fields are absent, so a column for one comes out blank.
+        //
+        // Built for the whole result at once. Asking per asset meant two queries
+        // a row, and a report is capped at 10,000 rows -- so the largest report
+        // anybody could run was also the one issuing twenty thousand round trips
+        // to render itself.
+        List<Map<String, Object>> views = assetViews.toViews(found, decision);
+
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (Asset asset : found) {
-            // The same map the asset endpoint would return for this viewer:
-            // withheld fields are absent, so a column for one comes out blank.
-            Map<String, Object> view = assetViews.toView(asset, decision);
+        for (int i = 0; i < found.size(); i++) {
+            Asset asset = found.get(i);
+            Map<String, Object> view = views.get(i);
             view.put("locationPath", locationPath(asset.getLocation(), locationsById));
             view.put("daysSinceVerified", daysSinceVerified(asset));
             view.put("daysOverdue", Math.max(0, daysOverdue(asset)));

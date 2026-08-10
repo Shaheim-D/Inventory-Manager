@@ -532,5 +532,3 @@ export function createAppTheme(
     },
   });
 }
-
-export { NEUTRAL };

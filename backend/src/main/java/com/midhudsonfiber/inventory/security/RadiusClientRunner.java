@@ -56,8 +56,6 @@ public class RadiusClientRunner {
         Attempt(Outcome outcome, String serverLabel, String detail) {
             this(outcome, serverLabel, detail, List.of());
         }
-
-        public boolean accepted() { return outcome == Outcome.ACCEPTED; }
     }
 
     public enum Outcome {
