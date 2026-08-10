@@ -9,15 +9,18 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
- * Dashboard widgets, each independently permission-gated: a widget the viewer
- * cannot see is simply not in the response, the same rule the rest of the
- * platform applies to fields.
+ * The three figures above the asset list on the home page, each independently
+ * permission-gated: one the viewer may not see is simply not in the response,
+ * the same rule the rest of the platform applies to fields.
+ *
+ * <p>The breakdowns that used to be here -- assets by category, assets by
+ * lifecycle state, purchase orders by status -- are gone. They were a bar chart
+ * of things the asset list already filters by, so the answer to every question
+ * they raised was "go and look at the assets", which is now the same screen.
  */
 @RestController
 @RequestMapping("/api/dashboard")
@@ -38,22 +41,7 @@ public class DashboardController {
         Map<String, Object> widgets = new LinkedHashMap<>();
 
         if (currentUser.has(PermissionKeys.ASSET_READ)) {
-            widgets.put("assetsByCategory", rows("""
-                    SELECT c.name, count(a.id)
-                    FROM asset a JOIN asset_category c ON c.id = a.asset_category_id
-                    WHERE a.is_deleted = FALSE
-                    GROUP BY c.name ORDER BY count(a.id) DESC
-                    """));
-            widgets.put("assetsByLifecycleState", rows("""
-                    SELECT s.name, count(a.id)
-                    FROM asset a JOIN lifecycle_state s ON s.id = a.lifecycle_state_id
-                    WHERE a.is_deleted = FALSE
-                    GROUP BY s.name ORDER BY count(a.id) DESC
-                    """));
             widgets.put("totalAssets", scalar("SELECT count(*) FROM asset WHERE is_deleted = FALSE"));
-        }
-
-        if (currentUser.has(PermissionKeys.ASSET_READ)) {
             widgets.put("warrantyExpiringSoon", scalar("""
                     SELECT count(*) FROM asset
                     WHERE is_deleted = FALSE
@@ -63,18 +51,19 @@ public class DashboardController {
         }
 
         if (currentUser.has(PermissionKeys.PURCHASE_ORDER_VIEW)) {
-            // Drafts are left out: they are somebody's unfinished sentence, and a
-            // breakdown that counts them reads as work in progress that isn't.
-            widgets.put("purchaseOrdersByStatus", rows("""
-                    SELECT status, count(*) FROM purchase_order
-                    WHERE status <> 'DRAFT'
-                    GROUP BY status ORDER BY count(*) DESC
+            // "Approved, and the equipment is not all here yet" -- the three
+            // states between somebody agreeing to buy something and it arriving:
+            // approved but not placed, placed but nothing delivered, and partly
+            // delivered. Everything else is either not agreed yet (DRAFT,
+            // SUBMITTED), finished (RECEIVED), or dead (REJECTED, CANCELLED).
+            //
+            // This replaced a breakdown of every status. A count of drafts is
+            // somebody's unfinished sentence; this is the number that means
+            // there is equipment owed to you.
+            widgets.put("activePurchaseOrders", scalar("""
+                    SELECT count(*) FROM purchase_order
+                    WHERE status IN ('APPROVED', 'ORDERED', 'PARTIALLY_RECEIVED')
                     """));
-        }
-
-        if (currentUser.has(PermissionKeys.AUDIT_VIEW)) {
-            widgets.put("recentAuditCount", scalar(
-                    "SELECT count(*) FROM audit_event WHERE occurred_at > now() - INTERVAL '7 days'"));
         }
 
         return widgets;
@@ -85,13 +74,4 @@ public class DashboardController {
         return ((Number) value).longValue();
     }
 
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> rows(String sql) {
-        List<Object[]> results = entityManager.createNativeQuery(sql).getResultList();
-        List<Map<String, Object>> mapped = new ArrayList<>();
-        for (Object[] row : results) {
-            mapped.add(Map.of("label", String.valueOf(row[0]), "count", ((Number) row[1]).longValue()));
-        }
-        return mapped;
-    }
 }

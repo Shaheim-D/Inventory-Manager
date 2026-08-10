@@ -88,12 +88,15 @@ interface NavSection {
 const NAV: NavSection[] = [
   {
     items: [
-      { label: 'Dashboard', to: '/', icon: <DashboardIcon />, permissions: ['dashboard:view'] },
+      // One row, because it is now one page: the figures and the whole asset
+      // list. Either permission is enough to open it -- a Purchaser has
+      // asset:read and no dashboard:view -- and the page renders whichever
+      // half they may see.
       {
-        label: 'Assets',
-        to: '/assets',
-        icon: <InventoryIcon />,
-        permissions: ['asset:read'],
+        label: 'Dashboard',
+        to: '/',
+        icon: <DashboardIcon />,
+        permissions: ['dashboard:view', 'asset:read'],
         createTo: '/assets/new',
         createPermissions: ['asset:write'],
       },

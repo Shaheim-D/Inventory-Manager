@@ -1,52 +1,92 @@
-import { Box, Card, CardContent, Grid, LinearProgress, Stack, Typography } from '@mui/material';
+import { useState } from 'react';
+import { Box, Button, Card, CardContent, Grid, Stack, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import InventoryIcon from '@mui/icons-material/Inventory2';
 import ShieldIcon from '@mui/icons-material/GppMaybe';
-import HistoryIcon from '@mui/icons-material/History';
+import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import type { PurchaseOrderStatus } from '../api/types';
 import { PageHeader } from '../components/PageHeader';
-import { statusLabel } from './purchase-orders/shared';
-
-interface Bucket {
-  label: string;
-  count: number;
-}
+import { AssetBrowser } from '../components/AssetBrowser';
+import { ImportDialog } from '../components/ImportDialog';
+import { useAuth } from '../auth/AuthContext';
 
 interface DashboardSummary {
   totalAssets?: number;
-  assetsByCategory?: Bucket[];
-  assetsByLifecycleState?: Bucket[];
   warrantyExpiringSoon?: number;
-  recentAuditCount?: number;
-  purchaseOrdersByStatus?: Bucket[];
+  activePurchaseOrders?: number;
 }
 
 /**
- * Widgets are permission-gated server-side, so a widget the viewer may not see
- * is simply not in the response and not rendered — the same rule fields follow.
+ * The home page: three figures, then the assets.
+ *
+ * These used to be two screens. The dashboard's breakdowns -- assets by
+ * category, assets by lifecycle state, orders by status -- were a picture of
+ * things the asset list already filters by, so the answer to every question
+ * they raised was "go and look at the assets". Now they are the same screen,
+ * and the figures at the top are the three that are not answerable by looking:
+ * how much there is, what is about to run out of warranty, and what has been
+ * agreed to but not arrived.
+ *
+ * Each figure is permission-gated server-side, so one the viewer may not see is
+ * simply not in the response and not rendered. The asset browser below is gated
+ * separately -- somebody with asset:read but no dashboard:view gets the assets
+ * without the figures, which is the whole page for them.
  */
 export function DashboardPage() {
-  const { data, isLoading } = useQuery({
+  const navigate = useNavigate();
+  const { has } = useAuth();
+  const [importing, setImporting] = useState(false);
+
+  const { data } = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => api.get<DashboardSummary>('/api/dashboard'),
+    // Not fetched at all without the permission, rather than fetched and 403'd.
+    enabled: has('dashboard:view'),
   });
 
-  if (isLoading) return <LinearProgress />;
   const summary = data ?? {};
 
   return (
     <>
-      <PageHeader title="Dashboard" />
-      <Grid container spacing={2}>
+      <PageHeader
+        title="Dashboard"
+        help={
+          <>
+            Everything owned, in one place. The figures are the three questions the list
+            below cannot answer by looking: how much there is, what is about to run out of
+            warranty, and what has been approved but not yet arrived. Search and the filters
+            work on the whole inventory, and a filtered view is a link you can paste to
+            somebody.
+          </>
+        }
+        actions={
+          <Stack direction="row" spacing={1}>
+            {/* Importing is loading assets, so it belongs where the assets are
+                rather than behind a module of its own. */}
+            {has('import:run') && (
+              <Button variant="outlined" onClick={() => setImporting(true)}>
+                Import
+              </Button>
+            )}
+            {has('asset:write') && (
+              <Button variant="contained" onClick={() => navigate('/assets/new')}>
+                New asset
+              </Button>
+            )}
+          </Stack>
+        }
+      />
+
+      <ImportDialog open={importing} onClose={() => setImporting(false)} />
+
+      <Grid container spacing={2} sx={{ mb: 3 }}>
         {summary.totalAssets !== undefined && (
           <Stat
             label="Assets tracked"
             value={summary.totalAssets}
-            to="/assets"
             icon={<InventoryIcon />}
             tone="primary"
           />
@@ -56,40 +96,26 @@ export function DashboardPage() {
             label="Warranties expiring within 90 days"
             value={summary.warrantyExpiringSoon}
             icon={<ShieldIcon />}
-            // The only number here that is a prompt to do something rather than
+            // The only figure here that is a prompt to do something rather than
             // a fact, so it is the only one that carries a warning tone -- and
             // only while there is actually something expiring.
             tone={summary.warrantyExpiringSoon > 0 ? 'warning' : 'primary'}
           />
         )}
-        {summary.recentAuditCount !== undefined && (
+        {summary.activePurchaseOrders !== undefined && (
           <Stat
-            label="Recorded changes this week"
-            value={summary.recentAuditCount}
-            to="/audit"
-            icon={<HistoryIcon />}
+            label="Active purchase orders"
+            value={summary.activePurchaseOrders}
+            to="/purchase-orders"
+            icon={<ShoppingCartIcon />}
             tone="primary"
           />
         )}
-
-        {summary.purchaseOrdersByStatus && summary.purchaseOrdersByStatus.length > 0 && (
-          <Breakdown
-            title="Purchase orders by status"
-            // The server sends the stored enum; the human wording lives in one
-            // place so the dashboard and the order screens never disagree.
-            buckets={summary.purchaseOrdersByStatus.map((bucket) => ({
-              ...bucket,
-              label: statusLabel(bucket.label as PurchaseOrderStatus),
-            }))}
-          />
-        )}
-        {summary.assetsByCategory && (
-          <Breakdown title="Assets by category" buckets={summary.assetsByCategory} />
-        )}
-        {summary.assetsByLifecycleState && (
-          <Breakdown title="Assets by lifecycle state" buckets={summary.assetsByLifecycleState} />
-        )}
       </Grid>
+
+      {/* The figures are one permission, the inventory is another. A Purchaser
+          holds asset:read without dashboard:view, and this is their whole page. */}
+      {has('asset:read') && <AssetBrowser />}
     </>
   );
 }
@@ -147,47 +173,6 @@ function Stat({
                 {label}
               </Typography>
             </Box>
-          </Stack>
-        </CardContent>
-      </Card>
-    </Grid>
-  );
-}
-
-function Breakdown({ title, buckets }: { title: string; buckets: Bucket[] }) {
-  const max = Math.max(1, ...buckets.map((bucket) => bucket.count));
-  const total = buckets.reduce((sum, bucket) => sum + bucket.count, 0);
-  return (
-    <Grid item xs={12} md={6}>
-      <Card sx={{ height: '100%' }}>
-        <CardContent>
-          <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 2 }}>
-            <Typography variant="subtitle1">{title}</Typography>
-            {total > 0 && (
-              <Typography variant="caption" color="text.secondary">
-                {total.toLocaleString()} total
-              </Typography>
-            )}
-          </Stack>
-          {buckets.length === 0 && (
-            <Typography variant="body2" color="text.secondary">
-              Nothing recorded yet.
-            </Typography>
-          )}
-          <Stack spacing={1.75}>
-            {buckets.map((bucket) => (
-              <Box key={bucket.label}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, mb: 0.75 }}>
-                  <Typography variant="body2" noWrap sx={{ minWidth: 0 }}>
-                    {bucket.label}
-                  </Typography>
-                  <Typography variant="body2" fontWeight={600}>
-                    {bucket.count.toLocaleString()}
-                  </Typography>
-                </Box>
-                <LinearProgress variant="determinate" value={(bucket.count / max) * 100} />
-              </Box>
-            ))}
           </Stack>
         </CardContent>
       </Card>

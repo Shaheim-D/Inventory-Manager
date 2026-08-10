@@ -4,14 +4,24 @@ import { Alert, Button, Chip, Grid, MenuItem, Paper, Stack, TextField, Typograph
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Asset, Category, LifecycleState, Location, Page } from '../api/types';
-import { EntityTable, type Column } from '../components/EntityTable';
-import { PageHeader } from '../components/PageHeader';
-import { ImportDialog } from '../components/ImportDialog';
-import { locationOptions, locationOptionSx, locationPath } from '../components/locationTree';
+import { EntityTable, type Column } from './EntityTable';
+import { locationOptions, locationOptionSx, locationPath } from './locationTree';
 import { useAuth } from '../auth/AuthContext';
 import { money } from '../format';
 
-export function AssetListPage() {
+/**
+ * Finding an asset: search, the four filters, and the table.
+ *
+ * Lifted out of what used to be its own page so the home screen can carry it
+ * whole. The dashboard used to be a bar chart of categories and lifecycle
+ * states -- a picture of things this list already filters by, whose every
+ * answer was "go and look at the assets". So the assets came to it instead.
+ *
+ * Everything that decides what is shown lives in the URL where it already did,
+ * so a filtered list is still a link somebody can paste, and arriving from a
+ * barcode scan or an order's "Show items" still works.
+ */
+export function AssetBrowser() {
   const navigate = useNavigate();
   const { has } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -27,7 +37,6 @@ export function AssetListPage() {
   // tag matched nothing, say -- lands with the box filled in and run.
   const initialQuery = searchParams.get('q') ?? '';
 
-  const [importing, setImporting] = useState(false);
   const [q, setQ] = useState(initialQuery);
   const [searchTerm, setSearchTerm] = useState(initialQuery);
   const [categoryId, setCategoryId] = useState('');
@@ -144,31 +153,6 @@ export function AssetListPage() {
 
   return (
     <>
-      <PageHeader
-        title="Assets"
-        subtitle={
-          assets.data ? `${assets.data.totalElements.toLocaleString()} matching assets` : 'Loading…'
-        }
-        actions={
-          <Stack direction="row" spacing={1}>
-            {/* Importing is loading assets, so it belongs where the assets are
-                rather than behind a module of its own. */}
-            {has('import:run') && (
-              <Button variant="outlined" onClick={() => setImporting(true)}>
-                Import
-              </Button>
-            )}
-            {has('asset:write') && (
-              <Button variant="contained" onClick={() => navigate('/assets/new')}>
-                New asset
-              </Button>
-            )}
-          </Stack>
-        }
-      />
-
-      <ImportDialog open={importing} onClose={() => setImporting(false)} />
-
       {purchaseOrderId && (
         <Alert
           severity="info"
@@ -198,6 +182,10 @@ export function AssetListPage() {
           serial number, asset tag and name.
         </Alert>
       )}
+
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        {assets.data ? `${assets.data.totalElements.toLocaleString()} matching assets` : 'Loading…'}
+      </Typography>
 
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
         <Grid container spacing={2}>
