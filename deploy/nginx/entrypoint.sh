@@ -89,6 +89,56 @@ render() {
     return 0       # changed
 }
 
+# ---------------------------------------------------------------------
+# Heal a stale upstream before doing anything else.
+#
+# scripts/update.sh points this at `app-next` for the length of a swap, and
+# `app-next` only exists while an update is running. If the machine reboots in
+# that window, nginx would come up pointing at a container that is not there --
+# and nginx resolves upstream names when it LOADS the config, not per request,
+# so it would refuse to start at all. A stalled update would become a total
+# outage, on the reboot rather than at the time, which is the worst way to find
+# out about it.
+#
+# `app` is the container that always exists and always carries a restart policy,
+# so it is the safe thing to fall back to.
+UPSTREAM=/etc/nginx/runtime/upstream.conf
+mkdir -p /etc/nginx/runtime
+
+write_default_upstream() {
+    cat > "$UPSTREAM" <<'DEFAULT'
+# Which application container nginx sends traffic to.
+#
+# Written by nginx/entrypoint.sh, and rewritten by scripts/update.sh during an
+# update so traffic can move between two running versions with a reload --
+# which finishes in-flight requests on the old worker before retiring it, so
+# nobody sees an error and nobody is signed out (sessions are rows in Postgres,
+# not memory in the container).
+#
+# Between updates this always names `app`. `app-next` exists only while an
+# update is running.
+upstream inventory_app {
+    server app:8080;
+}
+DEFAULT
+}
+
+if [ ! -f "$UPSTREAM" ]; then
+    write_default_upstream
+elif grep -q 'server app-next:8080' "$UPSTREAM" 2>/dev/null && ! getent hosts app-next >/dev/null 2>&1; then
+    # An update moved traffic to app-next and stopped before handing it back,
+    # and then something restarted this container. nginx resolves upstream
+    # names when it LOADS its config, not per request, so leaving this alone
+    # would mean nginx refuses to start at all -- a stalled update turning into
+    # a total outage days later, on a reboot nobody connected to it.
+    #
+    # `app` is the container that always exists and always carries a restart
+    # policy, so it is the safe thing to come back to.
+    echo "nginx: upstream names app-next, which does not resolve. Falling back to app."
+    echo "nginx: an update was probably interrupted -- check the version now serving."
+    write_default_upstream
+fi
+
 render || true
 echo "nginx: TLS_MODE=${TLS_MODE}, serving ${APP_HOSTNAME}"
 

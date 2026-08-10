@@ -20,3 +20,8 @@ node_modules/
 # Attachment uploads when running the backend directly. Real deployments point
 # APP_ATTACHMENTS_DIRECTORY at a volume; this is only where a local run puts them.
 backend/data/
+
+# Runtime nginx state. upstream.conf is rewritten during an update, so tracking
+# it would make the next `git pull` on a deployed host a merge conflict.
+deploy/nginx/runtime/*
+!deploy/nginx/runtime/.gitkeep
