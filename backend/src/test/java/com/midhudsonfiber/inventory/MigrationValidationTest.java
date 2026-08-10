@@ -109,7 +109,12 @@ class MigrationValidationTest extends AbstractIntegrationTest {
         // the settings row. V28 moves it to 41 with radius_role_mapping, for the
         // same reason one level up -- a value NPS returns and the role it grants
         // is a row, so a fifth mapping is an insert and not a migration.
-        assertThat(tables).isEqualTo(41);
+        //
+        // V29 moves it to 42 with backup_settings: the backup schedule and
+        // destination moved out of .env and a crontab and into a row an
+        // administrator can actually see. One row, id fixed at 1, the same
+        // convention branding and mail_settings use.
+        assertThat(tables).isEqualTo(42);
     }
 
     @Test

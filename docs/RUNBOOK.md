@@ -23,6 +23,18 @@ procedure here has real commands.
    change the password when prompted, then create real accounts under
    **Admin → Users**.
 9. Upload the organization's logo and palette under **Admin → Branding**.
+10. **Install the backup cron entry.** Nothing else installs it, and a
+    deployment without it has no nightly backup no matter what the settings
+    screen says:
+
+    ```
+    5 * * * * /opt/inventory-manager/scripts/backup.sh --if-due >> /var/log/im-backup.log 2>&1
+    ```
+
+    Then turn the schedule on under **Settings → Backups** and pick a time and a
+    destination. See §3.
+11. Run `scripts/restore-drill.sh` once, now, while nothing is at stake.
+    Rollback is restore-from-backup and there is no second mechanism.
 
 ### 1.1 How it is served, and reaching it on a VM
 
@@ -148,6 +160,33 @@ previous image tag.
 ---
 
 ## 3. Backups
+
+### Setting the schedule
+
+**Settings → Backups** holds the schedule, the destination and the retention
+window. Turn "Back up every night" on, pick a time, say where the copies go, and
+save. The screen also reports whether the last run succeeded — which is the part
+that gets looked at.
+
+The application does **not** take the scheduled backup. `scripts/backup.sh`
+does, from the host, because that is what still works on a morning when the
+application will not start. Install its entry once, at first installation:
+
+```
+5 * * * * /opt/inventory-manager/scripts/backup.sh --if-due >> /var/log/im-backup.log 2>&1
+```
+
+`--if-due` exits immediately unless the time set on that screen has passed
+without a run today, so this line never needs editing again — and a VM that was
+powered off overnight backs up at the next hour rather than skipping a day.
+
+`backup.sh` with no arguments still backs up immediately, whatever the schedule
+says. That is what a person runs by hand and what the drill exercises.
+
+The `BACKUP_*` entries in `.env` are the fallback for anything the screen has
+not set. Saving the form once makes the database authoritative.
+
+### What it produces
 
 `scripts/backup.sh` produces **two** artefacts per night and copies both to
 whatever `BACKUP_DESTINATION_TYPE` names:
