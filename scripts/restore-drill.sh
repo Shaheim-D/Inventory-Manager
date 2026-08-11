@@ -167,7 +167,12 @@ echo "            $(grep -c '^db  ' "$BEFORE") tables, $(grep -c '^mig ' "$BEFOR
 # ---- 3. Back it up with the real script ------------------------------
 echo
 echo "[drill 3/7] Running the shipped backup.sh..."
-IM_ENV_FILE="$DRILL_ENV" "$ROOT/scripts/backup.sh"
+# IM_IGNORE_DB_SETTINGS keeps backup.sh on the environment built above instead
+# of the schedule and destination stored in the database it just cloned. The
+# clone carries production's settings, so without this the drill copies its own
+# artefacts into the real off-box destination and stamps a real "last run
+# succeeded" onto the settings screen. Neither is the drill's to touch.
+IM_IGNORE_DB_SETTINGS=1 IM_ENV_FILE="$DRILL_ENV" "$ROOT/scripts/backup.sh"
 
 DUMP="$(find "$DRILL_DESTINATION" -name 'inventory-manager-*.dump' | sort | tail -1)"
 ARCHIVE="$(find "$DRILL_DESTINATION" -name 'inventory-manager-files-*.tar.gz' | sort | tail -1)"

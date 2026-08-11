@@ -15,6 +15,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import { PageHeader } from '../../components/PageHeader';
 import { EntityTable, type Column } from '../../components/EntityTable';
+import { BackupSchedule } from './BackupSchedule';
 import { when } from '../../format';
 
 interface Artefact {
@@ -125,6 +126,11 @@ export function BackupsPage() {
         </Alert>
       )}
 
+      {/* The schedule comes first because it is the thing that protects this
+          system. Everything below it is about copies taken by hand, which are
+          the exception. */}
+      <BackupSchedule />
+
       <Alert severity="warning" sx={{ mb: 2 }}>
         <AlertTitle>A downloaded backup has no permissions</AlertTitle>
         A database backup contains every column of every row — costs, invoice numbers and
@@ -136,11 +142,15 @@ export function BackupsPage() {
       <Alert severity="info" sx={{ mb: 3 }}>
         These are written to a volume on this server, beside the database they protect. That is
         not yet a backup: a copy has to reach somewhere the loss of this machine does not take
-        with it. Download them, or point the nightly <code>scripts/backup.sh</code> off-box
-        destination at this volume.
+        with it. Download them, or give the nightly schedule a destination — that is the job that
+        carries both halves off this machine.
       </Alert>
 
       {create.isPending && <LinearProgress sx={{ mb: 2 }} />}
+
+      <Typography variant="subtitle2" sx={{ mb: 1 }}>
+        Backups taken from this screen
+      </Typography>
 
       <Paper variant="outlined">
         <EntityTable
