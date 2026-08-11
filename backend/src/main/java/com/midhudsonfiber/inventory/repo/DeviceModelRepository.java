@@ -10,6 +10,9 @@ public interface DeviceModelRepository extends JpaRepository<DeviceModel, Long> 
 
     List<DeviceModel> findAllByOrderByManufacturerAscModelAsc();
 
+    /** Retired catalog entries — what the recycle bin offers to bring back. */
+    List<DeviceModel> findByActiveFalseOrderByManufacturerAscModelAsc();
+
     /**
      * What to offer for one category: models pinned to it, plus models pinned to
      * no category at all, since those are meant to be available everywhere.

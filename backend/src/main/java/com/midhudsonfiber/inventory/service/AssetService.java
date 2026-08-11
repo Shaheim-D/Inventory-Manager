@@ -277,6 +277,86 @@ public class AssetService {
                 "once");
     }
 
+    /**
+     * Everything in the recycle bin, newest deletion first.
+     *
+     * <p>Deliberately not filtered by anything. Nothing purges soft-deleted
+     * assets, so this is the complete history of every deletion the system has
+     * ever recorded.
+     */
+    @Transactional(readOnly = true)
+    public List<Asset> deleted() {
+        return assets.findByDeletedTrueOrderByDeletedAtDesc();
+    }
+
+    /**
+     * Why this asset cannot come back, or null if it can.
+     *
+     * <p>Deleting releases the serial number and the asset tag —
+     * {@code uq_asset_serial} and {@code uq_asset_tag} are partial indexes that
+     * exclude deleted rows, which is what lets something deleted by mistake be
+     * re-created with the label still physically on it. The cost is that a live
+     * asset may have taken the identifier since, and restoring would then
+     * violate the index.
+     *
+     * <p>Answered as a sentence rather than a boolean because the useful thing
+     * is <em>which</em> asset is in the way. The list calls this too, so the
+     * button is disabled with the reason showing rather than failing when
+     * pressed.
+     */
+    @Transactional(readOnly = true)
+    public String restoreBlockedReason(Asset asset) {
+        String serial = asset.getSerialNumber();
+        if (serial != null && !serial.isBlank()) {
+            Optional<Asset> holder = assets.findFirstBySerialNumberIgnoreCaseAndDeletedFalse(serial.trim());
+            if (holder.isPresent()) {
+                return "Serial number %s now belongs to %s.".formatted(serial, holder.get().displayLabel());
+            }
+        }
+        String tag = asset.getAssetTag();
+        if (tag != null && !tag.isBlank()) {
+            Optional<Asset> holder = assets.findFirstByAssetTagIgnoreCaseAndDeletedFalse(tag.trim());
+            if (holder.isPresent()) {
+                return "Asset tag %s now belongs to %s.".formatted(tag, holder.get().displayLabel());
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Undoes a soft delete.
+     *
+     * <p>Refuses rather than letting the unique index refuse, so the answer is a
+     * sentence naming what is in the way instead of a constraint violation. The
+     * check has to match the index exactly — same columns, same exclusion of
+     * deleted rows — or it will reject writes the database would have allowed,
+     * or allow ones it will not.
+     */
+    @Transactional
+    public Asset restore(Long id) {
+        Asset asset = assets.findById(id)
+                .orElseThrow(() -> new ApiExceptions.NotFoundException("Asset not found"));
+        if (!asset.isDeleted()) {
+            // Not an error worth failing over: the asset is in the state the
+            // caller wanted. Two people pressing Recover on the same row should
+            // not produce a failure for the slower one.
+            return asset;
+        }
+
+        String blocked = restoreBlockedReason(asset);
+        if (blocked != null) {
+            throw new ApiExceptions.ConflictException(
+                    blocked + " Change or clear it on that asset first, then recover this one.");
+        }
+
+        asset.setDeleted(false);
+        asset.setDeletedAt(null);
+        Asset saved = assets.save(asset);
+
+        audit.recordCreate(AuditService.ENTITY_ASSET, id, "Asset recovered from the recycle bin");
+        return saved;
+    }
+
     /** The transitions actually legal from this asset's current state, read from the graph. */
     @Transactional(readOnly = true)
     public List<LifecycleState> availableTransitions(Long assetId) {
