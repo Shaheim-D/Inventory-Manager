@@ -55,4 +55,22 @@ public class LoginAttemptService {
                 .map(AppUser::isCurrentlyLocked)
                 .orElse(false);
     }
+
+    /**
+     * Seconds until this account unlocks; 0 when it is not locked.
+     *
+     * <p>Only ever non-zero for an account that genuinely is locked, so it
+     * discloses nothing the existing "this account is locked" response did not
+     * already — an unknown username is not locked and still gets the generic
+     * failure. What it buys is that somebody staring at a locked screen knows
+     * whether to wait or to go and find help, instead of retrying every minute
+     * for fifteen and re-locking the account on the way.
+     */
+    @Transactional(readOnly = true)
+    public long lockedSecondsRemaining(String username) {
+        return users.findByUsernameIgnoreCase(username)
+                .filter(AppUser::isCurrentlyLocked)
+                .map(user -> Math.max(0, Instant.now().until(user.getLockedUntil(), ChronoUnit.SECONDS)))
+                .orElse(0L);
+    }
 }

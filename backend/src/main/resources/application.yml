@@ -64,8 +64,12 @@ app:
     username: ${APP_ADMIN_USERNAME:admin}
     password: ${APP_ADMIN_INITIAL_PASSWORD:}
   auth:
-    max-failed-attempts: 5
-    lockout-minutes: 15
+    max-failed-attempts: ${APP_AUTH_MAX_FAILED_ATTEMPTS:5}
+    # Five, not the fifteen in MOP Part 3, at the client's request. That number
+    # assumed a lockout nobody could clear; an administrator can now clear one
+    # from Manage > Users, so a shorter window costs much less than the phone
+    # call a fifteen-minute one produces.
+    lockout-minutes: ${APP_AUTH_LOCKOUT_MINUTES:5}
   branding:
     max-logo-bytes: 2097152
   attachments:

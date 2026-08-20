@@ -54,6 +54,19 @@ public abstract class AbstractIntegrationTest {
         return new Session(merge(seedCookies, sessionCookies), csrfFrom(merge(seedCookies, sessionCookies)));
     }
 
+    /**
+     * A sign-in attempt with its body, for the cases where what the caller is
+     * told matters as much as whether they got in.
+     */
+    protected ResponseEntity<JsonNode> signInResponse(String username, String password) {
+        ResponseEntity<String> seed = rest.getForEntity("/api/branding", String.class);
+        List<String> seedCookies = seed.getHeaders().getOrDefault(HttpHeaders.SET_COOKIE, List.of());
+        return rest.exchange("/api/auth/login", HttpMethod.POST,
+                new HttpEntity<>("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}",
+                        headers(seedCookies, csrfFrom(seedCookies))),
+                JsonNode.class);
+    }
+
     protected HttpStatusCode signInStatus(String username, String password) {
         ResponseEntity<String> seed = rest.getForEntity("/api/branding", String.class);
         List<String> seedCookies = seed.getHeaders().getOrDefault(HttpHeaders.SET_COOKIE, List.of());
