@@ -78,14 +78,6 @@ export function CategoriesPage() {
       )}
 
       <Paper variant="outlined">
-        <BulkDeleteBar
-          endpoint="/api/categories/bulk-delete"
-          selected={selected}
-          onClear={() => setSelected(new Set())}
-          invalidate={[['categories'], ['recycle-bin', 'categories']]}
-          noun="category"
-        />
-
         <EntityTable
           columns={[
             { header: 'Name', render: (category: Category) => category.name, secondary: true },
@@ -128,6 +120,15 @@ export function CategoriesPage() {
           )}
         />
       </Paper>
+
+      <BulkDeleteBar
+        endpoint="/api/categories/bulk-delete"
+        selected={selected}
+        onClear={() => setSelected(new Set())}
+        invalidate={[['categories'], ['recycle-bin', 'categories']]}
+        noun="category"
+        pluralNoun="categories"
+      />
 
       <Dialog open={Boolean(editing)} onClose={() => setEditing(null)} fullWidth maxWidth="sm">
         <DialogTitle>{editing?.id ? 'Edit category' : 'New category'}</DialogTitle>

@@ -36,6 +36,14 @@ interface Props {
   invalidate: string[][];
   /** "asset" / "location" — used in the confirmation sentence. */
   noun: string;
+  /**
+   * The plural, when it is not just the singular plus an "s".
+   *
+   * <p>Here because `${noun}s` produced "2 categorys selected" on screen.
+   * English plurals are not a rule this can derive, so the one caller that
+   * needs it says so rather than every caller pretending the rule works.
+   */
+  pluralNoun?: string;
   disabled?: boolean;
 }
 
@@ -60,6 +68,7 @@ export function BulkDeleteBar({
   onClear,
   invalidate,
   noun,
+  pluralNoun,
   disabled,
 }: Props) {
   const queryClient = useQueryClient();
@@ -84,18 +93,19 @@ export function BulkDeleteBar({
   });
 
   const count = selected.size;
-  const plural = count === 1 ? noun : `${noun}s`;
+  const many = pluralNoun ?? `${noun}s`;
+  const plural = count === 1 ? noun : many;
 
   return (
     <>
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+        <Alert severity="error" sx={{ mt: 2 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
 
       {result && result.refused.length > 0 && (
-        <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setResult(null)}>
+        <Alert severity="warning" sx={{ mt: 2 }} onClose={() => setResult(null)}>
           <AlertTitle>
             {result.removed.length} removed, {result.refused.length} could not go
           </AlertTitle>
@@ -110,8 +120,8 @@ export function BulkDeleteBar({
       )}
 
       {result && result.refused.length === 0 && result.removed.length > 0 && (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setResult(null)}>
-          {result.removed.length} {result.removed.length === 1 ? noun : `${noun}s`} moved to the
+        <Alert severity="success" sx={{ mt: 2 }} onClose={() => setResult(null)}>
+          {result.removed.length} {result.removed.length === 1 ? noun : many} moved to the
           Recycle Bin.
         </Alert>
       )}
@@ -120,7 +130,7 @@ export function BulkDeleteBar({
         <Paper
           variant="outlined"
           sx={{
-            mb: 2,
+            mt: 2,
             px: 2,
             py: 1.5,
             display: 'flex',

@@ -278,19 +278,6 @@ export function AssetBrowser() {
         </Grid>
       </Paper>
 
-      {canDelete && (
-        <BulkDeleteBar
-          endpoint="/api/assets/bulk-delete"
-          selected={selected}
-          onClear={() => setSelected(new Set())}
-          // The dashboard's "Assets tracked" figure is a separate query, and a
-          // count that still says 5 after three went to the bin reads as a
-          // failed delete.
-          invalidate={[['assets'], ['dashboard'], ['recycle-bin', 'assets']]}
-          noun="asset"
-        />
-      )}
-
       <Paper variant="outlined">
         <EntityTable
           columns={columns}
@@ -319,6 +306,19 @@ export function AssetBrowser() {
           }}
         />
       </Paper>
+
+      {canDelete && (
+        <BulkDeleteBar
+          endpoint="/api/assets/bulk-delete"
+          selected={selected}
+          onClear={() => setSelected(new Set())}
+          // The dashboard's "Assets tracked" figure is a separate query, and a
+          // count that still says 5 after three went to the bin reads as a
+          // failed delete.
+          invalidate={[['assets'], ['dashboard'], ['recycle-bin', 'assets']]}
+          noun="asset"
+        />
+      )}
     </>
   );
 }
