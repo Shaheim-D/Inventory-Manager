@@ -111,14 +111,6 @@ export function DevicesPage() {
       </Paper>
 
       <Paper variant="outlined">
-        <BulkDeleteBar
-          endpoint="/api/device-models/bulk-delete"
-          selected={selected}
-          onClear={() => setSelected(new Set())}
-          invalidate={[['device-models'], ['recycle-bin', 'device-models']]}
-          noun="device"
-        />
-
         <EntityTable
           columns={[
             // Both are in the card heading already.
@@ -165,6 +157,14 @@ export function DevicesPage() {
           )}
         />
       </Paper>
+
+      <BulkDeleteBar
+        endpoint="/api/device-models/bulk-delete"
+        selected={selected}
+        onClear={() => setSelected(new Set())}
+        invalidate={[['device-models'], ['recycle-bin', 'device-models']]}
+        noun="device"
+      />
 
       <Dialog
         open={Boolean(editing)}

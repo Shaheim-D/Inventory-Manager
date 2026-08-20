@@ -64,14 +64,6 @@ export function UsersPage() {
       )}
 
       <Paper variant="outlined">
-        <BulkDeleteBar
-          endpoint="/api/admin/users/bulk-delete"
-          selected={selected}
-          onClear={() => setSelected(new Set())}
-          invalidate={[['users'], ['recycle-bin', 'users']]}
-          noun="user"
-        />
-
         <EntityTable
           columns={[
             { header: 'Username', render: (user: UserSummary) => user.username, secondary: true },
@@ -120,6 +112,14 @@ export function UsersPage() {
           )}
         />
       </Paper>
+
+      <BulkDeleteBar
+        endpoint="/api/admin/users/bulk-delete"
+        selected={selected}
+        onClear={() => setSelected(new Set())}
+        invalidate={[['users'], ['recycle-bin', 'users']]}
+        noun="user"
+      />
 
       {creating && (
         <CreateUserDialog

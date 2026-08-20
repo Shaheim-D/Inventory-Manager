@@ -253,16 +253,6 @@ export function LocationsPage() {
         </Alert>
       )}
 
-      {has('location:write') && (
-        <BulkDeleteBar
-          endpoint="/api/locations/bulk-delete"
-          selected={selected}
-          onClear={() => setSelected(new Set())}
-          invalidate={[['locations'], ['recycle-bin', 'locations']]}
-          noun="location"
-        />
-      )}
-
       <Paper variant="outlined">
         {locations.data?.length === 0 ? (
           <Typography sx={{ p: 4, textAlign: 'center' }} color="text.secondary">
@@ -272,6 +262,16 @@ export function LocationsPage() {
           <List dense>{renderBranch(null, 0)}</List>
         )}
       </Paper>
+
+      {has('location:write') && (
+        <BulkDeleteBar
+          endpoint="/api/locations/bulk-delete"
+          selected={selected}
+          onClear={() => setSelected(new Set())}
+          invalidate={[['locations'], ['recycle-bin', 'locations']]}
+          noun="location"
+        />
+      )}
 
       <Dialog open={Boolean(editing)} onClose={() => setEditing(null)} fullWidth maxWidth="sm">
         <DialogTitle>{editing?.id ? 'Edit location' : 'New location'}</DialogTitle>
