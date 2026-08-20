@@ -22,6 +22,7 @@ import { api, ApiError } from '../../api/client';
 import type { Category, DeviceModel } from '../../api/types';
 import { CategoryPicker } from '../../components/CategoryPicker';
 import { EntityTable } from '../../components/EntityTable';
+import { BulkDeleteBar } from '../../components/BulkDeleteBar';
 import { PageHeader } from '../../components/PageHeader';
 import { money } from '../../format';
 
@@ -32,6 +33,7 @@ import { money } from '../../format';
  * asset is mostly picking, not typing.
  */
 export function DevicesPage() {
+  const [selected, setSelected] = useState<Set<string | number>>(new Set());
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   // The nav's plus shortcut opens the dialog straight away.
@@ -109,6 +111,14 @@ export function DevicesPage() {
       </Paper>
 
       <Paper variant="outlined">
+        <BulkDeleteBar
+          endpoint="/api/device-models/bulk-delete"
+          selected={selected}
+          onClear={() => setSelected(new Set())}
+          invalidate={[['device-models'], ['recycle-bin', 'device-models']]}
+          noun="device"
+        />
+
         <EntityTable
           columns={[
             // Both are in the card heading already.
@@ -137,6 +147,9 @@ export function DevicesPage() {
           ]}
           rows={rows}
           rowKey={(d) => d.id}
+          selectable
+          selectedIds={selected}
+          onSelectionChange={setSelected}
           loading={devices.isLoading}
           emptyMessage="No devices in the catalog yet. Add the models you stock and they will be offered when creating assets."
           cardTitle={(d) => `${d.manufacturer} ${d.model}`}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
+  Checkbox,
   Alert,
   Box,
   Button,
@@ -28,6 +29,7 @@ import type { Location, LocationTypeOption, ReferenceEnums } from '../api/types'
 import { PageHeader } from '../components/PageHeader';
 import { locationOptions, locationOptionSx } from '../components/locationTree';
 import { useAuth } from '../auth/AuthContext';
+import { BulkDeleteBar } from '../components/BulkDeleteBar';
 
 /** Reads better than the stored key, which is all the API deals in. */
 const OWNERSHIP_LABELS: Record<string, string> = {
@@ -43,6 +45,7 @@ const OWNERSHIP_LABELS: Record<string, string> = {
  */
 export function LocationsPage() {
   const { has } = useAuth();
+  const [selected, setSelected] = useState<Set<string | number>>(new Set());
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<Partial<Location> | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -180,6 +183,19 @@ export function LocationsPage() {
               ) : undefined
             }
           >
+            {has('location:write') && (
+              <Checkbox
+                size="small"
+                sx={{ mr: 0.5 }}
+                checked={selected.has(location.id)}
+                onChange={() => {
+                  const next = new Set(selected);
+                  if (next.has(location.id)) next.delete(location.id);
+                  else next.add(location.id);
+                  setSelected(next);
+                }}
+              />
+            )}
             <IconButton
               size="small"
               sx={{ mr: 1, visibility: grandchildren.length ? 'visible' : 'hidden' }}
@@ -235,6 +251,16 @@ export function LocationsPage() {
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
         </Alert>
+      )}
+
+      {has('location:write') && (
+        <BulkDeleteBar
+          endpoint="/api/locations/bulk-delete"
+          selected={selected}
+          onClear={() => setSelected(new Set())}
+          invalidate={[['locations'], ['recycle-bin', 'locations']]}
+          noun="location"
+        />
       )}
 
       <Paper variant="outlined">

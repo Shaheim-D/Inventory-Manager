@@ -20,6 +20,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { Permission, Role, UserSummary } from '../../api/types';
 import { EntityTable } from '../../components/EntityTable';
+import { BulkDeleteBar } from '../../components/BulkDeleteBar';
 import { PageHeader } from '../../components/PageHeader';
 import { useAuth } from '../../auth/AuthContext';
 
@@ -29,6 +30,7 @@ interface UserDetail extends UserSummary {
 }
 
 export function UsersPage() {
+  const [selected, setSelected] = useState<Set<string | number>>(new Set());
   const queryClient = useQueryClient();
   const { has } = useAuth();
   const [creating, setCreating] = useState(false);
@@ -62,6 +64,14 @@ export function UsersPage() {
       )}
 
       <Paper variant="outlined">
+        <BulkDeleteBar
+          endpoint="/api/admin/users/bulk-delete"
+          selected={selected}
+          onClear={() => setSelected(new Set())}
+          invalidate={[['users'], ['recycle-bin', 'users']]}
+          noun="user"
+        />
+
         <EntityTable
           columns={[
             { header: 'Username', render: (user: UserSummary) => user.username, secondary: true },
@@ -91,6 +101,9 @@ export function UsersPage() {
           ]}
           rows={users.data ?? []}
           rowKey={(user) => user.id}
+          selectable
+          selectedIds={selected}
+          onSelectionChange={setSelected}
           loading={users.isLoading}
           cardTitle={(user) => user.username}
           rowActions={(user) => (

@@ -26,6 +26,7 @@ public class AuditService {
     public static final String ENTITY_BRANDING = "BRANDING";
     public static final String ENTITY_PURCHASE_ORDER = "PURCHASE_ORDER";
     public static final String ENTITY_BACKUP = "BACKUP";
+    public static final String ENTITY_DEVICE_MODEL = "DEVICE_MODEL";
 
     public static final String ACTION_CREATE = "CREATE";
     public static final String ACTION_UPDATE = "UPDATE";

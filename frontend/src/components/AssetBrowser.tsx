@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { Asset, Category, LifecycleState, Location, Page } from '../api/types';
 import { EntityTable, type Column } from './EntityTable';
+import { BulkDeleteBar } from './BulkDeleteBar';
 import { locationOptions, locationOptionSx, locationPath } from './locationTree';
 import { useAuth } from '../auth/AuthContext';
 import { money } from '../format';
@@ -24,6 +25,7 @@ import { money } from '../format';
 export function AssetBrowser() {
   const navigate = useNavigate();
   const { has } = useAuth();
+  const canDelete = has('asset:delete');
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Arriving from an order's "Show items". It lives in the URL rather than in
@@ -36,6 +38,11 @@ export function AssetBrowser() {
   // from somewhere that already knows what to look for -- a barcode scan whose
   // tag matched nothing, say -- lands with the box filled in and run.
   const initialQuery = searchParams.get('q') ?? '';
+
+  // Cleared whenever the filters move, because a selection that survives a
+  // filter change is a selection of rows nobody can see any more -- and the
+  // next click deletes them.
+  const [selected, setSelected] = useState<Set<string | number>>(new Set());
 
   const [q, setQ] = useState(initialQuery);
   const [searchTerm, setSearchTerm] = useState(initialQuery);
@@ -271,11 +278,27 @@ export function AssetBrowser() {
         </Grid>
       </Paper>
 
+      {canDelete && (
+        <BulkDeleteBar
+          endpoint="/api/assets/bulk-delete"
+          selected={selected}
+          onClear={() => setSelected(new Set())}
+          // The dashboard's "Assets tracked" figure is a separate query, and a
+          // count that still says 5 after three went to the bin reads as a
+          // failed delete.
+          invalidate={[['assets'], ['dashboard'], ['recycle-bin', 'assets']]}
+          noun="asset"
+        />
+      )}
+
       <Paper variant="outlined">
         <EntityTable
           columns={columns}
           rows={rows}
           rowKey={(asset) => asset.id}
+          selectable={canDelete}
+          selectedIds={selected}
+          onSelectionChange={setSelected}
           loading={assets.isLoading}
           emptyMessage="No assets match these filters."
           onRowClick={(asset) => navigate(`/assets/${asset.id}`)}

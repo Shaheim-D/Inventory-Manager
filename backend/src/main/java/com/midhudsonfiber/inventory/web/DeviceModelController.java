@@ -4,6 +4,7 @@ import com.midhudsonfiber.inventory.domain.DeviceModel;
 import com.midhudsonfiber.inventory.repo.AssetCategoryRepository;
 import com.midhudsonfiber.inventory.repo.DeviceModelRepository;
 import com.midhudsonfiber.inventory.security.PermissionKeys;
+import com.midhudsonfiber.inventory.service.DeletionService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.ResponseEntity;
@@ -31,9 +32,13 @@ public class DeviceModelController {
     private final DeviceModelRepository deviceModels;
     private final AssetCategoryRepository categories;
 
-    public DeviceModelController(DeviceModelRepository deviceModels, AssetCategoryRepository categories) {
+    private final DeletionService deletions;
+
+    public DeviceModelController(DeviceModelRepository deviceModels, AssetCategoryRepository categories,
+                                 DeletionService deletions) {
         this.deviceModels = deviceModels;
         this.categories = categories;
+        this.deletions = deletions;
     }
 
     public record DeviceModelRequest(Long categoryId,
@@ -70,13 +75,20 @@ public class DeviceModelController {
         return toView(deviceModels.save(device));
     }
 
+    /**
+     * Retired rather than erased.
+     *
+     * <p>A plain delete used to be defensible here — assets copy manufacturer
+     * and model at creation rather than referencing this row, so nothing built
+     * from a catalog entry breaks when it goes. What it was not is recoverable,
+     * and a catalog entry removed by mistake had to be retyped from memory.
+     * Deactivating achieves the same thing (it stops being offered on new asset
+     * forms) and appears in the Recycle Bin.
+     */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('" + PermissionKeys.CATEGORY_MANAGE + "')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
-        // A plain delete is right here: assets copy these values at creation time
-        // rather than referencing the row, so removing a catalog entry never
-        // touches an asset that was built from it.
-        deviceModels.deleteById(id);
+        deletions.remove(DeletionService.Kind.DEVICE_MODEL, id);
         return ResponseEntity.noContent().build();
     }
 
