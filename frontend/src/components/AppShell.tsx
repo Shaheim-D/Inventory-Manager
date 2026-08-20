@@ -34,6 +34,7 @@ import PlaceIcon from '@mui/icons-material/Place';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import FactCheckIcon from '@mui/icons-material/FactCheck';
 import HistoryIcon from '@mui/icons-material/History';
+import RestoreFromTrashIcon from '@mui/icons-material/RestoreFromTrashOutlined';
 import CategoryIcon from '@mui/icons-material/Category';
 import PeopleIcon from '@mui/icons-material/People';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
@@ -163,6 +164,14 @@ const NAV: NavSection[] = [
       },
       { label: 'Users', to: '/admin/users', icon: <PeopleIcon />, permissions: ['user:manage'] },
       { label: 'Audit History', to: '/audit', icon: <HistoryIcon />, permissions: ['audit:view'] },
+      {
+        // Under Manage rather than Settings: recovering something deleted by
+        // mistake is work somebody does in the moment, not configuration.
+        label: 'Recycle Bin',
+        to: '/recycle-bin',
+        icon: <RestoreFromTrashIcon />,
+        permissions: ['asset:read'],
+      },
     ],
   },
   {

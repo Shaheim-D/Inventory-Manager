@@ -25,6 +25,28 @@ public interface AssetRepository extends JpaRepository<Asset, Long>, JpaSpecific
             Long purchaseOrderLineItemId, Long locationId);
 
     /**
+     * What is in the recycle bin: everything soft-deleted, most recent first.
+     *
+     * <p>Nothing purges these. A deleted asset stays in the table for good, so
+     * this list only ever grows and the recovery window is "forever" rather than
+     * a grace period — worth knowing, because it is the opposite of what
+     * "deleted" usually implies.
+     */
+    List<Asset> findByDeletedTrueOrderByDeletedAtDesc();
+
+    /**
+     * The live asset holding this serial, if any — the reason a restore can
+     * fail.
+     *
+     * <p>{@code uq_asset_serial} is partial and excludes deleted rows, so
+     * deleting an asset releases its serial and something else may since have
+     * taken it. Restoring would then violate the index. This is the check that
+     * has to match the index exactly, per the project rule: same column, same
+     * deleted-row exclusion, or it will disagree with the database.
+     */
+    Optional<Asset> findFirstBySerialNumberIgnoreCaseAndDeletedFalse(String serialNumber);
+
+    /**
      * Serial numbers already in use by live assets, out of the ones offered.
      *
      * <p>Asked in one query rather than per row: a thousand-row file would

@@ -97,8 +97,19 @@ public class LocationController {
     }
 
     /**
-     * Locations are deactivated rather than deleted while anything still points at
-     * them — a location with history is not the same thing as a mistake to erase.
+     * Locations are deactivated rather than deleted — a location with history is
+     * not the same thing as a mistake to erase.
+     *
+     * <p>This used to hard-delete when nothing pointed at the location, on the
+     * reasoning that an unused row is a mistake and nothing is lost. What that
+     * missed is that "nothing points at it yet" is the normal state of a
+     * location somebody just finished typing, so the case where the row was
+     * genuinely disposable and the case where somebody deleted the wrong new
+     * site were the same case — and only one of them was recoverable. Now both
+     * are: deleting always deactivates, and **Recycle Bin** brings it back.
+     *
+     * <p>The cost is rows that accumulate rather than disappear, which is the
+     * same trade assets already make and the same reason.
      */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('" + PermissionKeys.LOCATION_WRITE + "')")
@@ -107,14 +118,11 @@ public class LocationController {
             throw new ApiExceptions.ConflictException("This location has child locations. Move or remove them first.");
         }
         Location location = location(id);
-        if (assets.countByLocationIdAndDeletedFalse(id) > 0) {
+        if (location.isActive()) {
             location.setActive(false);
             locations.save(location);
             audit.recordFieldChanges(AuditService.ENTITY_LOCATION, id,
                     List.of(AuditService.FieldChange.of("is_active", true, false)));
-        } else {
-            locations.delete(location);
-            audit.recordDelete(AuditService.ENTITY_LOCATION, id, null);
         }
         return ResponseEntity.noContent().build();
     }

@@ -26,6 +26,7 @@ const AssetDetailPage = lazyPage(() => import('./pages/AssetDetailPage'), 'Asset
 const AssetFormPage = lazyPage(() => import('./pages/AssetFormPage'), 'AssetFormPage');
 const LocationsPage = lazyPage(() => import('./pages/LocationsPage'), 'LocationsPage');
 const AuditPage = lazyPage(() => import('./pages/AuditPage'), 'AuditPage');
+const RecycleBinPage = lazyPage(() => import('./pages/RecycleBinPage'), 'RecycleBinPage');
 const VerificationPage = lazyPage(() => import('./pages/VerificationPage'), 'VerificationPage');
 const NotificationsPage = lazyPage(() => import('./pages/NotificationsPage'), 'NotificationsPage');
 const NotificationRulesPage = lazyPage(
@@ -105,6 +106,9 @@ export function App() {
         <Route path="/verification" element={guard(['asset:write'], <VerificationPage />)} />
         <Route path="/reports" element={guard(['report:view'], <ReportsPage />)} />
         <Route path="/audit" element={guard(['audit:view'], <AuditPage />)} />
+        {/* asset:read is the floor: the tabs inside gate their own recover
+            buttons on the permission that removed the thing. */}
+        <Route path="/recycle-bin" element={guard(['asset:read'], <RecycleBinPage />)} />
         {/* No permission: these rows are addressed to the caller, and every
             query behind them is scoped to whoever is signed in. */}
         <Route path="/notifications" element={page(<NotificationsPage />)} />
