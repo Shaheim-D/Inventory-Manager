@@ -33,8 +33,8 @@ const NotificationRulesPage = lazyPage(
   () => import('./pages/settings/NotificationRulesPage'), 'NotificationRulesPage');
 const EmailSettingsPage = lazyPage(
   () => import('./pages/settings/EmailSettingsPage'), 'EmailSettingsPage');
-const RadiusSettingsPage = lazyPage(
-  () => import('./pages/settings/RadiusSettingsPage'), 'RadiusSettingsPage');
+const RemoteAuthenticationPage = lazyPage(
+  () => import('./pages/settings/RemoteAuthenticationPage'), 'RemoteAuthenticationPage');
 const BackupsPage = lazyPage(() => import('./pages/settings/BackupsPage'), 'BackupsPage');
 const PurchaseOrdersPage = lazyPage(
   () => import('./pages/purchase-orders/PurchaseOrdersPage'), 'PurchaseOrdersPage');
@@ -122,9 +122,12 @@ export function App() {
           element={guard(['notification_rule:manage'], <EmailSettingsPage />)}
         />
         <Route
-          path="/settings/radius"
-          element={guard(['user:manage'], <RadiusSettingsPage />)}
+          path="/settings/remote-authentication"
+          element={guard(['user:manage'], <RemoteAuthenticationPage />)}
         />
+        {/* The screen was called RADIUS until LDAP joined it. Anybody with the
+            old URL bookmarked lands on the page rather than on a 404. */}
+        <Route path="/settings/radius" element={<Navigate to="/settings/remote-authentication" replace />} />
         <Route path="/settings/backups" element={guard(['backup:run'], <BackupsPage />)} />
 
         <Route path="/admin/categories" element={guard(['category:manage'], <CategoriesPage />)} />

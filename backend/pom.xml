@@ -113,6 +113,21 @@
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+            An in-memory LDAP server, for tests only. It never ships.
+
+            RadiusAuthenticationTest hand-rolls its server over a DatagramSocket
+            because a RADIUS packet is a header and a few attributes. LDAP is
+            ASN.1/BER over a stateful connection, so hand-rolling one would be
+            testing the hand-rolled server. The application itself talks LDAP
+            through JDK JNDI and takes no runtime dependency on this.
+        -->
+        <dependency>
+            <groupId>com.unboundid</groupId>
+            <artifactId>unboundid-ldapsdk</artifactId>
+            <version>7.0.1</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
