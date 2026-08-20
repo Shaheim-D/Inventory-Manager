@@ -71,7 +71,34 @@ public class CategoryFieldService {
         return new LinkedHashSet<>(applicableFields(categoryId));
     }
 
-    /** Replaces a category's field set wholesale; an empty list means "all of them". */
+    /**
+     * Sets a category's field set; an empty list means "all of them".
+     *
+     * <p>Reconciles against what is already stored rather than deleting the lot
+     * and re-inserting it. Two reasons, and the first one made the screen
+     * unusable:
+     *
+     * <ul>
+     *   <li><b>Delete-then-insert does not work here.</b> Both happen in one
+     *       transaction, and at flush time Hibernate orders inserts <em>before</em>
+     *       deletes — so re-inserting a field the category already had collided
+     *       with the row that had not been deleted yet, and every save came back
+     *       as {@code duplicate key value violates unique constraint
+     *       "category_core_field_asset_category_id_core_field_name_key"}. A
+     *       {@code flush()} between the two would also fix that, and would leave
+     *       the second problem in place.
+     *   <li><b>Re-inserting loses the row's own data.</b> {@code label} is a
+     *       per-category override — a Vehicle has a Make, not a Manufacturer —
+     *       and nothing in Java ever sets it, so it comes from the seed
+     *       migration and cannot be re-created. Deleting the row threw that away
+     *       silently: edit a Vehicle's field set and its Make quietly became
+     *       Manufacturer again.
+     * </ul>
+     *
+     * <p>So rows that stay are updated in place, rows that go are deleted, and
+     * only genuinely new names are inserted. Those two sets are disjoint by
+     * construction, which is what makes the flush ordering stop mattering.
+     */
     @Transactional
     public List<String> replace(AssetCategory category, List<String> fieldNames) {
         List<String> unknown = fieldNames.stream()
@@ -82,16 +109,33 @@ public class CategoryFieldService {
                     "Not configurable core fields: " + String.join(", ", unknown));
         }
 
-        repository.deleteByCategoryId(category.getId());
+        // A set, so a payload naming the same field twice asks for it once
+        // rather than trying to insert it twice.
+        Set<String> wanted = new LinkedHashSet<>(fieldNames);
+
+        Map<String, CategoryCoreField> existing = new LinkedHashMap<>();
+        for (CategoryCoreField row : repository.findByCategoryIdOrderBySortOrderAscIdAsc(category.getId())) {
+            existing.put(row.getCoreFieldName(), row);
+        }
+
+        repository.deleteAll(existing.entrySet().stream()
+                .filter(entry -> !wanted.contains(entry.getKey()))
+                .map(Map.Entry::getValue)
+                .toList());
+
         int order = 0;
         // Stored in the canonical order rather than whatever order they arrived in,
         // so two categories with the same fields lay out identically.
         for (String field : CONFIGURABLE_CORE_FIELDS) {
-            if (!fieldNames.contains(field)) continue;
-            CategoryCoreField row = new CategoryCoreField();
-            row.setCategory(category);
-            row.setCoreFieldName(field);
-            row.setSortOrder(order += 10);
+            if (!wanted.contains(field)) continue;
+            order += 10;
+            CategoryCoreField row = existing.get(field);
+            if (row == null) {
+                row = new CategoryCoreField();
+                row.setCategory(category);
+                row.setCoreFieldName(field);
+            }
+            row.setSortOrder(order);
             repository.save(row);
         }
         return applicableFields(category.getId());
