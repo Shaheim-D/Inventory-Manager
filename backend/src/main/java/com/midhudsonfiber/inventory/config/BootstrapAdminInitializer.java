@@ -42,7 +42,10 @@ public class BootstrapAdminInitializer implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        if (users.count() > 0) return;
+        if (users.count() > 0) {
+            warnIfInitialPasswordWasIgnored();
+            return;
+        }
 
         String username = props.getBootstrapAdmin().getUsername();
         String password = props.getBootstrapAdmin().getPassword();
@@ -75,6 +78,38 @@ public class BootstrapAdminInitializer implements ApplicationRunner {
             log.info("Bootstrap Administrator '{}' created from APP_ADMIN_INITIAL_PASSWORD "
                     + "(must be changed at first sign-in).", username);
         }
+    }
+
+    /**
+     * Says out loud that {@code APP_ADMIN_INITIAL_PASSWORD} was read and thrown
+     * away.
+     *
+     * <p>Ignoring it once accounts exist is correct and deliberate — this must
+     * never resurrect or overwrite an account on a running system, which is
+     * exactly the behaviour somebody with write access to {@code .env} would
+     * otherwise use to take over the application by restarting it.
+     *
+     * <p>Doing it <em>silently</em> is not correct, and cost a real afternoon:
+     * change the value, restart, get "Incorrect username or password", and
+     * nothing anywhere suggests the value you are staring at was never
+     * consulted. The variable is a bootstrap seed, not a password reset, and
+     * the log is the only place that distinction can be made at the moment it
+     * matters.
+     */
+    private void warnIfInitialPasswordWasIgnored() {
+        String configured = props.getBootstrapAdmin().getPassword();
+        if (configured == null || configured.isBlank()) return;
+
+        log.warn("""
+
+                =====================================================================
+                 APP_ADMIN_INITIAL_PASSWORD is set but was IGNORED.
+                 It seeds the first administrator on an empty database and is never
+                 a password reset -- accounts already exist, so nothing was changed.
+                 Signing in still needs whatever '{}' password is current.
+                 To reset it deliberately: scripts/reset-admin-password.sh
+                =====================================================================""",
+                props.getBootstrapAdmin().getUsername());
     }
 
     private static String generatePassword() {

@@ -367,6 +367,87 @@ hostname anywhere — hold that line.
 
 ---
 
+## 6.5 Nobody can sign in
+
+### First, the trap
+
+**`APP_ADMIN_INITIAL_PASSWORD` is a bootstrap seed, not a password reset.** It is
+read only when `app_user` is completely empty. Once the administrator exists,
+editing it in `.env` and restarting changes nothing — the account keeps the
+password it was created with. The application now logs a warning saying so on
+startup; before that it was silent, which is how it costs an afternoon.
+
+So if sign-in fails with "Incorrect username or password", the password you are
+looking at in `.env` is very likely not the account's password. Two ways that
+happens: the account was created before you set that value, or somebody
+completed the forced change-password prompt at first sign-in and the real
+password is what they typed.
+
+The original is in the log from the **first ever** startup, printed once:
+
+```bash
+docker compose logs app | grep -A6 "bootstrap Administrator"
+```
+
+### "Temporarily locked"
+
+A different message, and it now says how long is left: *"This account is
+temporarily locked. Try again in 4 minutes."* Five consecutive failures lock an
+account for **five minutes** — `APP_AUTH_LOCKOUT_MINUTES` changes it without a
+rebuild, and `APP_AUTH_MAX_FAILED_ATTEMPTS` the threshold.
+
+Any administrator can clear it immediately: **Manage → Users**, the locked
+account shows a **Locked** chip and an **Unlock** button beside it. That resets
+the failure counter too, so the next single mistake does not re-lock it, and it
+is audited against the administrator who did it. That is always the better path
+than the break-glass script below, because it records *who*.
+
+### Break-glass reset
+
+When no administrator can sign in at all:
+
+```bash
+./scripts/reset-admin-password.sh --reason "bootstrap password never recorded, ticket 412"
+```
+
+It prints a random one-time password and flags the account must-change-password.
+It refuses to run without a reason, refuses while `.env` is readable beyond its
+owner, and refuses when another administrator can still sign in (use **Manage →
+Users** then — that records *who* did it). Add `--force` only when those
+accounts are genuinely unusable too.
+
+### Why the script is not the weak link
+
+It grants nothing its caller did not already have. Running it needs a shell on
+the VM and the ability to read `.env`, which holds `DB_PASSWORD` — and anyone
+with those can already run `UPDATE app_user SET password_hash = ...` in `psql`.
+A password prompt on the script would protect nothing, because an attacker would
+simply not use the script.
+
+The boundary is the database credential, enforced in three places, none of them
+in the script:
+
+- **`.env` is `chmod 600` and never committed.** This is the control. The script
+  refuses to run when it is group- or world-readable, because at that point
+  every local account is an administrator of this application.
+- **There is no web endpoint, no API route and no "forgot password" flow that
+  reaches it.** Recovery deliberately requires host access, so a stolen session
+  or an application-layer bug can never lead here. Do not add one.
+- **Postgres is not published to the network** in the shipped stack.
+
+What the script does add is that a reset cannot happen *quietly*. The reason is
+mandatory; the audit row is written in the same transaction as the password
+change, so the two cannot be separated; and the event also goes to syslog, which
+is a different trust domain from the database and usually ships off the box.
+Detection is the real control on an action whose prevention already lives
+elsewhere.
+
+**So: a break-glass reset appearing in Audit History that nobody performed means
+somebody has a shell on that VM.** Treat it as a host compromise, not an
+application one.
+
+---
+
 ## 7. Before shipping a release
 
 The pre-release check that makes automatic-Flyway-on-startup safe:

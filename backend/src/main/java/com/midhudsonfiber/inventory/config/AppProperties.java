@@ -23,7 +23,22 @@ public class AppProperties {
 
     public static class Auth {
         private int maxFailedAttempts = 5;
-        private int lockoutMinutes = 15;
+
+        /**
+         * Five minutes, not the fifteen in MOP Part 3 — changed at the client's
+         * request.
+         *
+         * <p>The MOP's number assumed a lockout nobody could clear, where erring
+         * long was the safe direction. An administrator can now clear one from
+         * Manage → Users, so the cost of a short window is much lower than the
+         * cost of the long one: fifteen minutes is long enough that people ring
+         * somebody, and the call costs more than the marginal brute-force
+         * resistance five minutes gives up. Five is still slow enough that
+         * guessing at any rate worth worrying about remains impractical.
+         *
+         * <p>Override with {@code APP_AUTH_LOCKOUT_MINUTES} without a rebuild.
+         */
+        private int lockoutMinutes = 5;
 
         public int getMaxFailedAttempts() { return maxFailedAttempts; }
         public void setMaxFailedAttempts(int v) { this.maxFailedAttempts = v; }

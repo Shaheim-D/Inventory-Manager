@@ -54,8 +54,7 @@ public class AuthController {
                                    HttpServletRequest httpRequest,
                                    HttpServletResponse httpResponse) {
         if (loginAttempts.isLocked(request.username())) {
-            return ResponseEntity.status(HttpStatus.LOCKED)
-                    .body(Map.of("error", "This account is temporarily locked. Try again later."));
+            return lockedResponse(request.username());
         }
 
         Authentication authentication;
@@ -63,8 +62,7 @@ public class AuthController {
             authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(request.username(), request.password()));
         } catch (LockedException ex) {
-            return ResponseEntity.status(HttpStatus.LOCKED)
-                    .body(Map.of("error", "This account is temporarily locked. Try again later."));
+            return lockedResponse(request.username());
         } catch (AuthenticationServiceException ex) {
             // The RADIUS server could not be reached, or is misconfigured. That is
             // not a wrong password, and two things follow from saying so.
@@ -169,6 +167,36 @@ public class AuthController {
      * without adding much real strength, so the client asked for a plain minimum
      * and that is what this enforces.
      */
+    /**
+     * "Locked", with how long is left on it.
+     *
+     * <p>Without the number somebody retries every minute for fifteen, and every
+     * one of those attempts is another failure against an account that is
+     * already locked. Telling them how long turns a locked account into a wait
+     * instead of an escalation.
+     *
+     * <p>Discloses nothing new: this response only ever reaches an account that
+     * genuinely is locked, and an unknown username is not locked and still gets
+     * the same generic "incorrect username or password" as a wrong one.
+     */
+    private ResponseEntity<?> lockedResponse(String username) {
+        long seconds = loginAttempts.lockedSecondsRemaining(username);
+        return ResponseEntity.status(HttpStatus.LOCKED).body(Map.of(
+                "error", "This account is temporarily locked. Try again in " + humanize(seconds) + ".",
+                // The raw number too, so the screen can count down rather than
+                // showing a figure that quietly goes stale while somebody reads it.
+                "retryAfterSeconds", seconds));
+    }
+
+    /** Rounds up, because "try again in 0 minutes" is worse than waiting a moment. */
+    static String humanize(long seconds) {
+        if (seconds <= 60) return "less than a minute";
+        long minutes = (seconds + 59) / 60;
+        if (minutes < 60) return minutes + (minutes == 1 ? " minute" : " minutes");
+        long hours = (minutes + 59) / 60;
+        return hours + (hours == 1 ? " hour" : " hours");
+    }
+
     static final int MINIMUM_PASSWORD_LENGTH = 8;
 
     static void validatePasswordStrength(String password) {
