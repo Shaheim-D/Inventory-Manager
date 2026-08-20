@@ -3,6 +3,7 @@ import {
   Card,
   CardActionArea,
   CardContent,
+  Checkbox,
   CircularProgress,
   Divider,
   Stack,
@@ -49,6 +50,15 @@ interface Props<T> {
   sort?: string;
   direction?: 'asc' | 'desc';
   onSortChange?: (sort: string, direction: 'asc' | 'desc') => void;
+  /**
+   * Turns on a checkbox column (and a checkbox on each card). Supplying it is
+   * the whole opt-in — every screen that does gets identical select-all,
+   * partial-state and card behaviour, which is the reason selection lives here
+   * rather than being rebuilt per screen.
+   */
+  selectable?: boolean;
+  selectedIds?: Set<string | number>;
+  onSelectionChange?: (next: Set<string | number>) => void;
 }
 
 /**
@@ -74,9 +84,36 @@ export function EntityTable<T>({
   sort,
   direction,
   onSortChange,
+  selectable,
+  selectedIds,
+  onSelectionChange,
 }: Props<T>) {
   const theme = useTheme();
   const compact = useMediaQuery(theme.breakpoints.down('md'));
+
+  const selected = selectedIds ?? new Set<string | number>();
+  const selecting = Boolean(selectable && onSelectionChange);
+
+  const toggle = (key: string | number) => {
+    const next = new Set(selected);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    onSelectionChange?.(next);
+  };
+
+  // Select-all covers the rows actually on screen, not every row the filter
+  // would match on other pages. Selecting things somebody cannot see and then
+  // deleting them is the kind of surprise this feature must not have.
+  const pageKeys = rows.map(rowKey);
+  const allOnPageSelected = pageKeys.length > 0 && pageKeys.every((key) => selected.has(key));
+  const someOnPageSelected = pageKeys.some((key) => selected.has(key));
+
+  const toggleAllOnPage = () => {
+    const next = new Set(selected);
+    if (allOnPageSelected) pageKeys.forEach((key) => next.delete(key));
+    else pageKeys.forEach((key) => next.add(key));
+    onSelectionChange?.(next);
+  };
 
   if (loading) {
     return (
@@ -133,9 +170,20 @@ export function EntityTable<T>({
           {rows.map((row) => {
             const body = (
               <CardContent>
-                <Typography variant="subtitle1" fontWeight={600} gutterBottom>
-                  {cardTitle ? cardTitle(row) : columns[0].render(row)}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                  {selecting && (
+                    <Checkbox
+                      size="small"
+                      sx={{ mt: -1, ml: -1 }}
+                      checked={selected.has(rowKey(row))}
+                      onChange={() => toggle(rowKey(row))}
+                      onClick={(event) => event.stopPropagation()}
+                    />
+                  )}
+                  <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                    {cardTitle ? cardTitle(row) : columns[0].render(row)}
+                  </Typography>
+                </Box>
                 <Stack spacing={0.75}>
                   {columns
                     .filter((column) => !column.secondary)
@@ -178,6 +226,17 @@ export function EntityTable<T>({
         <Table size="small">
           <TableHead>
             <TableRow>
+              {selecting && (
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    size="small"
+                    checked={allOnPageSelected}
+                    indeterminate={someOnPageSelected && !allOnPageSelected}
+                    onChange={toggleAllOnPage}
+                    inputProps={{ 'aria-label': 'Select all on this page' }}
+                  />
+                </TableCell>
+              )}
               {columns.map((column) => (
                 <TableCell key={column.header} align={column.align}>
                   {column.key && onSortChange ? (
@@ -208,7 +267,17 @@ export function EntityTable<T>({
                 hover={Boolean(onRowClick)}
                 sx={onRowClick ? { cursor: 'pointer' } : undefined}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
+                selected={selecting && selected.has(rowKey(row))}
               >
+                {selecting && (
+                  <TableCell padding="checkbox" onClick={(event) => event.stopPropagation()}>
+                    <Checkbox
+                      size="small"
+                      checked={selected.has(rowKey(row))}
+                      onChange={() => toggle(rowKey(row))}
+                    />
+                  </TableCell>
+                )}
                 {columns.map((column) => (
                   <TableCell key={column.header} align={column.align}>
                     {column.render(row)}

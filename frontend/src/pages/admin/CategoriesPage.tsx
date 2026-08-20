@@ -23,9 +23,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { Category, CoreFieldConfig, CustomFieldDefinition } from '../../api/types';
 import { EntityTable } from '../../components/EntityTable';
+import { BulkDeleteBar } from '../../components/BulkDeleteBar';
 import { PageHeader } from '../../components/PageHeader';
 
 export function CategoriesPage() {
+  const [selected, setSelected] = useState<Set<string | number>>(new Set());
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<Partial<Category> | null>(null);
   const [fieldsFor, setFieldsFor] = useState<Category | null>(null);
@@ -76,6 +78,14 @@ export function CategoriesPage() {
       )}
 
       <Paper variant="outlined">
+        <BulkDeleteBar
+          endpoint="/api/categories/bulk-delete"
+          selected={selected}
+          onClear={() => setSelected(new Set())}
+          invalidate={[['categories'], ['recycle-bin', 'categories']]}
+          noun="category"
+        />
+
         <EntityTable
           columns={[
             { header: 'Name', render: (category: Category) => category.name, secondary: true },
@@ -98,6 +108,9 @@ export function CategoriesPage() {
           ]}
           rows={categories.data ?? []}
           rowKey={(category) => category.id}
+          selectable
+          selectedIds={selected}
+          onSelectionChange={setSelected}
           loading={categories.isLoading}
           cardTitle={(category) => category.name}
           rowActions={(category) => (

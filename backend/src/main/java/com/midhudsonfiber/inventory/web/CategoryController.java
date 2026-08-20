@@ -6,7 +6,9 @@ import com.midhudsonfiber.inventory.repo.*;
 import com.midhudsonfiber.inventory.security.CurrentUser;
 import com.midhudsonfiber.inventory.service.CategoryFieldService;
 import com.midhudsonfiber.inventory.service.LifecycleGraphSeeder;
+import com.midhudsonfiber.inventory.domain.AssetCategory;
 import com.midhudsonfiber.inventory.security.PermissionKeys;
+import com.midhudsonfiber.inventory.service.DeletionService;
 import com.midhudsonfiber.inventory.visibility.FieldVisibilityService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -41,6 +43,8 @@ public class CategoryController {
     private final LifecycleGraphSeeder graphSeeder;
     private final CategoryFieldService categoryFields;
 
+    private final DeletionService deletions;
+
     public CategoryController(AssetCategoryRepository categories,
                               CustomFieldDefinitionRepository customFields,
                               LifecycleStateRepository lifecycleStates,
@@ -51,7 +55,9 @@ public class CategoryController {
                               FieldVisibilityService fieldVisibility,
                               CurrentUser currentUser,
                               LifecycleGraphSeeder graphSeeder,
-                              CategoryFieldService categoryFields) {
+                              CategoryFieldService categoryFields,
+                              DeletionService deletions) {
+        this.deletions = deletions;
         this.categories = categories;
         this.customFields = customFields;
         this.lifecycleStates = lifecycleStates;
@@ -83,7 +89,13 @@ public class CategoryController {
     @GetMapping
     @PreAuthorize("isAuthenticated()")
     public List<Map<String, Object>> list() {
-        return categories.findAllByOrderByNameAsc().stream().map(this::toView).toList();
+        // Live ones only. A removed category is gone from the application --
+        // including from the picker on the asset form, which would otherwise let
+        // somebody file an asset under something sitting in the Recycle Bin.
+        // Recovering it puts it back everywhere at once.
+        return categories.findAllByOrderByNameAsc().stream()
+                .filter(AssetCategory::isActive)
+                .map(this::toView).toList();
     }
 
     @GetMapping("/{id}")
@@ -165,14 +177,19 @@ public class CategoryController {
         return toView(saved);
     }
 
+    /**
+     * Removed, not erased. The category is deactivated and appears in the
+     * Recycle Bin, so mistyping a name and removing it is recoverable — and a
+     * category with live assets under it is still refused, because those assets
+     * would otherwise point at something nobody can see.
+     */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('" + PermissionKeys.CATEGORY_MANAGE + "')")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
-        if (assets.countByCategoryIdAndDeletedFalse(id) > 0) {
-            throw new ApiExceptions.ConflictException("This category still has assets and cannot be deleted.");
+        DeletionService.Outcome outcome = deletions.remove(DeletionService.Kind.CATEGORY, id);
+        if (!outcome.removed()) {
+            throw new ApiExceptions.ConflictException(outcome.reason());
         }
-        categories.delete(category(id));
-        audit.recordDelete(AuditService.ENTITY_ASSET_CATEGORY, id, null);
         return ResponseEntity.noContent().build();
     }
 

@@ -8,6 +8,7 @@ import com.midhudsonfiber.inventory.domain.UserPermissionOverride;
 import com.midhudsonfiber.inventory.repo.*;
 import com.midhudsonfiber.inventory.security.CurrentUser;
 import com.midhudsonfiber.inventory.security.PermissionKeys;
+import com.midhudsonfiber.inventory.service.DeletionService;
 import com.midhudsonfiber.inventory.security.PermissionResolver;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -32,13 +33,16 @@ public class UserAdminController {
     private final AuditService audit;
     private final CurrentUser currentUser;
 
+    private final DeletionService deletions;
+
     public UserAdminController(AppUserRepository users, RoleRepository roles,
                                PermissionRepository permissions,
                                UserPermissionOverrideRepository overrides,
                                PermissionResolver permissionResolver,
                                PasswordEncoder passwordEncoder,
                                AuditService audit,
-                               CurrentUser currentUser) {
+                               CurrentUser currentUser,
+                               DeletionService deletions) {
         this.users = users;
         this.roles = roles;
         this.permissions = permissions;
@@ -47,6 +51,7 @@ public class UserAdminController {
         this.passwordEncoder = passwordEncoder;
         this.audit = audit;
         this.currentUser = currentUser;
+        this.deletions = deletions;
     }
 
     public record CreateUserRequest(@NotBlank String username, String email, String password,
@@ -140,6 +145,28 @@ public class UserAdminController {
     }
 
     /** Unlocks an account without waiting out the lockout window. */
+    /**
+     * Removing a user deactivates the account; it never deletes the row.
+     *
+     * <p>That is not a soft preference. {@code audit_event.user_id} references
+     * {@code app_user}, so destroying a row would either fail or take the
+     * attribution of everything that person ever did with it — and "who changed
+     * this?" outliving the account is the entire point of an audit trail.
+     *
+     * <p>Refuses your own account and the last administrator who can still sign
+     * in. The account appears in the Recycle Bin and can be brought back with
+     * its history and roles intact.
+     */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('" + PermissionKeys.USER_MANAGE + "')")
+    public ResponseEntity<Void> remove(@PathVariable Long id) {
+        DeletionService.Outcome outcome = deletions.remove(DeletionService.Kind.USER, id);
+        if (!outcome.removed()) {
+            throw new ApiExceptions.ConflictException(outcome.reason());
+        }
+        return ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/{id}/unlock")
     @PreAuthorize("hasAuthority('" + PermissionKeys.USER_MANAGE + "')")
     @Transactional

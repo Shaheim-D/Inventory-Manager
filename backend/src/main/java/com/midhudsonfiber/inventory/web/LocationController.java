@@ -7,6 +7,7 @@ import com.midhudsonfiber.inventory.repo.AssetRepository;
 import com.midhudsonfiber.inventory.repo.LocationRepository;
 import com.midhudsonfiber.inventory.repo.LocationTypeRepository;
 import com.midhudsonfiber.inventory.security.PermissionKeys;
+import com.midhudsonfiber.inventory.service.DeletionService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -31,13 +32,16 @@ public class LocationController {
     private final LocationTypeRepository locationTypes;
     private final AssetRepository assets;
     private final AuditService audit;
+    private final DeletionService deletions;
 
     public LocationController(LocationRepository locations, LocationTypeRepository locationTypes,
-                              AssetRepository assets, AuditService audit) {
+                              AssetRepository assets, AuditService audit,
+                              DeletionService deletions) {
         this.locations = locations;
         this.locationTypes = locationTypes;
         this.assets = assets;
         this.audit = audit;
+        this.deletions = deletions;
     }
 
     public record LocationRequest(@NotBlank String name,
@@ -98,31 +102,19 @@ public class LocationController {
 
     /**
      * Locations are deactivated rather than deleted — a location with history is
-     * not the same thing as a mistake to erase.
+     * not the same thing as a mistake to erase, and a location somebody has just
+     * mistyped should not be a one-way door either.
      *
-     * <p>This used to hard-delete when nothing pointed at the location, on the
-     * reasoning that an unused row is a mistake and nothing is lost. What that
-     * missed is that "nothing points at it yet" is the normal state of a
-     * location somebody just finished typing, so the case where the row was
-     * genuinely disposable and the case where somebody deleted the wrong new
-     * site were the same case — and only one of them was recoverable. Now both
-     * are: deleting always deactivates, and **Recycle Bin** brings it back.
-     *
-     * <p>The cost is rows that accumulate rather than disappear, which is the
-     * same trade assets already make and the same reason.
+     * <p>The rule itself lives in {@link DeletionService}, because bulk delete
+     * has to refuse exactly what this refuses. A refusal comes back as a value
+     * and becomes a 409 here, so this endpoint behaves as it always did.
      */
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('" + PermissionKeys.LOCATION_WRITE + "')")
     public ResponseEntity<Void> deactivate(@PathVariable Long id) {
-        if (locations.existsByParentId(id)) {
-            throw new ApiExceptions.ConflictException("This location has child locations. Move or remove them first.");
-        }
-        Location location = location(id);
-        if (location.isActive()) {
-            location.setActive(false);
-            locations.save(location);
-            audit.recordFieldChanges(AuditService.ENTITY_LOCATION, id,
-                    List.of(AuditService.FieldChange.of("is_active", true, false)));
+        DeletionService.Outcome outcome = deletions.remove(DeletionService.Kind.LOCATION, id);
+        if (!outcome.removed()) {
+            throw new ApiExceptions.ConflictException(outcome.reason());
         }
         return ResponseEntity.noContent().build();
     }

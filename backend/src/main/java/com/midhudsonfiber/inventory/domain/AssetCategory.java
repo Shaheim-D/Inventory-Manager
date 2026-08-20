@@ -25,11 +25,21 @@ public class AssetCategory {
     @Column(name = "verification_interval_days")
     private Integer verificationIntervalDays;
 
+    /**
+     * FALSE means removed and recoverable from the Recycle Bin — the same flag,
+     * name and meaning that Location, DeviceModel and AppUser already use.
+     */
+    @Column(name = "is_active", nullable = false)
+    private boolean active = true;
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private Instant createdAt;
 
     @Column(name = "updated_at", insertable = false, updatable = false)
     private Instant updatedAt;
+
+    public boolean isActive() { return active; }
+    public void setActive(boolean active) { this.active = active; }
 
     public Long getId() { return id; }
     public String getName() { return name; }

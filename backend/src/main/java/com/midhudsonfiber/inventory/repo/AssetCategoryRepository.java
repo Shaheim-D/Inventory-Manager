@@ -9,4 +9,7 @@ import java.util.Optional;
 public interface AssetCategoryRepository extends JpaRepository<AssetCategory, Long> {
     Optional<AssetCategory> findByName(String name);
     List<AssetCategory> findAllByOrderByNameAsc();
+
+    /** Removed categories — what the recycle bin offers to bring back. */
+    List<AssetCategory> findByActiveFalseOrderByNameAsc();
 }

@@ -9,6 +9,7 @@ import {
   Dialog,
   DialogActions,
   DialogContent,
+  DialogContentText,
   DialogTitle,
   Divider,
   Grid,
@@ -37,6 +38,21 @@ export function AssetDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { has } = useAuth();
+  const [deleting, setDeleting] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
+
+  // A reason is optional but offered, because the audit trail keeps it and
+  // "why is this gone?" is asked far more often than it is answered.
+  const removeAsset = useMutation({
+    mutationFn: () =>
+      api.del(`/api/assets/${id}`, deleteReason.trim() ? { reason: deleteReason.trim() } : undefined),
+    onSuccess: () => {
+      setDeleting(false);
+      navigate('/');
+    },
+    onError: (caught) =>
+      setError(caught instanceof ApiError ? caught.message : 'That asset could not be deleted.'),
+  });
   // Keyed rather than indexed. Tabs are permission-gated, so a numeric index
   // silently means a different tab for a viewer who cannot see one of them --
   // hiding Audit History used to shift Lifecycle to 1 while the render still
@@ -140,6 +156,13 @@ export function AssetDetailPage() {
             {has('asset:write') && !data.serialized && (
               <Button variant="outlined" onClick={() => confirmInventory.mutate()}>
                 Confirm still in inventory
+              </Button>
+            )}
+            {/* There was no way to delete an asset from the UI at all, which is
+                how somebody ends up editing a row into a tombstone instead. */}
+            {has('asset:delete') && (
+              <Button variant="outlined" color="error" onClick={() => setDeleting(true)}>
+                Delete
               </Button>
             )}
           </>
@@ -402,6 +425,40 @@ export function AssetDetailPage() {
             }
           >
             Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={deleting} onClose={() => setDeleting(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Delete this asset?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            It moves to the <strong>Recycle Bin</strong> and can be recovered at any time.
+            Nothing is erased.
+          </DialogContentText>
+          <DialogContentText sx={{ mt: 2 }}>
+            Its serial number and asset tag are released, so a replacement can be entered with the
+            same label. If something else takes them, recovering this asset is blocked until that
+            is cleared — the Recycle Bin says so.
+          </DialogContentText>
+          <TextField
+            fullWidth
+            sx={{ mt: 2 }}
+            label="Reason (optional)"
+            value={deleteReason}
+            onChange={(event) => setDeleteReason(event.target.value)}
+            helperText="Kept in the audit history and shown in the deletion notification."
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleting(false)}>Cancel</Button>
+          <Button
+            color="error"
+            variant="contained"
+            disabled={removeAsset.isPending}
+            onClick={() => removeAsset.mutate()}
+          >
+            {removeAsset.isPending ? 'Deleting…' : 'Delete'}
           </Button>
         </DialogActions>
       </Dialog>
