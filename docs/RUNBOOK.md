@@ -629,10 +629,13 @@ everybody with the roles they already had. It never touches passwords,
 lockouts, or the failed-attempt counter — there is a test on every build
 asserting exactly that.
 
-**A barcode scan does nothing.** Scanning an asset tag anywhere in the
-application opens the asset carrying it. There is no driver and no pairing:
-the scanner is a keyboard wedge, so it types the tag and presses Enter, and the
-application tells that apart from a person typing purely by speed.
+**A barcode scan does nothing.** Scanning a barcode anywhere in the application
+opens the asset carrying it, matching on **asset tag or serial number** — our
+own sticker and the manufacturer's label are both barcodes, and the person
+holding the scanner should not have to know which kind they are pointed at.
+There is no driver and no pairing: the scanner is a keyboard wedge, so it types
+the code and presses Enter, and the application tells that apart from a person
+typing purely by speed.
 
 Three things to check, in this order:
 
@@ -644,15 +647,24 @@ Three things to check, in this order:
    field, the scan goes into that field instead, deliberately — scanning
    straight into the asset-tag box while creating an asset is a thing people
    want. Click on empty page background first.
-3. **The tag has to be on an asset.** A scan that matches nothing says so, and
-   offers a search instead: the sticker may be on something not entered yet, or
-   the number may be recorded in a different field. Matching is on **asset tag
-   only**, and ignores case.
+3. **The code has to be on an asset.** A scan that matches nothing says so in a
+   dialog — "this asset does not exist" — and offers to create it. **Yes** opens
+   the new-asset form with the scanned code already filled into the asset tag,
+   and says so on the form, because which of the two fields a barcode belongs in
+   is not knowable from the barcode: move it to Serial number if what was
+   scanned was the manufacturer's label. **No** just closes the dialog. Somebody
+   who holds `asset:read` without `asset:write` is told the asset is not there
+   and offered no Yes, because the create form would refuse them anyway.
 
-A deleted asset stops answering for its tag immediately, and the tag becomes
-available for a new asset — the same rule the uniqueness constraint follows, so
-that something deleted by mistake can be re-created with the sticker still
-physically on it.
+Matching tries the asset tag first and then the serial number, and ignores case
+in both. Tag first matters only in the one case where a code is both — a
+manufacturer's serial that happens to collide with a tag we printed — and there
+the sticker we printed wins, because that is what somebody scanning it meant.
+
+A deleted asset stops answering for its tag and its serial immediately, and both
+become available for a new asset — the same rule the two uniqueness constraints
+follow, so that something deleted by mistake can be re-created with the sticker
+still physically on it.
 
 **Logs.** `docker compose logs -f app`. Everything goes to stdout/stderr; there
 is deliberately no log aggregation stack at this size.

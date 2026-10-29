@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   Alert,
   Autocomplete,
@@ -55,10 +55,22 @@ export function AssetFormPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const [form, setForm] = useState<FormState>({ assigneeType: 'NONE', quantity: 1 });
+  // A scan that matched nothing offers to create the asset, and arrives here
+  // carrying the code so it does not have to be typed in again. Ignored while
+  // editing: an existing asset's tag comes from the asset, and a stale query
+  // parameter must never overwrite one.
+  const [searchParams] = useSearchParams();
+  const scannedTag = editing ? null : searchParams.get('assetTag');
+
+  const [form, setForm] = useState<FormState>(() => ({
+    assigneeType: 'NONE',
+    quantity: 1,
+    ...(scannedTag ? { assetTag: scannedTag } : {}),
+  }));
   const [customFields, setCustomFields] = useState<Record<string, unknown>>({});
   const [subcategoryIds, setSubcategoryIds] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [showScanHint, setShowScanHint] = useState(true);
 
   const categories = useQuery({ queryKey: ['categories'], queryFn: () => api.get<Category[]>('/api/categories') });
   const locations = useQuery({ queryKey: ['locations'], queryFn: () => api.get<Location[]>('/api/locations') });
@@ -239,6 +251,20 @@ export function AssetFormPage() {
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
+        </Alert>
+      )}
+
+      {/*
+        Which of the two fields the code belongs in is not knowable from the
+        barcode: our own sticker carries the asset tag, the manufacturer's
+        carries the serial. It lands in the asset tag and this says so, because
+        a value silently placed in the wrong column is worse than one the person
+        who scanned it was told about.
+      */}
+      {scannedTag && showScanHint && (
+        <Alert severity="info" sx={{ mb: 2 }} onClose={() => setShowScanHint(false)}>
+          Filled the asset tag in from your scan. Move it to <strong>Serial number</strong> if what
+          you scanned was the manufacturer's label.
         </Alert>
       )}
 

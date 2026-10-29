@@ -83,25 +83,37 @@ public class AssetController {
     }
 
     /**
-     * Resolve an asset tag to the asset carrying it — what a barcode scan asks.
+     * Resolve a scanned barcode to the asset it identifies — asset tag first,
+     * then serial number.
      *
      * <p>Answers with the id and label only, not the asset. The client's next
      * move is to open that asset, which goes through {@link #get} and applies
      * field visibility there; returning a whole asset from here would be a
      * second place for a restricted field to escape from, for no gain.
      *
-     * <p>A tag that matches nothing is 404 rather than an empty 200: the caller
+     * <p>A code that matches nothing is 404 rather than an empty 200: the caller
      * is asking "which asset is this", and "none" is genuinely not finding it.
-     * The tag is a query parameter rather than a path segment because tags are
+     * The code is a query parameter rather than a path segment because it is
      * whatever is printed on a sticker, and a slash in one would otherwise
      * change the route.
+     *
+     * <p>{@code assetTag} is accepted as the old name for {@code code}. It was
+     * the only name while the lookup matched tags alone, and it now resolves a
+     * serial too — the parameter a caller used says nothing about what label the
+     * scanner was pointed at, so narrowing the search on the strength of it
+     * would only fail in the case the widening exists for.
      */
     @GetMapping("/lookup")
     @PreAuthorize("hasAuthority('" + PermissionKeys.ASSET_READ + "')")
-    public Map<String, Object> lookupByTag(@RequestParam String assetTag) {
-        Asset asset = assets.findByAssetTag(assetTag)
+    public Map<String, Object> lookup(@RequestParam(required = false) String code,
+                                      @RequestParam(required = false) String assetTag) {
+        String scanned = code == null || code.isBlank() ? assetTag : code;
+        if (scanned == null || scanned.isBlank()) {
+            throw new ApiExceptions.BadRequestException("Give a code to look up.");
+        }
+        Asset asset = assets.findByScannedCode(scanned)
                 .orElseThrow(() -> new ApiExceptions.NotFoundException(
-                        "No asset has the tag " + assetTag + "."));
+                        "No asset has the tag or serial number " + scanned + "."));
         return Map.of("id", asset.getId(), "displayLabel", asset.displayLabel());
     }
 

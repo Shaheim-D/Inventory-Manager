@@ -16,8 +16,9 @@ It answers four questions about every piece of equipment the company owns:
 - **Reporting** with CSV and PDF export, including a custom report builder.
 - **Notifications** in the application and by email, on warranties, purchase
   orders, imports and asset changes.
-- **Barcode scanning** — scan an asset tag anywhere in the app and land on that
-  asset.
+- **Barcode scanning** — scan an asset tag or a manufacturer's serial number
+  anywhere in the app and land on that asset, or be offered the create form when
+  nothing matches.
 - **Integrations** that read from Zabbix and NetBox, where nothing an
   integration proposes reaches an asset until a person confirms it.
 - **RADIUS sign-in** against a primary and secondary NPS, in addition to

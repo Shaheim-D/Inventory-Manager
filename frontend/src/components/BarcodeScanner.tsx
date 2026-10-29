@@ -1,17 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Alert, Button, Snackbar } from '@mui/material';
+import {
+  Alert,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  Snackbar,
+} from '@mui/material';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 
 /**
- * Scan an asset tag anywhere in the application and land on that asset.
+ * Scan a barcode anywhere in the application and land on that asset.
  *
- * Asset tag stickers carry a barcode of the tag number. The scanners that read
- * them are keyboard wedges: they type the characters as if somebody had, very
- * fast, and finish with Enter. So there is no device to talk to and no driver
- * to install — the whole feature is knowing the difference between a scan and
- * a person at a keyboard.
+ * Asset tag stickers carry a barcode of the tag number, and the manufacturer's
+ * label carries one of the serial number — often the only barcode on something
+ * that just came out of a box. The lookup tries both, because the person
+ * holding the scanner should not have to know which kind of label they are
+ * pointed at.
+ *
+ * The scanners that read them are keyboard wedges: they type the characters as
+ * if somebody had, very fast, and finish with Enter. So there is no device to
+ * talk to and no driver to install — the whole feature is knowing the
+ * difference between a scan and a person at a keyboard.
  *
  * That difference is speed. A wedge emits characters a few milliseconds apart;
  * nobody types four characters with fifty-millisecond gaps and then hits Enter.
@@ -26,7 +40,7 @@ import { useAuth } from '../auth/AuthContext';
  *     straight into the asset-tag box on the asset form is a thing people will
  *     want to do, and it keeps working precisely because this stays out of the
  *     way when a field has focus.
- *   - **It does not guess.** A tag matching nothing says so, rather than
+ *   - **It does not guess.** A code matching nothing says so, rather than
  *     silently doing nothing or dumping the operator somewhere unexpected.
  *
  * Requires `asset:read`; without it there is nothing to navigate to.
@@ -48,31 +62,36 @@ export function BarcodeScanner() {
   const { has } = useAuth();
   const enabled = has('asset:read');
 
+  // Whether there is anywhere to send somebody who says yes. A Customer
+  // Service account reads assets without creating them, and offering to create
+  // one would land them on a route its own guard refuses.
+  const canCreate = has('asset:write');
+
   const buffer = useRef('');
   const lastKeyAt = useRef(0);
   type Result =
     | { kind: 'found'; label: string }
-    | { kind: 'missing'; tag: string }
+    | { kind: 'missing'; code: string }
     | { kind: 'error'; message: string };
   const [result, setResult] = useState<Result | null>(null);
 
   const resolve = useCallback(
-    async (tag: string) => {
+    async (code: string) => {
       try {
-        const found = await api.get<Found>(`/api/assets/lookup?assetTag=${encodeURIComponent(tag)}`);
+        const found = await api.get<Found>(`/api/assets/lookup?code=${encodeURIComponent(code)}`);
         navigate(`/assets/${found.id}`);
         setResult({ kind: 'found', label: found.displayLabel });
       } catch (caught) {
         if (caught instanceof ApiError && caught.status === 404) {
-          setResult({ kind: 'missing', tag });
+          setResult({ kind: 'missing', code });
           return;
         }
         // Anything else — offline, a 500, a session that expired between the
-        // scan and the lookup — is not "no such tag". Reporting it as one would
-        // send somebody hunting for a sticker problem they do not have.
+        // scan and the lookup — is not "no such asset". Reporting it as one
+        // would send somebody hunting for a sticker problem they do not have.
         setResult({
           kind: 'error',
-          message: caught instanceof ApiError ? caught.message : 'Could not look that tag up.',
+          message: caught instanceof ApiError ? caught.message : 'Could not look that code up.',
         });
       }
     },
@@ -114,7 +133,8 @@ export function BarcodeScanner() {
         // Enter closes a scan only if it arrived as fast as the rest of it.
         if (scanned.length >= MIN_SCAN_LENGTH && gap <= MAX_KEYSTROKE_GAP_MS) {
           // Swallow it, so the Enter that terminates a barcode cannot also
-          // press whatever button happens to have focus.
+          // press whatever button happens to have focus — including the Yes
+          // below, which would otherwise answer its own question.
           event.preventDefault();
           void resolve(scanned);
         }
@@ -136,46 +156,70 @@ export function BarcodeScanner() {
 
   if (!enabled) return null;
 
+  const missing = result?.kind === 'missing' ? result.code : null;
+
   return (
-    <Snackbar
-      open={result !== null}
-      autoHideDuration={result?.kind === 'missing' ? 8000 : 3000}
-      onClose={() => setResult(null)}
-      anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-    >
-      {result?.kind === 'found' ? (
-        <Alert severity="success" variant="filled" onClose={() => setResult(null)}>
-          Scanned — opened {result.label}
-        </Alert>
-      ) : result?.kind === 'missing' ? (
-        <Alert
-          severity="warning"
-          variant="filled"
-          onClose={() => setResult(null)}
-          action={
-            // The tag may belong to something recorded under a different field,
-            // or not recorded at all. A search is the useful next move, and it
-            // is one click rather than retyping what was just scanned.
+    <>
+      {/*
+        A miss is a dialog rather than a toast because it asks a question, and a
+        question that times out and disappears is worse than no question. A hit
+        stays a toast: the navigation has already happened and the toast only
+        says which asset, so nothing is lost if it goes unread.
+      */}
+      <Dialog
+        open={missing !== null}
+        onClose={() => setResult(null)}
+        maxWidth="xs"
+        fullWidth
+        aria-labelledby="scan-miss-title"
+      >
+        <DialogTitle id="scan-miss-title">Oops, this asset does not exist</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Nothing in the inventory carries the asset tag or serial number{' '}
+            <strong>{missing}</strong>.
+            {canCreate
+              ? ' Would you like to create a new one?'
+              : ' Ask somebody who can add assets to enter it.'}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setResult(null)}>{canCreate ? 'No' : 'Close'}</Button>
+          {canCreate && (
             <Button
-              color="inherit"
-              size="small"
+              variant="contained"
               onClick={() => {
-                const { tag } = result;
+                // The scanned code travels to the form, because having to
+                // retype what was just scanned defeats the scanner. It arrives
+                // in the asset tag, and the form says so — it is the field our
+                // own stickers carry, and the only one of the two that can be
+                // chosen without knowing which label was read.
                 setResult(null);
-                navigate(`/assets?q=${encodeURIComponent(tag)}`);
+                navigate(`/assets/new?assetTag=${encodeURIComponent(missing ?? '')}`);
               }}
             >
-              Search
+              Yes
             </Button>
-          }
-        >
-          No asset has the tag {result.tag}
-        </Alert>
-      ) : (
-        <Alert severity="error" variant="filled" onClose={() => setResult(null)}>
-          {result?.kind === 'error' ? result.message : ''}
-        </Alert>
-      )}
-    </Snackbar>
+          )}
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar
+        open={result !== null && result.kind !== 'missing'}
+        autoHideDuration={3000}
+        onClose={() => setResult(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        {result?.kind === 'found' ? (
+          <Alert severity="success" variant="filled" onClose={() => setResult(null)}>
+            Scanned — opened {result.label}
+          </Alert>
+        ) : (
+          <Alert severity="error" variant="filled" onClose={() => setResult(null)}>
+            {result?.kind === 'error' ? result.message : ''}
+          </Alert>
+        )}
+      </Snackbar>
+    </>
   );
 }

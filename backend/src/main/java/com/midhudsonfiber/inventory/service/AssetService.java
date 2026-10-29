@@ -131,7 +131,18 @@ public class AssetService {
     }
 
     /**
-     * The live asset carrying this tag, for resolving a scanned barcode.
+     * The live asset a scanned barcode identifies, by asset tag or serial number.
+     *
+     * <p>Both, because a scanner is pointed at whatever label is on the thing.
+     * Our own asset-tag sticker is one barcode; the manufacturer's serial-number
+     * label is another, and on a router that arrived in a box it is often the
+     * only one there is. Asking the operator to know which kind they are holding
+     * is asking the wrong person.
+     *
+     * <p>Tag first, then serial, and the order matters in the one case where a
+     * code is both: somebody scanning a sticker we printed means the asset that
+     * carries that tag. The two indexes are independent, so nothing stops a
+     * manufacturer's serial from colliding with a tag we assigned.
      *
      * <p>Returns empty rather than throwing when nothing matches: a scan that
      * finds nothing is an ordinary outcome — a sticker on something not yet
@@ -139,9 +150,11 @@ public class AssetService {
      * rather than treating it as an error.
      */
     @Transactional(readOnly = true)
-    public Optional<Asset> findByAssetTag(String assetTag) {
-        if (assetTag == null || assetTag.isBlank()) return Optional.empty();
-        return assets.findFirstByAssetTagIgnoreCaseAndDeletedFalse(assetTag.trim());
+    public Optional<Asset> findByScannedCode(String code) {
+        if (code == null || code.isBlank()) return Optional.empty();
+        String scanned = code.trim();
+        return assets.findFirstByAssetTagIgnoreCaseAndDeletedFalse(scanned)
+                .or(() -> assets.findFirstBySerialNumberIgnoreCaseAndDeletedFalse(scanned));
     }
 
     @Transactional
