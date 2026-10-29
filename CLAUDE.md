@@ -140,3 +140,30 @@ environment variable and `SecretResolver` reads it when needed.
 Directory sync is not authentication. It changes role assignment and nothing
 else, and `PluginFrameworkIntegrationTest` asserts on every build that it leaves
 `password_hash`, `locked_until` and `failed_login_attempts` untouched.
+
+## Remote authentication
+
+Local accounts, then RADIUS, then LDAP — that order is the safety property, not
+a preference. A directory that is unreachable or misconfigured must never be
+able to lock an administrator out of the local account they need to fix it, so
+`DaoAuthenticationProvider` stays first in the chain.
+
+RADIUS and LDAP both exist on purpose, and V26's history is the reason. V26
+removed LDAP for RADIUS and declined to carry group-to-role sync over, because
+a RADIUS reply carries no group membership. V31 brought LDAP back *alongside*
+RADIUS for exactly that gap: `memberOf` is what lets a role follow an AD group.
+If you find yourself trying to derive groups from a RADIUS reply, that is the
+guess V26 refused to make — use LDAP.
+
+Both role assigners follow the same three rules, and each one is load-bearing:
+only accounts whose `auth_provider` matches are touched (so a local
+administrator is never demoted by their own directory entry), roles are
+**replaced** rather than added to (directory-driven access that only ever grants
+is an accumulation, not access control), and no recognised group means
+`Unassigned` rather than nothing.
+
+**An empty LDAP password is an anonymous bind, which succeeds.** That is the
+classic LDAP authentication bypass, so it is refused in both
+`LdapClientRunner` and `LdapAuthenticationProvider` — two layers, deliberately,
+because one is one too few. `LdapAuthenticationTest` asserts it against a real
+directory configured to accept anonymous binds.

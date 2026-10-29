@@ -1,6 +1,7 @@
 package com.midhudsonfiber.inventory.config;
 
 import com.midhudsonfiber.inventory.security.AppUserDetailsService;
+import com.midhudsonfiber.inventory.security.LdapAuthenticationProvider;
 import com.midhudsonfiber.inventory.security.RadiusAuthenticationProvider;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
@@ -32,13 +33,19 @@ public class SecurityConfig {
     }
 
     /**
-     * Local accounts first, then RADIUS.
+     * Local accounts first, then RADIUS, then LDAP.
      *
      * <p>The order is the safety property. {@code DaoAuthenticationProvider} is
-     * ahead of RADIUS, so a RADIUS server that is unreachable, misconfigured, or
-     * pointed at the wrong host can never lock an administrator out of the local
-     * account they would need to fix it. Losing network sign-in is an incident;
-     * losing every way in is an outage.
+     * ahead of both network providers, so a RADIUS server or a directory that is
+     * unreachable, misconfigured, or pointed at the wrong host can never lock an
+     * administrator out of the local account they would need to fix it. Losing
+     * network sign-in is an incident; losing every way in is an outage.
+     *
+     * <p>RADIUS and LDAP are both here on purpose, and either may be off. They
+     * answer different questions: RADIUS proves a password against NPS, while
+     * LDAP additionally carries {@code memberOf}, which is what lets a role
+     * follow a directory group. A provider that is not configured returns null
+     * rather than failing, so the chain simply moves on.
      *
      * <p>Authentication is core, synchronous, always-on functionality and is kept
      * strictly separate from the Plugin Framework. Nothing here participates in
@@ -53,11 +60,12 @@ public class SecurityConfig {
     @Bean
     public AuthenticationManager authenticationManager(AppUserDetailsService userDetailsService,
                                                        PasswordEncoder passwordEncoder,
-                                                       RadiusAuthenticationProvider radius) {
+                                                       RadiusAuthenticationProvider radius,
+                                                       LdapAuthenticationProvider ldap) {
         DaoAuthenticationProvider local = new DaoAuthenticationProvider(userDetailsService);
         local.setPasswordEncoder(passwordEncoder);
 
-        return new ProviderManager(List.of(local, radius));
+        return new ProviderManager(List.of(local, radius, ldap));
     }
 
     @Bean

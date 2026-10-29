@@ -207,8 +207,8 @@ const NAV: NavSection[] = [
         permissions: ['notification_rule:manage'],
       },
       {
-        label: 'RADIUS',
-        to: '/settings/radius',
+        label: 'Remote Authentication',
+        to: '/settings/remote-authentication',
         icon: <VpnKeyIcon />,
         permissions: ['user:manage'],
       },

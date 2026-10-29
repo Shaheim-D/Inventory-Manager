@@ -114,7 +114,17 @@ class MigrationValidationTest extends AbstractIntegrationTest {
         // destination moved out of .env and a crontab and into a row an
         // administrator can actually see. One row, id fixed at 1, the same
         // convention branding and mail_settings use.
-        assertThat(tables).isEqualTo(42);
+        //
+        // V30 left it at 42, which is worth writing down for the same reason
+        // V26's non-move was: it added asset_category.is_active so a category
+        // could be deleted recoverably, which is a column and not a table.
+        //
+        // V31 moves it to 44 with ldap_settings and ldap_role_mapping. Two
+        // tables for the same reason RADIUS has two: the configuration is one
+        // row, and "this directory group grants this role" is a row per
+        // mapping. LDAP came back alongside RADIUS rather than replacing it,
+        // because memberOf answers the question a RADIUS reply cannot.
+        assertThat(tables).isEqualTo(44);
     }
 
     @Test

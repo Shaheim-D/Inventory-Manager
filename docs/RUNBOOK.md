@@ -511,7 +511,7 @@ are managed on the network; Inventory Manager will not reset those.
 
 **A RADIUS user has less access than expected.** Their roles come from the reply
 attribute NPS returns -- Filter-Id by default, Class as the alternative -- mapped
-on **Settings > RADIUS**. A value nothing matches, or no attribute at all, leaves
+on **Settings > Remote Authentication**. A value nothing matches, or no attribute at all, leaves
 them on **Unassigned**: assets and the dashboard, read-only. Check the NPS
 network policy returns the exact string the mapping expects; matching ignores
 case but nothing else.
@@ -522,9 +522,23 @@ sign-in, so removing somebody from a group in NPS removes their access here.
 Accounts created in this application are never re-roled by a RADIUS sign-in --
 which is what stops an NPS profile demoting your own administrator.
 
+**An LDAP user has less access than expected.** Their roles come from their
+Active Directory groups, mapped under **Settings > Remote Authentication > LDAP**.
+A mapping matches either the group's full DN or just its CN, ignoring case. Press
+**Test sign-in** with that person's account: it prints the exact strings
+`memberOf` returned, which is what a mapping has to match, and says which roles
+they would get. Somebody in no mapped group lands on **Unassigned** -- assets and
+the dashboard, read-only -- rather than on a screen that refuses everything.
+
+**RADIUS or LDAP -- which should be on?** Both may be, and they are not
+redundant. RADIUS proves a password against NPS. LDAP proves the password *and*
+reads group membership, which is the only way a role can follow an AD group; a
+RADIUS reply carries no groups, which is why V26 declined to map them. If you
+want directory groups to drive access, that is LDAP's job.
+
 **Nobody can sign in with network credentials.** Local accounts are unaffected --
 they are tried first, so an administrator with a password set in the application
-can always get in and look. Then **Settings > RADIUS**, and press **Send a test
+can always get in and look. Then **Settings > Remote Authentication**, and press **Send a test
 sign-in**: it distinguishes "cannot reach the server" from "the server rejected
 that", which is the fork the sign-in screen cannot show you, and it names which
 of the two servers answered.
@@ -534,7 +548,7 @@ screen says so rather than failing at the next sign-in. Shared secrets are
 encrypted with a key that is deliberately **not in the database** -- so a leaked
 `pg_dump` is inert, and a restore onto a host without the key cannot read them.
 Either carry `APP_ENCRYPTION_KEY` (or `data/secret.key`) across with the dump, or
-re-enter the secrets on **Settings > RADIUS**. Nothing else in the application
+re-enter the secrets on **Settings > Remote Authentication**. Nothing else in the application
 uses that key.
 
 **Someone cannot see cost fields.** Also expected, and by design. Field

@@ -27,7 +27,6 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { RadiusSettings, Role } from '../../api/types';
-import { PageHeader } from '../../components/PageHeader';
 
 /**
  * RADIUS/NPS sign-in, against a primary and a secondary server.
@@ -64,7 +63,7 @@ const emptyServer = (): ServerForm => ({
   secretReadable: false,
 });
 
-export function RadiusSettingsPage() {
+export function RadiusPanel() {
   const queryClient = useQueryClient();
 
   const settings = useQuery({
@@ -190,18 +189,6 @@ export function RadiusSettingsPage() {
 
   return (
     <>
-      <PageHeader
-        title="RADIUS"
-        help={
-          <>
-            Lets people sign in with their network credentials, checked against RADIUS/NPS.
-            Two servers can be configured; the secondary is used when the primary does not
-            answer. A first-time user gets an account with no permissions until somebody
-            assigns roles. Passwords set in this application keep working either way — this
-            is in addition to local sign-in, never instead of it.
-          </>
-        }
-      />
 
       {settings.isLoading && <LinearProgress />}
       {banner && (
