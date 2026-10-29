@@ -94,8 +94,38 @@ public class ApiExceptionHandler {
         if (detail.contains("asset_check")) {
             return "Assignee type does not match the assignee value supplied.";
         }
-        return detail;
+        if (detail.contains("category_core_field_asset_category_id_core_field_name_key")) {
+            return "That field is already on this category.";
+        }
+
+        // Anything still carrying the shape of a raw driver error stops here.
+        // Postgres puts the table, the column, the constraint name and the
+        // offending VALUES in these messages, and "duplicate key value violates
+        // unique constraint \"category_core_field_asset_category_id_core_field_
+        // name_key\"" is not a sentence anybody can act on -- it is a schema
+        // disclosure wearing an error message. The detail is logged above,
+        // where whoever can fix it will look.
+        if (RAW_DATABASE_ERROR.matcher(detail).find()) {
+            return "That change conflicts with something already saved. "
+                   + "If it keeps happening, the server log has the detail.";
+        }
+
+        // What is left is a trigger's own RAISE EXCEPTION -- written to be read
+        // by a person, which is the whole reason they are passed through. The
+        // driver's "ERROR: " prefix is not part of that sentence.
+        return detail.startsWith("ERROR: ") ? detail.substring("ERROR: ".length()).trim() : detail;
     }
+
+    /**
+     * The fingerprints of a message written by the database rather than by us.
+     * Deliberately matched on the framing, not on any one constraint, so a
+     * constraint added later is generic-by-default instead of leaking until
+     * somebody notices.
+     */
+    private static final java.util.regex.Pattern RAW_DATABASE_ERROR = java.util.regex.Pattern.compile(
+            "violates .*constraint|duplicate key value|Detail: Key \\(|SQLState|"
+            + "null value in column|invalid input syntax|out of range for type",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
 
     private static String rootMessage(Throwable ex) {
         Throwable cause = ex;
