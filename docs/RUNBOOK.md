@@ -583,10 +583,27 @@ run. So a cleared warranty notice will not reappear tomorrow, and the audit
 trail of what was sent is intact regardless of what anyone tidied away.
 
 **The scheduled checks.** Two sweeps run hourly and decide for themselves
-whether they have anything new to say: warranty expiry, and bulk stock overdue
-for verification. Both can be run on demand from **Settings → Notification
-Rules** rather than waiting — running either twice is harmless, because
-de-duplication means the second run raises nothing. Their schedules are
+whether they have anything new to say: expiry — warranties *and* support
+contracts, in one sweep over both — and bulk stock overdue for verification.
+Both can be run on demand from **Settings → Notification Rules** rather than
+waiting — running either twice is harmless, because de-duplication means the
+second run raises nothing.
+
+**Support contracts are not warranties, and are alerted on separately.** A
+warranty is sold as a length, so the app calculates its end date from the start
+and the term. A support contract is sold with an end date and renewals are
+co-termed across a fleet, so **Support expires** is typed in directly and there
+is deliberately no "support length". Each category has its own notice periods
+for each kind, under **Admin → Categories & Fields**; a fresh install starts
+with support thresholds mirroring that category's warranty ones, and the people
+who hear about warranties hear about support. Change either under **Settings →
+Notification Rules**.
+
+The service tiers themselves — Dell ProSupport Plus, Cisco SmartNet 24x7x4 —
+live under **Manage → Support Levels**, as a list rather than free text so that
+"everything on 24x7x4 expiring this quarter" is a report rather than a guess at
+spelling. A tier an asset already references is retired rather than deleted: it
+still describes the contract that asset was bought under. Their schedules are
 `app.notifications.warranty-cron`, `app.notifications.staleness-cron` and
 `app.notifications.digest-cron` (the email digest), all overridable as
 environment variables in the usual Spring way.

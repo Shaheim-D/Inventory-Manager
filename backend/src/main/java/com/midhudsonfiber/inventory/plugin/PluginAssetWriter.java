@@ -98,7 +98,12 @@ public class PluginAssetWriter {
                 null, text(proposed, "managementIp"), text(proposed, "hostname"),
                 text(proposed, "firmwareVersion"), text(proposed, "softwareVersion"),
                 text(proposed, "deviceRole"),
-                null, null, null, null, null, null, null, null,
+                // Purchase, warranty, support and licensing: a plugin reads a
+                // monitoring system or an IPAM, neither of which knows what
+                // anything cost or who holds its support contract.
+                null, null, null, null, null, null, null,
+                null, null, null, null, null,
+                null,
                 null, text(proposed, "status"), null, null, text(proposed, "notes"),
                 null, null, null, null, null, null);
 
@@ -155,6 +160,11 @@ public class PluginAssetWriter {
                 asset.getInvoiceNumber(),
                 asset.getWarrantyStart(),
                 asset.getWarrantyTermMonths(),
+                asset.getSupportProvider(),
+                asset.getSupportLevel() == null ? null : asset.getSupportLevel().getId(),
+                asset.getSupportStart(),
+                asset.getSupportExpiration(),
+                asset.getSupportContractReference(),
                 asset.getLicenseInformation(),
                 pick(proposed, "condition", asset.getCondition()),
                 pick(proposed, "status", asset.getStatus()),

@@ -37,6 +37,18 @@ export interface Asset {
   vendor: string | null;
   warrantyStart: string | null;
   warrantyExpiration: string | null;
+  /**
+   * Support cover, which is not the warranty. A warranty is sold as a length
+   * and its end is calculated; a support contract is sold with an end date and
+   * renewals are co-termed to it, so `supportExpiration` is set directly and
+   * there is deliberately no support term.
+   */
+  supportProvider: string | null;
+  supportLevelId: number | null;
+  supportLevelName: string | null;
+  supportStart: string | null;
+  supportExpiration: string | null;
+  supportContractReference: string | null;
   licenseInformation: string | null;
   condition: string | null;
   status: string | null;
@@ -470,4 +482,20 @@ export interface RadiusSettings {
   updatedAt: string | null;
   servers: RadiusServerView[];
   roleMappings: RadiusRoleMapping[];
+}
+
+/**
+ * A service tier a support provider sells — Dell ProSupport Plus, Cisco
+ * SmartNet 24x7x4. A managed vocabulary rather than free text, so that "what is
+ * on 24x7x4 and expiring" is a report filter rather than a guess at spelling.
+ */
+export interface SupportLevel {
+  id: number;
+  name: string;
+  provider: string | null;
+  description: string | null;
+  /** "ProSupport Plus (Dell)" — what a picker shows when both are known. */
+  displayLabel: string;
+  sortOrder: number;
+  active: boolean;
 }

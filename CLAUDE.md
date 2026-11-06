@@ -47,6 +47,20 @@ Two consequences that are easy to miss:
 "notify about Y" is a row or a widened CHECK constraint, not a new table. Ask
 whether an existing mechanism generalizes before adding one.
 
+**A support contract is not a warranty.** A warranty is sold as a *length*
+("three years from purchase"), so `warranty_expiration` is derived from
+`warranty_start + warranty_term_months` and is never typed. A support contract
+is sold with an *end date*, renewed, and co-termed across a fleet, so
+`support_expiration` is set directly and there is deliberately no
+`support_term_months`. Do not add one, and do not fold the two sets of columns
+together: cover is frequently bought from a reseller rather than the
+manufacturer and routinely outlives the warranty by years.
+
+Both expire, so they share one mechanism rather than two: `expiration_alert_threshold`
+carries a `kind`, and `ExpirationAlertJob` sweeps both with one query shape and
+one dedupe rule. A second threshold table and a second job would drift apart the
+first time one of them was fixed.
+
 **Serial number and asset tag are unique among live assets**, via the partial
 indexes `uq_asset_serial` and `uq_asset_tag`. Partial matters twice over: NULL is
 not a value, so untagged bulk stock is unconstrained, and a soft-deleted asset

@@ -284,6 +284,23 @@ export function AssetDetailPage() {
                 )}
               </Section>
 
+              {/* Its own section rather than another line under the warranty.
+                  Cover frequently outlives the warranty by years and is bought
+                  from somebody else entirely, so reading them as one block
+                  invites somebody to renew the wrong thing. */}
+              {uses('support_expiration') && (
+                <Section title="Support contract">
+                  <Field label={label('support_provider')} value={data.supportProvider} />
+                  <Field label={label('support_level_id')} value={data.supportLevelName} />
+                  <Field label={label('support_start')} value={data.supportStart} />
+                  <Field label={label('support_expiration')} value={data.supportExpiration} />
+                  <Field
+                    label={label('support_contract_reference')}
+                    value={data.supportContractReference}
+                  />
+                </Section>
+              )}
+
               <Section title="Custody">
                 <Field label="Assignment" value={ASSIGNMENT_LABELS[data.assigneeType]} />
                 {/* One resolved name, whether the assignee is a user account, a

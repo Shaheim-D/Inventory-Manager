@@ -21,6 +21,14 @@ public class NotificationRule {
     public enum TriggerType {
         /** Scheduled: an asset's warranty is coming up on a threshold. */
         WARRANTY_EXPIRATION(true),
+        /**
+         * Scheduled: an asset's support contract is coming up on a threshold.
+         *
+         * <p>Separate from the warranty because they are separate things —
+         * cover can lapse years after the warranty did, and the renewal is
+         * somebody's purchase order rather than a fact of life.
+         */
+        SUPPORT_EXPIRATION(true),
         /** Scheduled: bulk stock nobody has counted lately. */
         INVENTORY_STALENESS_CHECK(true),
 

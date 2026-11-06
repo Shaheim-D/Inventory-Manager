@@ -4,7 +4,7 @@ import com.midhudsonfiber.inventory.audit.AuditService;
 import com.midhudsonfiber.inventory.domain.DistributionTarget;
 import com.midhudsonfiber.inventory.domain.NotificationRule;
 import com.midhudsonfiber.inventory.notify.StalenessAlertJob;
-import com.midhudsonfiber.inventory.notify.WarrantyAlertJob;
+import com.midhudsonfiber.inventory.notify.ExpirationAlertJob;
 import com.midhudsonfiber.inventory.repo.AssetCategoryRepository;
 import com.midhudsonfiber.inventory.repo.NotificationRuleRepository;
 import com.midhudsonfiber.inventory.repo.RoleRepository;
@@ -34,18 +34,18 @@ public class NotificationRuleController {
     private final NotificationRuleRepository rules;
     private final RoleRepository roles;
     private final AssetCategoryRepository categories;
-    private final WarrantyAlertJob warrantyAlerts;
+    private final ExpirationAlertJob expirationAlerts;
     private final StalenessAlertJob stalenessAlerts;
     private final AuditService audit;
 
     public NotificationRuleController(NotificationRuleRepository rules, RoleRepository roles,
                                       AssetCategoryRepository categories,
-                                      WarrantyAlertJob warrantyAlerts,
+                                      ExpirationAlertJob expirationAlerts,
                                       StalenessAlertJob stalenessAlerts, AuditService audit) {
         this.rules = rules;
         this.roles = roles;
         this.categories = categories;
-        this.warrantyAlerts = warrantyAlerts;
+        this.expirationAlerts = expirationAlerts;
         this.stalenessAlerts = stalenessAlerts;
         this.audit = audit;
     }
@@ -122,18 +122,22 @@ public class NotificationRuleController {
     }
 
     /**
-     * Runs the warranty sweep now rather than waiting for the small hours.
+     * Runs the expiration sweep now rather than waiting for the small hours.
      *
      * <p>It exists because a scheduled job nobody can trigger is a scheduled job
      * nobody can check. De-duplication means running it twice is harmless — the
      * second run raises nothing.
+     *
+     * <p>Covers warranties and support contracts in one go, because that is now
+     * one sweep. The path keeps its old name so an administrator's bookmark and
+     * any existing button still work.
      */
     @PostMapping("/run-warranty-check")
     @PreAuthorize("hasAuthority('" + PermissionKeys.NOTIFICATION_RULE_MANAGE + "')")
     public Map<String, Object> runWarrantyCheck() {
-        int raised = warrantyAlerts.sweep();
+        int raised = expirationAlerts.sweep();
         return Map.of("raised", raised, "message", raised == 0
-                ? "Nothing is inside a warranty threshold that has not already been notified."
+                ? "Nothing is inside a warranty or support threshold that has not already been notified."
                 : "Raised " + raised + " notification(s).");
     }
 

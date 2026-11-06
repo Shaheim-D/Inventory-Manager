@@ -35,7 +35,7 @@ public class CategoryController {
     private final CustomFieldDefinitionRepository customFields;
     private final LifecycleStateRepository lifecycleStates;
     private final LifecycleTransitionRepository transitions;
-    private final WarrantyAlertThresholdRepository warrantyThresholds;
+    private final ExpirationAlertThresholdRepository thresholds;
     private final AssetRepository assets;
     private final AuditService audit;
     private final FieldVisibilityService fieldVisibility;
@@ -49,7 +49,7 @@ public class CategoryController {
                               CustomFieldDefinitionRepository customFields,
                               LifecycleStateRepository lifecycleStates,
                               LifecycleTransitionRepository transitions,
-                              WarrantyAlertThresholdRepository warrantyThresholds,
+                              ExpirationAlertThresholdRepository thresholds,
                               AssetRepository assets,
                               AuditService audit,
                               FieldVisibilityService fieldVisibility,
@@ -62,7 +62,7 @@ public class CategoryController {
         this.customFields = customFields;
         this.lifecycleStates = lifecycleStates;
         this.transitions = transitions;
-        this.warrantyThresholds = warrantyThresholds;
+        this.thresholds = thresholds;
         this.assets = assets;
         this.audit = audit;
         this.fieldVisibility = fieldVisibility;
@@ -84,7 +84,12 @@ public class CategoryController {
 
     public record TransitionRequest(@NotNull Long fromStateId, @NotNull Long toStateId) {}
 
-    public record WarrantyThresholdRequest(@NotNull Integer daysBeforeExpiration) {}
+    /**
+     * {@code kind} is optional and defaults to WARRANTY, which is what a caller
+     * written before support contracts existed means by a threshold.
+     */
+    public record ThresholdRequest(@NotNull Integer daysBeforeExpiration,
+                                   ExpirationAlertThreshold.Kind kind) {}
 
     @GetMapping
     @PreAuthorize("isAuthenticated()")
@@ -295,34 +300,65 @@ public class CategoryController {
         return ResponseEntity.noContent().build();
     }
 
-    // ---------------- warranty thresholds ----------------
+    // ---------------- expiration thresholds ----------------
+    //
+    // One set of endpoints for both kinds. The path keeps the name it had, so
+    // nothing that already calls it breaks; `kind` defaults to WARRANTY for the
+    // same reason, which is exactly what a caller written before support
+    // contracts existed means by a threshold.
 
     @GetMapping("/{id}/warranty-thresholds")
     @PreAuthorize("isAuthenticated()")
-    public List<Map<String, Object>> warrantyThresholds(@PathVariable Long id) {
-        return warrantyThresholds.findByCategoryIdOrderByDaysBeforeExpirationDesc(id).stream()
-                .map(t -> Map.<String, Object>of("id", t.getId(), "daysBeforeExpiration", t.getDaysBeforeExpiration()))
+    public List<Map<String, Object>> expirationThresholds(
+            @PathVariable Long id,
+            @RequestParam(required = false) ExpirationAlertThreshold.Kind kind) {
+        List<ExpirationAlertThreshold> found = kind == null
+                ? thresholds.findByCategoryIdOrderByKindAscDaysBeforeExpirationDesc(id)
+                : thresholds.findByCategoryIdAndKindOrderByDaysBeforeExpirationDesc(id, kind);
+        return found.stream()
+                .map(t -> Map.<String, Object>of(
+                        "id", t.getId(),
+                        "daysBeforeExpiration", t.getDaysBeforeExpiration(),
+                        "kind", t.getKind().name()))
                 .toList();
     }
 
     @PostMapping("/{id}/warranty-thresholds")
     @PreAuthorize("hasAuthority('" + PermissionKeys.CATEGORY_MANAGE + "')")
-    public Map<String, Object> addWarrantyThreshold(@PathVariable Long id,
-                                                    @Valid @RequestBody WarrantyThresholdRequest request) {
+    public Map<String, Object> addExpirationThreshold(@PathVariable Long id,
+                                                      @Valid @RequestBody ThresholdRequest request) {
         if (request.daysBeforeExpiration() == null || request.daysBeforeExpiration() < 1) {
             throw new ApiExceptions.BadRequestException("Days before expiration must be at least 1.");
         }
-        WarrantyAlertThreshold threshold = new WarrantyAlertThreshold();
+        ExpirationAlertThreshold.Kind kind =
+                request.kind() == null ? ExpirationAlertThreshold.Kind.WARRANTY : request.kind();
+
+        // The unique index refuses a duplicate; saying so is friendlier than a
+        // constraint violation, and the screen offers no way to tell them apart.
+        thresholds.findByCategoryIdAndKindAndDaysBeforeExpiration(
+                        id, kind, request.daysBeforeExpiration())
+                .ifPresent(existing -> {
+                    throw new ApiExceptions.ConflictException(
+                            "There is already a %d-day %s notice for this category."
+                                    .formatted(request.daysBeforeExpiration(),
+                                            kind.name().toLowerCase()));
+                });
+
+        ExpirationAlertThreshold threshold = new ExpirationAlertThreshold();
         threshold.setCategory(category(id));
         threshold.setDaysBeforeExpiration(request.daysBeforeExpiration());
-        WarrantyAlertThreshold saved = warrantyThresholds.save(threshold);
-        return Map.of("id", saved.getId(), "daysBeforeExpiration", saved.getDaysBeforeExpiration());
+        threshold.setKind(kind);
+        ExpirationAlertThreshold saved = thresholds.save(threshold);
+        return Map.of("id", saved.getId(),
+                "daysBeforeExpiration", saved.getDaysBeforeExpiration(),
+                "kind", saved.getKind().name());
     }
 
     @DeleteMapping("/{categoryId}/warranty-thresholds/{thresholdId}")
     @PreAuthorize("hasAuthority('" + PermissionKeys.CATEGORY_MANAGE + "')")
-    public ResponseEntity<Void> deleteWarrantyThreshold(@PathVariable Long categoryId, @PathVariable Long thresholdId) {
-        warrantyThresholds.deleteById(thresholdId);
+    public ResponseEntity<Void> deleteExpirationThreshold(@PathVariable Long categoryId,
+                                                          @PathVariable Long thresholdId) {
+        thresholds.deleteById(thresholdId);
         return ResponseEntity.noContent().build();
     }
 
