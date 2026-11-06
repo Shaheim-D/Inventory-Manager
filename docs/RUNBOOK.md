@@ -704,3 +704,25 @@ Two refusals on **Users** that surprise people: you cannot bulk-change your own
 access, and roles on an account that signs in through LDAP or RADIUS are
 refused — the directory replaces that account's roles at its next sign-in, so
 setting them here would look like it worked and quietly revert.
+
+**A backup or restore refuses with "client and server versions differ".** The
+PostgreSQL client tools on this host are a different major version from the
+server, and a dump written that way restores with errors — errors that appear
+*during* the restore, so the file would look healthy right up until you needed
+it. The message names both versions and the fix:
+
+```
+export PATH=/usr/lib/postgresql/<server-major>/bin:$PATH
+```
+
+Installing `postgresql-client-<version>` is **not** enough on Debian or Ubuntu:
+`pg_dump` on PATH is a wrapper that dispatches to the newest installed major, so
+a 17 package present on the box wins even when 16 is also installed. Put the
+versioned directory first, as above, and make it permanent in whatever runs the
+backup — the cron entry, the systemd unit, or the shell profile it inherits.
+
+This most often appears after an OS upgrade bumped the client packages while the
+server stayed where it was. It is deliberately a refusal rather than a warning:
+the alternative is a nightly backup that succeeds for months and fails on the
+one night it matters. `scripts/reset-admin-password.sh` is unaffected — it uses
+psql alone, and a break-glass tool must keep working on a drifted host.

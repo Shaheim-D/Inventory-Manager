@@ -133,6 +133,16 @@ Two consequences worth holding onto:
 - **`DB_USER` needs `CREATEDB`**, because restore drops and recreates the
   database. In the default stack that is true by accident — `DB_USER` is the
   container's superuser — which is exactly why it has to be stated.
+- **`pg_dump` must be the server's major version**, enforced by
+  `runtime_require_matching_client` and not merely asserted in a comment. A
+  client one major ahead writes parameters the server rejects — PostgreSQL 17
+  emits `SET transaction_timeout = 0` — and the error appears *during the
+  restore*, so the backup looks healthy until the moment it is needed. On
+  Debian and Ubuntu `pg_dump` on PATH is postgresql-common's wrapper, which
+  dispatches to the newest installed major, so installing the matching package
+  proves nothing; the versioned bin directory is the pin. The check covers
+  `backup.sh` and `restore.sh` only — `reset-admin-password.sh` needs psql
+  alone and must keep working on a drifted host, because it is break-glass.
 
 ## Plugins
 

@@ -101,6 +101,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$ROOT/scripts/lib/runtime.sh"
 runtime_load_env "$ROOT"
+# Before the database is dropped, not after. Finding out mid-restore that the
+# client cannot read this dump leaves an empty database and a person reading a
+# parameter error, which is the exact situation a restore is already the
+# recovery from.
+runtime_require_matching_client
 
 echo "This will REPLACE the contents of database '${DB_NAME}'."
 runtime_confirm_database
