@@ -11,11 +11,9 @@ import {
   DialogContentText,
   DialogTitle,
   Divider,
-  FormControlLabel,
   Grid,
   MenuItem,
   Stack,
-  Switch,
   TextField,
   Typography,
 } from '@mui/material';
@@ -39,9 +37,9 @@ import { api, ApiError } from '../api/client';
  * whole asset and therefore clears anything missing from it — correct there,
  * ruinous here.
  *
- * <p>Clearing a field across a selection is therefore its own deliberate act:
- * a switch per field, because "I left it blank" and "I want it emptied
- * everywhere" must never be the same gesture.
+ * <p>There is no way to empty a field from this dialog. Blank means keep, and
+ * nothing here means clear — a control that wipes a value across a whole
+ * selection does not belong beside the ones that fill it in.
  *
  * <p>The card is rendered from the server's preview, which runs the same
  * planning code the update will run — so it describes the actual work rather
@@ -124,7 +122,6 @@ export function BulkEditDialog({
   const queryClient = useQueryClient();
   const [section, setSection] = useState<string | null>(null);
   const [entered, setEntered] = useState<Record<string, string>>({});
-  const [cleared, setCleared] = useState<Record<string, boolean>>({});
   const [plan, setPlan] = useState<Plan | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -150,21 +147,23 @@ export function BulkEditDialog({
   }, [fields.data]);
 
   /**
-   * Only what somebody actually filled in, plus anything they deliberately
-   * asked to empty. Everything else never reaches the server, which is what
-   * makes "blank means keep" true rather than merely intended.
+   * Only what somebody actually filled in. Everything else never reaches the
+   * server, which is what makes "blank means keep" true rather than merely
+   * intended.
+   *
+   * <p>There is deliberately no way to empty a field from here. The API still
+   * understands an explicit null as "clear this", so the capability exists —
+   * but a switch for it sat beside every box, and a control that destroys data
+   * across a whole selection does not belong one mis-click away from one that
+   * fills it in.
    */
   const changes = useMemo(() => {
-    const payload: Record<string, string | null> = {};
+    const payload: Record<string, string> = {};
     for (const [field, value] of Object.entries(entered)) {
-      if (cleared[field]) continue;
       if (value !== '' && value !== undefined) payload[field] = value;
     }
-    for (const [field, isCleared] of Object.entries(cleared)) {
-      if (isCleared) payload[field] = null;
-    }
     return payload;
-  }, [entered, cleared]);
+  }, [entered]);
 
   const touchedCount = Object.keys(changes).length;
 
@@ -204,7 +203,6 @@ export function BulkEditDialog({
   function reset() {
     setSection(null);
     setEntered({});
-    setCleared({});
     setPlan(null);
     setError(null);
     onClose();
@@ -268,14 +266,12 @@ export function BulkEditDialog({
           <>
             <Alert severity="info" sx={{ mb: 2 }}>
               <strong>Anything you leave blank stays as it is</strong> on every {noun} — only the
-              fields you fill in are written. To empty a field across all of them, use its{' '}
-              <em>Clear on all</em> switch.
+              fields you fill in are written.
             </Alert>
 
             <Grid container spacing={2}>
               {(sections.get(section) ?? []).map((field) => {
                 const choices = options[field.field];
-                const isCleared = Boolean(cleared[field.field]);
                 return (
                   <Grid item xs={12} sm={6} key={field.field}>
                     {choices ? (
@@ -283,7 +279,6 @@ export function BulkEditDialog({
                         select
                         label={field.label}
                         value={entered[field.field] ?? ''}
-                        disabled={isCleared}
                         onChange={(event) =>
                           setEntered({ ...entered, [field.field]: event.target.value })
                         }
@@ -311,30 +306,12 @@ export function BulkEditDialog({
                         minRows={field.type === 'LONG_TEXT' ? 2 : undefined}
                         InputLabelProps={field.type === 'DATE' ? { shrink: true } : undefined}
                         value={entered[field.field] ?? ''}
-                        disabled={isCleared}
                         placeholder="Leave unchanged"
                         onChange={(event) =>
                           setEntered({ ...entered, [field.field]: event.target.value })
                         }
                       />
                     )}
-                    <FormControlLabel
-                      sx={{ mt: 0.5 }}
-                      control={
-                        <Switch
-                          size="small"
-                          checked={isCleared}
-                          onChange={(event) =>
-                            setCleared({ ...cleared, [field.field]: event.target.checked })
-                          }
-                        />
-                      }
-                      label={
-                        <Typography variant="caption" color="text.secondary">
-                          Clear on all
-                        </Typography>
-                      }
-                    />
                   </Grid>
                 );
               })}

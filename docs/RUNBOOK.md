@@ -684,9 +684,13 @@ form uses, so "the support block" means the same thing on both screens.
 **A field you leave blank is not touched.** Each asset keeps whatever it
 already had there; only the fields you actually fill in are written. This is
 the opposite of the single-asset form, which submits the whole asset and so
-clears anything missing from it. To empty a field across the selection you have
-to say so, with that field's **Clear on all** switch — leaving something blank
-and wanting it emptied everywhere must not be the same gesture.
+clears anything missing from it.
+
+**A bulk edit cannot empty a field.** There is deliberately no control for it:
+everything on this screen either sets a value or leaves it alone. To clear a
+field, open the asset and clear it there. If that ever needs doing across a
+real fleet, say so and it can come back as its own deliberate action — the API
+already understands it, so what is missing is only a safe way to ask.
 
 Then read the card. It lists every change as *old value → new value*, grouped
 so that forty assets moving to the same date are one line, and names the
