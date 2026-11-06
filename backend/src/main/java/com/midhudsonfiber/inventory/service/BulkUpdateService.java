@@ -17,6 +17,7 @@ import java.time.LocalDate;
 import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
 /**
  * Changing the same thing about many rows at once.
@@ -264,8 +265,55 @@ public class BulkUpdateService {
                 Asset::getNotes, (asset, v) -> asset.setNotes(text(v)), "notes", FieldType.LONG_TEXT));
         fields.put("licenseInformation", new Spec<>("License information",
                 Asset::getLicenseInformation, (asset, v) -> asset.setLicenseInformation(text(v)), "license_information", FieldType.LONG_TEXT));
+        // ---- custody: the whole block, not just the one field ----
+        // Both halves of who holds a thing, and both halves of the customer it
+        // sits at. These were missing: Custody offered Customer name alone,
+        // which is a section heading over a single box.
         fields.put("customerName", new Spec<>("Customer name",
                 Asset::getCustomerName, (asset, v) -> asset.setCustomerName(text(v)), "customer_name", FieldType.TEXT));
+        fields.put("customerAddress", new Spec<>("Customer address",
+                Asset::getCustomerAddress, (asset, v) -> asset.setCustomerAddress(text(v)),
+                "customer_address", FieldType.LONG_TEXT));
+
+        // Assignment arrives as two fields rather than the form's one selector
+        // plus combo, because a bulk edit has no room to be clever: "give all
+        // of these to this account" and "give all of these to this person by
+        // name" are different instructions, and a single box that guessed
+        // between them would guess wrong on somebody's surname.
+        //
+        // Gated on the same keys the single asset view gates assignment with,
+        // so somebody who cannot see who holds a thing cannot set it either.
+        // Three fields rather than the form's selector-plus-combo, because the
+        // database enforces a different shape per kind -- USER carries an id
+        // and no text, EMPLOYEE and CUSTOMER carry text and no id -- and a
+        // single box that guessed between them would guess wrong on somebody's
+        // surname. Each one here says what it does and sets all three columns
+        // consistently.
+        //
+        // Gated on the same keys the asset view gates assignment with, so
+        // somebody who cannot see who holds a thing cannot set it either.
+        fields.put("assigneeUserId", new Spec<>("Assign to user account",
+                asset -> asset.getAssigneeUserId() == null ? null
+                        : users.findById(asset.getAssigneeUserId())
+                               .map(AppUser::getUsername).orElse("#" + asset.getAssigneeUserId()),
+                (asset, v) -> {
+                    Long userId = required(v, "a user");
+                    users.findById(userId).orElseThrow(
+                            () -> new ApiExceptions.NotFoundException("User not found"));
+                    asset.setAssigneeType(Asset.AssigneeType.USER);
+                    asset.setAssigneeUserId(userId);
+                    asset.setAssigneeText(null);
+                }, "assignee_user_id", FieldType.REFERENCE));
+        fields.put("assigneeEmployee", new Spec<>("Assign to employee (by name)",
+                asset -> asset.getAssigneeType() == Asset.AssigneeType.EMPLOYEE
+                        ? asset.getAssigneeText() : null,
+                (asset, v) -> assignByName(asset, v, Asset.AssigneeType.EMPLOYEE),
+                "assignee_text", FieldType.TEXT));
+        fields.put("assigneeCustomer", new Spec<>("Assign to customer (by name)",
+                asset -> asset.getAssigneeType() == Asset.AssigneeType.CUSTOMER
+                        ? asset.getAssigneeText() : null,
+                (asset, v) -> assignByName(asset, v, Asset.AssigneeType.CUSTOMER),
+                "assignee_text", FieldType.TEXT));
 
         return fields;
     }
@@ -640,6 +688,24 @@ public class BulkUpdateService {
         }
     }
 
+    /**
+     * Assignment by name, for the two kinds that carry text rather than an id.
+     *
+     * <p>Sets all three columns together because the database checks them
+     * together: a type with the wrong column populated is rejected outright,
+     * which is the constraint doing its job and an unhelpful way to find out.
+     */
+    private static void assignByName(Asset asset, JsonNode value, Asset.AssigneeType type) {
+        String name = text(value);
+        if (name == null) {
+            throw new ApiExceptions.BadRequestException(
+                    "Give a name to assign to, or leave the field blank to change nothing.");
+        }
+        asset.setAssigneeType(type);
+        asset.setAssigneeText(name);
+        asset.setAssigneeUserId(null);
+    }
+
     private void recordAudit(String entityType, RowPlan row) {
         audit.recordFieldChanges(entityType, row.id(), row.changes().stream()
                 .filter(change -> !change.noop())
@@ -690,6 +756,15 @@ public class BulkUpdateService {
      */
     private <T> void validateRequested(Map<String, JsonNode> requested,
                                        Map<String, Spec<T>> catalogue, Set<String> hidden) {
+        // One assignment at most. All three write assigneeType, so accepting
+        // two would let iteration order decide who ends up holding forty
+        // assets -- a coin toss dressed as a feature.
+        long assignments = Stream.of("assigneeUserId", "assigneeEmployee", "assigneeCustomer")
+                .filter(requested::containsKey).count();
+        if (assignments > 1) {
+            throw new ApiExceptions.BadRequestException(
+                    "Assign to a user account, an employee, or a customer — not more than one.");
+        }
         for (String field : requested.keySet()) {
             Spec<T> spec = catalogue.get(field);
             if (spec == null) {
