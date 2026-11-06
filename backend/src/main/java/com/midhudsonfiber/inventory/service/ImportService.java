@@ -49,6 +49,8 @@ public class ImportService {
             "asset_tag", "hostname", "management_ip", "mac_addresses", "device_role",
             "firmware_version", "software_version", "purchase_date", "purchase_price",
             "vendor", "invoice_number", "warranty_start", "warranty_term_months",
+            "support_provider", "support_level", "support_start", "support_expiration",
+            "support_contract_reference",
             "condition", "quantity", "notes");
 
     private final ImportBatchRepository batches;
@@ -58,6 +60,7 @@ public class ImportService {
     private final AssetRepository assets;
     private final ImportRowCommitter rowCommitter;
     private final CustomFieldDefinitionRepository customFields;
+    private final SupportLevelRepository supportLevels;
     private final AuditService audit;
     private final NotificationService notifications;
     private final CurrentUser currentUser;
@@ -67,6 +70,7 @@ public class ImportService {
                          AssetRepository assets,
                          ImportRowCommitter rowCommitter,
                          CustomFieldDefinitionRepository customFields,
+                         SupportLevelRepository supportLevels,
                          AuditService audit, NotificationService notifications,
                          CurrentUser currentUser) {
         this.batches = batches;
@@ -76,6 +80,7 @@ public class ImportService {
         this.assets = assets;
         this.rowCommitter = rowCommitter;
         this.customFields = customFields;
+        this.supportLevels = supportLevels;
         this.audit = audit;
         this.notifications = notifications;
         this.currentUser = currentUser;
@@ -475,11 +480,30 @@ public class ImportService {
             return "Purchase price \"" + price + "\" is not a number.";
         }
 
-        for (String dateColumn : List.of("purchase_date", "warranty_start")) {
+        for (String dateColumn : List.of("purchase_date", "warranty_start",
+                                         "support_start", "support_expiration")) {
             String value = values.getOrDefault(dateColumn, "");
             if (!value.isBlank() && parseDate(value) == null) {
                 return "%s \"%s\" is not a date. Use YYYY-MM-DD.".formatted(dateColumn, value);
             }
+        }
+
+        // Caught here rather than at the database, so a thousand-row file
+        // reports which row is wrong instead of failing the whole commit.
+        String supportStart = values.getOrDefault("support_start", "");
+        String supportEnd = values.getOrDefault("support_expiration", "");
+        if (!supportStart.isBlank() && !supportEnd.isBlank()
+                && parseDate(supportStart) != null && parseDate(supportEnd) != null
+                && parseDate(supportEnd).isBefore(parseDate(supportStart))) {
+            return "Support cover ends before it starts.";
+        }
+
+        // A tier that is not in the vocabulary: named rather than silently
+        // dropped, because the row would otherwise import looking complete.
+        String supportLevel = values.getOrDefault("support_level", "");
+        if (!supportLevel.isBlank() && supportLevelIdFor(supportLevel) == null) {
+            return "Support level \"" + supportLevel + "\" is not one this system knows. "
+                    + "Add it under Admin, or leave the column blank.";
         }
 
         String term = values.getOrDefault("warranty_term_months", "");
@@ -491,6 +515,20 @@ public class ImportService {
             }
         }
         return null;
+    }
+
+    /**
+     * A support tier by name, which is how a spreadsheet refers to one.
+     *
+     * <p>Case-insensitive, because a column somebody typed is not going to
+     * match the vocabulary's capitalisation and refusing over it would be
+     * pedantry rather than validation. Null for blank or unknown — the caller
+     * checks for unknown separately so the row can say which name was wrong.
+     */
+    private Long supportLevelIdFor(String name) {
+        if (name == null || name.isBlank()) return null;
+        return supportLevels.findFirstByNameIgnoreCase(name.trim())
+                .map(level -> level.getId()).orElse(null);
     }
 
     private AssetRequest toRequest(Map<String, String> values,
@@ -526,6 +564,11 @@ public class ImportService {
                 blankToNull(values.get("invoice_number")),
                 parseDate(values.getOrDefault("warranty_start", "")),
                 parseInt(values.getOrDefault("warranty_term_months", "")),
+                blankToNull(values.get("support_provider")),
+                supportLevelIdFor(values.get("support_level")),
+                parseDate(values.getOrDefault("support_start", "")),
+                parseDate(values.getOrDefault("support_expiration", "")),
+                blankToNull(values.get("support_contract_reference")),
                 null,                                   // license information
                 blankToNull(values.get("condition")),
                 null,                                   // status

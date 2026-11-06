@@ -35,6 +35,16 @@ public record AssetRequest(
         LocalDate warrantyStart,
         /** How long the warranty runs. The expiration date is derived from it. */
         Integer warrantyTermMonths,
+        String supportProvider,
+        Long supportLevelId,
+        LocalDate supportStart,
+        /**
+         * When support cover ends. A date rather than a term, deliberately: a
+         * support contract is sold with an end date and co-termed to one, where
+         * a warranty is sold as a length.
+         */
+        LocalDate supportExpiration,
+        String supportContractReference,
         String licenseInformation,
         String condition,
         String status,

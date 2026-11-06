@@ -23,7 +23,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { Category, CoreFieldConfig, CustomFieldDefinition } from '../../api/types';
 import { EntityTable } from '../../components/EntityTable';
-import { BulkDeleteBar } from '../../components/BulkDeleteBar';
+import { BulkActionBar } from '../../components/BulkActionBar';
 import { PageHeader } from '../../components/PageHeader';
 
 export function CategoriesPage() {
@@ -121,7 +121,7 @@ export function CategoriesPage() {
         />
       </Paper>
 
-      <BulkDeleteBar
+      <BulkActionBar
         endpoint="/api/categories/bulk-delete"
         selected={selected}
         onClear={() => setSelected(new Set())}

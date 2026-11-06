@@ -26,6 +26,7 @@ import type {
   CustomFieldDefinition,
   DeviceModel,
   Location,
+  SupportLevel,
 } from '../api/types';
 import { PageHeader } from '../components/PageHeader';
 import { CategoryPicker } from '../components/CategoryPicker';
@@ -142,6 +143,13 @@ export function AssetFormPage() {
     queryFn: () => api.get<AssignableUser[]>('/api/users/assignable'),
   });
 
+  // Active tiers only: a retired one still describes the assets already on it,
+  // but offering it here would put new cover onto something nobody sells.
+  const supportLevels = useQuery({
+    queryKey: ['support-levels'],
+    queryFn: () => api.get<SupportLevel[]>('/api/support-levels'),
+  });
+
   // What the combo shows: the matching user when one is recorded, else raw text.
   // USER is a refinement of EMPLOYEE, so the selector shows them as one choice.
   const assignmentMode =
@@ -200,6 +208,9 @@ export function AssetFormPage() {
     }
     if (form.assigneeUserId !== undefined && form.assigneeUserId !== '') {
       payload.assigneeUserId = Number(form.assigneeUserId);
+    }
+    if (form.supportLevelId !== undefined && form.supportLevelId !== '') {
+      payload.supportLevelId = Number(form.supportLevelId);
     }
     payload.warrantyTermMonths =
       form.warrantyTermMonths === '' || form.warrantyTermMonths == null
@@ -465,13 +476,85 @@ export function AssetFormPage() {
                 </TextField>
               </Grid>
               <Grid item xs={12} sm={4}>
+                {/* Falls back to the stored date when there is no term to
+                    calculate from. Without this an asset whose expiration was
+                    set directly -- by an import, or by a bulk edit -- showed an
+                    empty box reading "set a start date and length" while the
+                    database held a real date. */}
                 <TextField
                   label="Expires"
-                  value={derivedExpiration ?? ''}
+                  value={derivedExpiration ?? (form.warrantyExpiration as string) ?? ''}
                   disabled
-                  helperText={derivedExpiration ? 'Calculated from start and length' : 'Set a start date and length'}
+                  helperText={
+                    derivedExpiration
+                      ? 'Calculated from start and length'
+                      : form.warrantyExpiration
+                        ? 'Recorded directly'
+                        : 'Set a start date and length'
+                  }
                 />
               </Grid>
+            </>
+          )}
+
+          {uses('support_expiration') && (
+            <>
+              <Grid item xs={12}>
+                <Divider sx={{ my: 1 }} />
+                <Typography variant="subtitle2" color="text.secondary">
+                  Support contract
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Separate from the warranty. Cover is often bought from a reseller, renewed
+                  yearly, and co-termed across a fleet — so the end date is set, not calculated.
+                </Typography>
+              </Grid>
+              <Field label="Support provider" field="supportProvider" form={form} set={set} sm={6} />
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  select
+                  label="Support level"
+                  value={form.supportLevelId ?? ''}
+                  onChange={(event) => set('supportLevelId', event.target.value)}
+                  helperText={
+                    supportLevels.data?.length
+                      ? undefined
+                      : 'No levels defined yet — an administrator adds them under Admin.'
+                  }
+                >
+                  <MenuItem value="">
+                    <em>Not recorded</em>
+                  </MenuItem>
+                  {(supportLevels.data ?? []).map((level) => (
+                    <MenuItem key={level.id} value={level.id}>
+                      {level.displayLabel}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+              <Field
+                label="Support start"
+                field="supportStart"
+                form={form}
+                set={set}
+                sm={4}
+                type="date"
+              />
+              <Field
+                label="Support expires"
+                field="supportExpiration"
+                form={form}
+                set={set}
+                sm={4}
+                type="date"
+              />
+              <Field
+                label="Contract number"
+                field="supportContractReference"
+                form={form}
+                set={set}
+                sm={4}
+              />
             </>
           )}
 

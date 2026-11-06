@@ -105,4 +105,11 @@ public interface AssetRepository extends JpaRepository<Asset, Long>, JpaSpecific
     long countByCategoryIdAndDeletedFalse(Long categoryId);
 
     long countByLocationIdAndDeletedFalse(Long locationId);
+
+    /**
+     * Deleted assets counted too, deliberately: a soft-deleted asset still
+     * points at its support level, and a restore from the Recycle Bin would
+     * otherwise find the tier gone.
+     */
+    long countBySupportLevelId(Long supportLevelId);
 }

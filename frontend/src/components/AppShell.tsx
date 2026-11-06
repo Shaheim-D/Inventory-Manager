@@ -30,6 +30,7 @@ import AddIcon from '@mui/icons-material/Add';
 import DashboardIcon from '@mui/icons-material/SpaceDashboard';
 import InventoryIcon from '@mui/icons-material/Inventory2';
 import RouterIcon from '@mui/icons-material/Router';
+import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import PlaceIcon from '@mui/icons-material/Place';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import FactCheckIcon from '@mui/icons-material/FactCheck';
@@ -161,6 +162,15 @@ const NAV: NavSection[] = [
         permissions: ['asset:read'],
         createTo: '/admin/devices?new=1',
         createPermissions: ['category:manage'],
+      },
+      {
+        // Beside Devices rather than under Settings: both are catalogues of
+        // what exists in the world, consulted while recording an asset, not
+        // configuration somebody sets once.
+        label: 'Support Levels',
+        to: '/admin/support-levels',
+        icon: <SupportAgentIcon />,
+        permissions: ['asset:read'],
       },
       { label: 'Users', to: '/admin/users', icon: <PeopleIcon />, permissions: ['user:manage'] },
       { label: 'Audit History', to: '/audit', icon: <HistoryIcon />, permissions: ['audit:view'] },

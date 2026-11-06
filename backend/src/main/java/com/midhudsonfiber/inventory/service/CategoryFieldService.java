@@ -36,14 +36,21 @@ public class CategoryFieldService {
             "mac_addresses", "management_ip", "hostname",
             "firmware_version", "software_version", "device_role",
             "purchase_date", "purchase_price", "vendor", "purchase_link", "invoice_number",
-            "warranty_start", "warranty_expiration", "license_information",
+            "warranty_start", "warranty_expiration",
+            "support_provider", "support_level_id", "support_start",
+            "support_expiration", "support_contract_reference",
+            "license_information",
             "condition", "status", "customer_name", "customer_address", "notes");
 
     /** What a brand-new category gets, so it is never born with an unusable form. */
     public static final List<String> DEFAULT_FOR_NEW_CATEGORY = List.of(
             "manufacturer", "model", "serial_number", "asset_tag",
             "purchase_date", "purchase_price", "vendor", "invoice_number",
-            "warranty_start", "warranty_expiration", "condition", "notes");
+            "warranty_start", "warranty_expiration",
+            // Support cover is not assumed for a brand-new category -- plenty
+            // of things are bought without it -- but it is one checkbox away,
+            // which is what this list is for.
+            "condition", "notes");
 
     private final CategoryCoreFieldRepository repository;
 
@@ -187,6 +194,11 @@ public class CategoryFieldService {
         labels.put("invoice_number", "Order number");
         labels.put("warranty_start", "Warranty start");
         labels.put("warranty_expiration", "Warranty expiration");
+        labels.put("support_provider", "Support provider");
+        labels.put("support_level_id", "Support level");
+        labels.put("support_start", "Support start");
+        labels.put("support_expiration", "Support expiration");
+        labels.put("support_contract_reference", "Support contract number");
         labels.put("license_information", "License information");
         labels.put("condition", "Condition");
         labels.put("status", "Status");

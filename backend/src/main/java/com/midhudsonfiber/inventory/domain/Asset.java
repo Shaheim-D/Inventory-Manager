@@ -116,6 +116,42 @@ public class Asset {
     @Column(name = "warranty_term_months")
     private Integer warrantyTermMonths;
 
+    /**
+     * Who to call about this, which is frequently not whoever made it — a
+     * reseller or VAR often holds the contract.
+     */
+    @Column(name = "support_provider")
+    private String supportProvider;
+
+    /**
+     * Eager, like every other association here: the view assembler reads the
+     * tier's name to render an asset, which happens outside the transaction
+     * that loaded it. A lazy proxy there is an exception, not a saved query.
+     */
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "support_level_id")
+    private SupportLevel supportLevel;
+
+    @Column(name = "support_start")
+    private LocalDate supportStart;
+
+    /**
+     * When support cover ends — typed, not derived, unlike
+     * {@link #warrantyExpiration}.
+     *
+     * <p>A warranty is sold as a length ("three years from purchase"), so its
+     * end is calculated. A support contract is sold with an end date and
+     * renewals are co-termed to it, so the date is the thing somebody is told
+     * and the thing they set. Deriving it would mean asking for a length nobody
+     * was quoted.
+     */
+    @Column(name = "support_expiration")
+    private LocalDate supportExpiration;
+
+    /** The service tag or contract number quoted when opening a case. */
+    @Column(name = "support_contract_reference")
+    private String supportContractReference;
+
     @Column(name = "license_information")
     private String licenseInformation;
 
@@ -240,6 +276,17 @@ public class Asset {
             warrantyExpiration = null;
         }
     }
+    public String getSupportProvider() { return supportProvider; }
+    public void setSupportProvider(String v) { this.supportProvider = v; }
+    public SupportLevel getSupportLevel() { return supportLevel; }
+    public void setSupportLevel(SupportLevel v) { this.supportLevel = v; }
+    public LocalDate getSupportStart() { return supportStart; }
+    public void setSupportStart(LocalDate v) { this.supportStart = v; }
+    public LocalDate getSupportExpiration() { return supportExpiration; }
+    public void setSupportExpiration(LocalDate v) { this.supportExpiration = v; }
+    public String getSupportContractReference() { return supportContractReference; }
+    public void setSupportContractReference(String v) { this.supportContractReference = v; }
+
     public String getLicenseInformation() { return licenseInformation; }
     public void setLicenseInformation(String v) { this.licenseInformation = v; }
     public String getCondition() { return condition; }

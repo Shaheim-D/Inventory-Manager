@@ -14,8 +14,11 @@ It answers four questions about every piece of equipment the company owns:
 - **Inventory verification** for bulk stock, so quantities that nobody has
   confirmed recently surface as work to do.
 - **Reporting** with CSV and PDF export, including a custom report builder.
-- **Notifications** in the application and by email, on warranties, purchase
-  orders, imports and asset changes.
+- **Support contracts** tracked apart from warranties — provider, service level,
+  dates and contract number — because cover is bought from a reseller, renewed
+  yearly and co-termed across a fleet, where a warranty is a fact of purchase.
+- **Notifications** in the application and by email, on warranties, support
+  contracts coming to an end, purchase orders, imports and asset changes.
 - **Barcode scanning** — scan an asset tag anywhere in the app and land on that
   asset.
 - **Integrations** that read from Zabbix and NetBox, where nothing an

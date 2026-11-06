@@ -102,6 +102,19 @@ public class AssetViewAssembler {
         view.put("warrantyStart", asset.getWarrantyStart());
         view.put("warrantyExpiration", asset.getWarrantyExpiration());
         view.put("warrantyTermMonths", asset.getWarrantyTermMonths());
+
+        // Support cover. Not gateable: knowing a contract runs out in March is
+        // what lets somebody renew it, and the restricted fields here are the
+        // commercial ones above, which say what it cost.
+        view.put("supportProvider", asset.getSupportProvider());
+        view.put("supportLevelId",
+                asset.getSupportLevel() == null ? null : asset.getSupportLevel().getId());
+        view.put("supportLevelName",
+                asset.getSupportLevel() == null ? null : asset.getSupportLevel().displayLabel());
+        view.put("supportStart", asset.getSupportStart());
+        view.put("supportExpiration", asset.getSupportExpiration());
+        view.put("supportContractReference", asset.getSupportContractReference());
+
         view.put("licenseInformation", asset.getLicenseInformation());
 
         view.put("condition", asset.getCondition());

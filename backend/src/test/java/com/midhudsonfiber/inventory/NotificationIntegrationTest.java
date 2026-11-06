@@ -2,7 +2,7 @@ package com.midhudsonfiber.inventory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.midhudsonfiber.inventory.notify.StalenessAlertJob;
-import com.midhudsonfiber.inventory.notify.WarrantyAlertJob;
+import com.midhudsonfiber.inventory.notify.ExpirationAlertJob;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,7 +21,7 @@ class NotificationIntegrationTest extends AbstractIntegrationTest {
     private JdbcTemplate jdbc;
 
     @Autowired
-    private WarrantyAlertJob warrantyAlerts;
+    private ExpirationAlertJob expirationAlerts;
 
     @Autowired
     private StalenessAlertJob stalenessAlerts;
@@ -78,15 +78,15 @@ class NotificationIntegrationTest extends AbstractIntegrationTest {
         Long categoryId = jdbc.queryForObject(
                 "SELECT id FROM asset_category WHERE name = 'Router'", Long.class);
         Integer threshold = jdbc.queryForObject("""
-                SELECT min(days_before_expiration) FROM warranty_alert_threshold
-                WHERE asset_category_id = ?
+                SELECT min(days_before_expiration) FROM expiration_alert_threshold
+                WHERE asset_category_id = ? AND kind = 'WARRANTY'
                 """, Integer.class, categoryId);
         assertThat(threshold).as("Router needs a seeded warranty threshold").isNotNull();
 
         assertThat(get(manager, "/api/notifications").getBody().get("unread").asInt()).isZero();
 
         Long assetId = assetExpiringIn(admin, "Router", threshold - 1);
-        int raised = warrantyAlerts.sweep();
+        int raised = expirationAlerts.sweepWarranties();
         assertThat(raised).isPositive();
 
         JsonNode inbox = get(manager, "/api/notifications").getBody();
@@ -108,7 +108,7 @@ class NotificationIntegrationTest extends AbstractIntegrationTest {
 
         // The job runs nightly. Running it again must say nothing new about this
         // asset, or the alert becomes noise people learn to ignore.
-        warrantyAlerts.sweep();
+        expirationAlerts.sweepWarranties();
         Integer forThisAsset = jdbc.queryForObject("""
                 SELECT count(*) FROM notification_log n JOIN app_user u ON u.id = n.recipient_user_id
                 WHERE n.entity_id = ? AND u.username = ?
@@ -408,11 +408,11 @@ class NotificationIntegrationTest extends AbstractIntegrationTest {
 
         Long categoryId = categoryId("Router");
         Integer threshold = jdbc.queryForObject("""
-                SELECT min(days_before_expiration) FROM warranty_alert_threshold
-                WHERE asset_category_id = ?
+                SELECT min(days_before_expiration) FROM expiration_alert_threshold
+                WHERE asset_category_id = ? AND kind = 'WARRANTY'
                 """, Integer.class, categoryId);
         Long assetId = assetExpiringIn(admin, "Router", threshold - 1);
-        warrantyAlerts.sweep();
+        expirationAlerts.sweepWarranties();
 
         JsonNode raised = notificationAbout(manager, assetId, "WARRANTY_EXPIRATION");
         assertThat(raised).isNotNull();
@@ -440,7 +440,7 @@ class NotificationIntegrationTest extends AbstractIntegrationTest {
         // But the row is still the de-duplication record. If clearing deleted
         // it, the next sweep -- an hour later -- would raise the same warranty
         // notice again, and again, until the warranty finally ran out.
-        warrantyAlerts.sweep();
+        expirationAlerts.sweepWarranties();
         assertThat(notificationAbout(manager, assetId, "WARRANTY_EXPIRATION"))
                 .as("a cleared alert does not come back on the next sweep").isNull();
         Integer rows = jdbc.queryForObject("""
@@ -578,10 +578,14 @@ class NotificationIntegrationTest extends AbstractIntegrationTest {
 
         List<String> triggers = new java.util.ArrayList<>();
         boolean warrantyIsScheduled = false;
+        boolean supportIsScheduled = false;
         for (JsonNode entry : vocabulary.get("triggerTypes")) {
             triggers.add(entry.get("name").asText());
             if (entry.get("name").asText().equals("WARRANTY_EXPIRATION")) {
                 warrantyIsScheduled = entry.get("scheduled").asBoolean();
+            }
+            if (entry.get("name").asText().equals("SUPPORT_EXPIRATION")) {
+                supportIsScheduled = entry.get("scheduled").asBoolean();
             }
         }
 
@@ -589,13 +593,19 @@ class NotificationIntegrationTest extends AbstractIntegrationTest {
         // offered in the admin screen that nothing publishes is a rule somebody
         // configures and then waits on forever.
         assertThat(triggers).containsExactlyInAnyOrder(
-                "WARRANTY_EXPIRATION", "INVENTORY_STALENESS_CHECK",
+                // V32 added SUPPORT_EXPIRATION. Separate from the warranty
+                // because cover can lapse years after the warranty did, and the
+                // renewal is somebody's purchase order rather than a fact of life.
+                "WARRANTY_EXPIRATION", "SUPPORT_EXPIRATION", "INVENTORY_STALENESS_CHECK",
                 "PURCHASE_ORDER_SUBMITTED", "PURCHASE_ORDER_APPROVED", "PURCHASE_ORDER_DENIED",
                 "PURCHASE_ORDER_PURCHASED", "PURCHASE_ORDER_PARTIALLY_RECEIVED",
                 "PURCHASE_ORDER_RECEIVED", "PURCHASE_ORDER_CANCELLED",
                 "ASSET_CREATED", "ASSET_LIFECYCLE_CHANGED", "ASSET_ASSIGNED", "ASSET_DELETED",
                 "IMPORT_COMPLETED");
         assertThat(warrantyIsScheduled).isTrue();
+        assertThat(supportIsScheduled)
+                .as("nothing happens on the day a contract lapses, so something has to go looking")
+                .isTrue();
 
         List<String> frequencies = new java.util.ArrayList<>();
         for (JsonNode entry : vocabulary.get("frequencies")) frequencies.add(entry.asText());

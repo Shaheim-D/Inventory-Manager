@@ -124,7 +124,68 @@ class MigrationValidationTest extends AbstractIntegrationTest {
         // row, and "this directory group grants this role" is a row per
         // mapping. LDAP came back alongside RADIUS rather than replacing it,
         // because memberOf answers the question a RADIUS reply cannot.
-        assertThat(tables).isEqualTo(44);
+        //
+        // V32 moves it to 45, and the arithmetic is worth spelling out because
+        // the migration touched three tables to get there: support_level is
+        // new (+1), warranty_alert_threshold was renamed to
+        // expiration_alert_threshold rather than cloned (0), and the support
+        // contract itself is five columns on asset rather than a table (0).
+        //
+        // The rename is the part to hold onto. A warranty running out and a
+        // support contract running out are the same question asked of two
+        // different columns, so they share one table, one threshold vocabulary
+        // and one sweep -- rather than a second set that would drift apart the
+        // first time one of them was fixed.
+        assertThat(tables).isEqualTo(45);
+    }
+
+    @Test
+    @DisplayName("support cover is tracked apart from the warranty, and alerted on apart from it")
+    void supportContractsAreTheirOwnThing() {
+        // The distinction the whole of V32 exists for: a warranty is sold as a
+        // length, so its end is derived; a support contract is sold with an end
+        // date and co-termed to one, so the date is stored directly. If these
+        // ever collapse into one set of columns, this is what notices.
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM information_schema.columns
+                WHERE table_name = 'asset' AND column_name IN
+                      ('support_provider', 'support_level_id', 'support_start',
+                       'support_expiration', 'support_contract_reference')
+                """, Integer.class)).isEqualTo(5);
+
+        // No support_term_months, deliberately. Its absence is the design.
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM information_schema.columns
+                WHERE table_name = 'asset' AND column_name = 'support_term_months'
+                """, Integer.class)).isZero();
+
+        // Both kinds seeded, so support alerts work on the day this deploys
+        // rather than silently notifying nothing until somebody finds the
+        // admin screen and wonders why it was empty.
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM expiration_alert_threshold WHERE kind = 'SUPPORT'",
+                Integer.class))
+                .as("support thresholds seeded")
+                .isEqualTo(jdbc.queryForObject(
+                        "SELECT count(*) FROM expiration_alert_threshold WHERE kind = 'WARRANTY'",
+                        Integer.class));
+
+        // A rule to publish through, or the sweep raises nothing it can deliver.
+        assertThat(jdbc.queryForObject(
+                "SELECT count(*) FROM notification_rule WHERE trigger_type = 'SUPPORT_EXPIRATION'",
+                Integer.class)).isEqualTo(1);
+
+        // The log's vocabulary has to match the rule's: a trigger a rule may
+        // carry but its own log row may not is a rule that cannot record what
+        // it did. V23 made that point; V32 has to keep it.
+        for (String table : java.util.List.of("notification_rule", "notification_log")) {
+            assertThat(jdbc.queryForObject("""
+                    SELECT pg_get_constraintdef(oid) FROM pg_constraint
+                    WHERE conrelid = ?::regclass AND conname = ? || '_trigger_type_check'
+                    """, String.class, table, table))
+                    .as("%s accepts SUPPORT_EXPIRATION", table)
+                    .contains("SUPPORT_EXPIRATION");
+        }
     }
 
     @Test

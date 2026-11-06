@@ -37,6 +37,7 @@ public class AssetService {
     private final AuditService audit;
     private final NotificationService notifications;
     private final AppUserRepository users;
+    private final SupportLevelRepository supportLevels;
     private final CurrentUser currentUser;
 
     public AssetService(AssetRepository assets,
@@ -50,6 +51,7 @@ public class AssetService {
                         AuditService audit,
                         NotificationService notifications,
                         AppUserRepository users,
+                        SupportLevelRepository supportLevels,
                         CurrentUser currentUser) {
         this.assets = assets;
         this.categories = categories;
@@ -62,7 +64,21 @@ public class AssetService {
         this.audit = audit;
         this.notifications = notifications;
         this.users = users;
+        this.supportLevels = supportLevels;
         this.currentUser = currentUser;
+    }
+
+    /**
+     * The tier an id names, or null for "no level recorded".
+     *
+     * <p>An unknown id is an error rather than a silent null: a form that sent
+     * one is out of step with the vocabulary, and quietly storing nothing would
+     * leave somebody looking at a blank field they had just filled in.
+     */
+    private SupportLevel supportLevel(Long id) {
+        if (id == null) return null;
+        return supportLevels.findById(id)
+                .orElseThrow(() -> new ApiExceptions.NotFoundException("Support level not found"));
     }
 
     /** Where an asset starts unless the person creating it says otherwise. */
@@ -380,6 +396,19 @@ public class AssetService {
      */
     @Transactional
     public Asset transition(Long assetId, Long toStateId, String reason) {
+        return transition(assetId, toStateId, reason, true);
+    }
+
+    /**
+     * @param announce false for a bulk move, which raises one notification for
+     *                 the batch instead. Two hundred rows saying the same thing
+     *                 is not the news a lifecycle rule exists to carry; it is
+     *                 the same news told badly enough to be ignored. The audit
+     *                 trail still records every move individually, because that
+     *                 is a record rather than a message.
+     */
+    @Transactional
+    public Asset transition(Long assetId, Long toStateId, String reason, boolean announce) {
         Asset asset = get(assetId);
         LifecycleState from = asset.getLifecycleState();
         LifecycleState to = lifecycleStates.findById(toStateId)
@@ -399,6 +428,7 @@ public class AssetService {
                 ? reason
                 : join("Skipped ahead: not a step in the " + asset.getCategory().getName() + " lifecycle", reason);
         audit.recordLifecycleTransition(assetId, from.getName(), to.getName(), note);
+        if (!announce) return saved;
         announce(saved, NotificationRule.TriggerType.ASSET_LIFECYCLE_CHANGED,
                 "%s moved to %s".formatted(saved.displayLabel(), to.getName()),
                 "%s went from %s to %s.%s".formatted(saved.displayLabel(), from.getName(), to.getName(),
@@ -475,6 +505,22 @@ public class AssetService {
         // warranty_expiration, so nothing else had to change.
         asset.setWarrantyTermMonths(request.warrantyTermMonths());
         asset.recalculateWarrantyExpiration();
+
+        // Support cover, which is not the warranty and is not derived. The end
+        // date is set, because that is the thing a contract is sold with.
+        asset.setSupportProvider(request.supportProvider());
+        asset.setSupportLevel(supportLevel(request.supportLevelId()));
+        asset.setSupportStart(request.supportStart());
+        asset.setSupportExpiration(request.supportExpiration());
+        asset.setSupportContractReference(request.supportContractReference());
+        if (asset.getSupportStart() != null && asset.getSupportExpiration() != null
+                && asset.getSupportExpiration().isBefore(asset.getSupportStart())) {
+            // The database refuses this too. Caught here so the person gets a
+            // sentence rather than a constraint violation.
+            throw new ApiExceptions.BadRequestException(
+                    "Support cover cannot end before it starts.");
+        }
+
         asset.setLicenseInformation(request.licenseInformation());
         asset.setCondition(request.condition());
         asset.setStatus(request.status());
@@ -632,6 +678,12 @@ public class AssetService {
         values.put("warranty_start", asset.getWarrantyStart());
         values.put("warranty_expiration", asset.getWarrantyExpiration());
         values.put("warranty_term_months", asset.getWarrantyTermMonths());
+        values.put("support_provider", asset.getSupportProvider());
+        values.put("support_level",
+                asset.getSupportLevel() == null ? null : asset.getSupportLevel().getName());
+        values.put("support_start", asset.getSupportStart());
+        values.put("support_expiration", asset.getSupportExpiration());
+        values.put("support_contract_reference", asset.getSupportContractReference());
         values.put("license_information", asset.getLicenseInformation());
         values.put("condition", asset.getCondition());
         values.put("status", asset.getStatus());

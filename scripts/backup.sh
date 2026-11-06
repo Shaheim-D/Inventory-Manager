@@ -49,6 +49,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
 source "$ROOT/scripts/lib/runtime.sh"
 runtime_load_env "$ROOT"
+# Before anything is written. A dump taken by a mismatched client is worse than
+# no dump: it is a file that passes every check this script makes and fails
+# during the restore it exists for.
+runtime_require_matching_client
 
 STAGING="${BACKUP_STAGING_DIR:-/var/backups/inventory-manager}"
 RETENTION="${BACKUP_RETENTION_DAYS:-180}"

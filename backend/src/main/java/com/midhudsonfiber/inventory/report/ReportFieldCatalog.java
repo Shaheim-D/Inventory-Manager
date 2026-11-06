@@ -190,6 +190,12 @@ public class ReportFieldCatalog {
         return switch (coreField) {
             case "purchase_date", "purchase_price", "vendor", "purchase_link", "invoice_number",
                  "warranty_start", "warranty_expiration", "license_information" -> "Purchase & warranty";
+            // Its own group rather than folded in with the warranty: the whole
+            // point of the feature is that the two are different things, and a
+            // field picker that mixed them would undo that on the one screen
+            // where somebody goes looking for what is about to lapse.
+            case "support_provider", "support_level_id", "support_start",
+                 "support_expiration", "support_contract_reference" -> "Support contract";
             case "customer_name", "customer_address" -> "Custody";
             case "condition", "status", "notes" -> "Record";
             default -> "Identification";

@@ -52,6 +52,8 @@ const RolesPage = lazyPage(() => import('./pages/admin/RolesPage'), 'RolesPage')
 const FieldVisibilityPage = lazyPage(
   () => import('./pages/admin/FieldVisibilityPage'), 'FieldVisibilityPage');
 const BrandingPage = lazyPage(() => import('./pages/admin/BrandingPage'), 'BrandingPage');
+const SupportLevelsPage = lazyPage(
+  () => import('./pages/admin/SupportLevelsPage'), 'SupportLevelsPage');
 
 export function App() {
   return (
@@ -134,6 +136,10 @@ export function App() {
         <Route path="/admin/plugins" element={guard(['plugin:manage'], <PluginsPage />)} />
         <Route path="/admin/plugins/:id" element={guard(['plugin:manage'], <PluginDetailPage />)} />
         <Route path="/admin/devices" element={guard(['asset:read'], <DevicesPage />)} />
+        {/* asset:read to look, category:manage to change — the same split the
+            device catalogue uses, because anybody recording cover needs to see
+            the tiers on offer. */}
+        <Route path="/admin/support-levels" element={guard(['asset:read'], <SupportLevelsPage />)} />
         <Route path="/admin/users" element={guard(['user:manage'], <UsersPage />)} />
         <Route path="/admin/roles" element={guard(['role:manage'], <RolesPage />)} />
         <Route path="/admin/field-visibility" element={guard(['role:manage'], <FieldVisibilityPage />)} />

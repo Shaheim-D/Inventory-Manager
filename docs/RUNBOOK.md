@@ -583,10 +583,27 @@ run. So a cleared warranty notice will not reappear tomorrow, and the audit
 trail of what was sent is intact regardless of what anyone tidied away.
 
 **The scheduled checks.** Two sweeps run hourly and decide for themselves
-whether they have anything new to say: warranty expiry, and bulk stock overdue
-for verification. Both can be run on demand from **Settings → Notification
-Rules** rather than waiting — running either twice is harmless, because
-de-duplication means the second run raises nothing. Their schedules are
+whether they have anything new to say: expiry — warranties *and* support
+contracts, in one sweep over both — and bulk stock overdue for verification.
+Both can be run on demand from **Settings → Notification Rules** rather than
+waiting — running either twice is harmless, because de-duplication means the
+second run raises nothing.
+
+**Support contracts are not warranties, and are alerted on separately.** A
+warranty is sold as a length, so the app calculates its end date from the start
+and the term. A support contract is sold with an end date and renewals are
+co-termed across a fleet, so **Support expires** is typed in directly and there
+is deliberately no "support length". Each category has its own notice periods
+for each kind, under **Admin → Categories & Fields**; a fresh install starts
+with support thresholds mirroring that category's warranty ones, and the people
+who hear about warranties hear about support. Change either under **Settings →
+Notification Rules**.
+
+The service tiers themselves — Dell ProSupport Plus, Cisco SmartNet 24x7x4 —
+live under **Manage → Support Levels**, as a list rather than free text so that
+"everything on 24x7x4 expiring this quarter" is a report rather than a guess at
+spelling. A tier an asset already references is retired rather than deleted: it
+still describes the contract that asset was bought under. Their schedules are
 `app.notifications.warranty-cron`, `app.notifications.staleness-cron` and
 `app.notifications.digest-cron` (the email digest), all overridable as
 environment variables in the usual Spring way.
@@ -656,3 +673,56 @@ physically on it.
 
 **Logs.** `docker compose logs -f app`. Everything goes to stdout/stderr; there
 is deliberately no log aggregation stack at this size.
+
+**Changing many assets at once.** Select rows on the asset list (or Locations,
+or Users) and the bar below the table offers **Edit** as well as **Delete**.
+Pick the fields, then read the card: it lists every change grouped by what is
+actually moving — *"38 assets · Support expires — (none) → 30 Jun 2027"* — plus
+anything already holding that value and anything that cannot go, with the
+reason. **Confirm** applies it; **Not ready** goes back to the fields without
+touching anything.
+
+Three things about that card are worth knowing, because they are what make it
+trustworthy rather than decorative:
+
+1. **It is computed by the code that does the work.** The preview and the update
+   call the same planner, so the card is not a separate guess that can drift
+   from what happens.
+2. **It is binding.** What it displayed is sent back when you confirm, and any
+   row somebody else changed in between is refused with that as the reason
+   rather than silently overwritten. You will see it listed under "cannot be
+   changed".
+3. **It is a patch.** Only the fields you filled in change. Everything else on
+   those assets is left exactly as it was — unlike the single-asset form, which
+   submits the whole asset.
+
+Identifiers — serial number, asset tag, name, hostname, IP, MAC — are not
+offered, because one value cannot apply to many assets. Fields your role cannot
+see are not offered either, and are refused if asked for directly.
+
+Two refusals on **Users** that surprise people: you cannot bulk-change your own
+access, and roles on an account that signs in through LDAP or RADIUS are
+refused — the directory replaces that account's roles at its next sign-in, so
+setting them here would look like it worked and quietly revert.
+
+**A backup or restore refuses with "client and server versions differ".** The
+PostgreSQL client tools on this host are a different major version from the
+server, and a dump written that way restores with errors — errors that appear
+*during* the restore, so the file would look healthy right up until you needed
+it. The message names both versions and the fix:
+
+```
+export PATH=/usr/lib/postgresql/<server-major>/bin:$PATH
+```
+
+Installing `postgresql-client-<version>` is **not** enough on Debian or Ubuntu:
+`pg_dump` on PATH is a wrapper that dispatches to the newest installed major, so
+a 17 package present on the box wins even when 16 is also installed. Put the
+versioned directory first, as above, and make it permanent in whatever runs the
+backup — the cron entry, the systemd unit, or the shell profile it inherits.
+
+This most often appears after an OS upgrade bumped the client packages while the
+server stayed where it was. It is deliberately a refusal rather than a warning:
+the alternative is a nightly backup that succeeds for months and fails on the
+one night it matters. `scripts/reset-admin-password.sh` is unaffected — it uses
+psql alone, and a break-glass tool must keep working on a drifted host.

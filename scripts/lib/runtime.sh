@@ -55,10 +55,12 @@ runtime_load_env() {
       cd "$root/deploy"
       ;;
     direct)
-      # pg_dump and pg_restore must match the server's major version or the
-      # dump is unrestorable in ways that surface at the worst moment. Check
-      # now, in the open, rather than letting a version error appear halfway
-      # through a restore.
+      # Presence only. Whether they are the *right* version is a separate
+      # question, asked by runtime_require_matching_client, because it needs a
+      # reachable server and because only the scripts that dump or restore have
+      # any reason to refuse over it -- reset-admin-password.sh uses psql alone
+      # and must keep working on a host whose client packages have drifted,
+      # since that is a break-glass tool.
       for tool in psql pg_dump pg_restore; do
         command -v "$tool" > /dev/null 2>&1 || {
           echo "DEPLOY_MODE=direct needs ${tool} on PATH." >&2
@@ -72,6 +74,84 @@ runtime_load_env() {
       exit 1
       ;;
   esac
+}
+
+# ---- Client/server version agreement --------------------------------
+# pg_dump and pg_restore must match the server's major version, or the dump is
+# unrestorable in ways that surface at the worst moment. This is the check that
+# makes that true rather than merely stated.
+#
+# It is not hypothetical. A pg_dump one major ahead of the server writes
+# parameters the server has never heard of -- PostgreSQL 17 emits
+# `SET transaction_timeout = 0`, which a 16 server rejects. The dump itself
+# succeeds, the file looks healthy, and the error appears *during the restore*,
+# which is the one moment nobody has time to debug it. CI hit exactly this once
+# the runner image began shipping 17 client tools.
+#
+# Drift is ordinary rather than exotic: an OS upgrade bumps the client packages
+# while the server stays where it is, and on Debian and Ubuntu `pg_dump` on PATH
+# is postgresql-common's wrapper, which dispatches to the NEWEST installed
+# major. Having installed the matching client package is therefore not evidence
+# of anything.
+#
+# Called by the scripts that dump or restore -- backup.sh and restore.sh --
+# rather than from runtime_load_env, so a mismatch stops a backup and a restore
+# without also stopping the break-glass password reset, which only needs psql.
+# unimus-backup.sh is deliberately not covered: its plain-text export feeds a
+# config collector rather than the recovery path, and refusing to write it would
+# cost something real to prevent something cosmetic.
+runtime_require_matching_client() {
+  # Compose mode runs pg_dump and pg_restore inside the postgres container, so
+  # client and server are the same image by construction.
+  [[ "$DEPLOY_MODE" == "direct" ]] || return 0
+
+  local client_major server_num server_major
+  client_major="$(pg_dump --version 2>/dev/null | awk '{print $3}' | cut -d. -f1)"
+
+  # The maintenance database, not the application one: restore.sh drops and
+  # recreates DB_NAME, so the application database may legitimately not exist
+  # at the moment this runs.
+  server_num="$(db_psql_maintenance -tAc 'SHOW server_version_num' 2>/dev/null \
+                | tr -d '[:space:]')"
+
+  if [[ -z "$client_major" || -z "$server_num" ]]; then
+    # Unreachable or unreadable. Not fatal on its own: whatever runs next needs
+    # the same connection and will fail with a clearer message than this one
+    # could. Said out loud, though, because the guarantee is now absent.
+    echo "WARNING: could not compare client and server PostgreSQL versions." >&2
+    echo "         Proceeding, but a version mismatch would not be caught." >&2
+    return 0
+  fi
+  server_major=$(( server_num / 10000 ))
+
+  if [[ "$client_major" != "$server_major" ]]; then
+    local binary
+    binary="$(command -v pg_dump)"
+    cat >&2 <<EOF
+
+===========================================================
+ REFUSING: PostgreSQL client and server versions differ
+===========================================================
+   client (pg_dump): ${client_major}   -> ${binary}
+   server:           ${server_major}   at ${DB_HOST}:${DB_PORT}
+
+ A dump written by a mismatched client restores with errors
+ -- and those errors appear during the restore, not now, so
+ the backup would look healthy right up until it was needed.
+
+ On Debian and Ubuntu, \`pg_dump\` on PATH is a wrapper that
+ picks the newest installed major version, so installing the
+ matching package is not enough. Put its real directory
+ first instead:
+
+   export PATH=/usr/lib/postgresql/${server_major}/bin:\$PATH
+
+ Then re-run this script.
+===========================================================
+
+EOF
+    exit 1
+  fi
 }
 
 # ---- Database -------------------------------------------------------

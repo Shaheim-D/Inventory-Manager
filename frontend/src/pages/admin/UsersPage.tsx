@@ -20,7 +20,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../../api/client';
 import type { Permission, Role, UserSummary } from '../../api/types';
 import { EntityTable } from '../../components/EntityTable';
-import { BulkDeleteBar } from '../../components/BulkDeleteBar';
+import { BulkActionBar } from '../../components/BulkActionBar';
 import { PageHeader } from '../../components/PageHeader';
 import { useAuth } from '../../auth/AuthContext';
 
@@ -113,12 +113,24 @@ export function UsersPage() {
         />
       </Paper>
 
-      <BulkDeleteBar
+      <BulkActionBar
         endpoint="/api/admin/users/bulk-delete"
         selected={selected}
         onClear={() => setSelected(new Set())}
+        editBasePath="/api/admin/users"
         invalidate={[['users'], ['recycle-bin', 'users']]}
         noun="user"
+        // Roles is the one field worth setting across accounts, and it replaces
+        // rather than adds. Directory-managed accounts are refused by the
+        // server with that as the reason, because their roles come back from
+        // the directory at the next sign-in regardless of what is set here.
+        editOptions={{
+          roleIds: (roles.data ?? []).map((role) => ({ id: role.id, label: role.name })),
+          active: [
+            { id: 'true', label: 'Enabled' },
+            { id: 'false', label: 'Disabled' },
+          ],
+        }}
       />
 
       {creating && (
