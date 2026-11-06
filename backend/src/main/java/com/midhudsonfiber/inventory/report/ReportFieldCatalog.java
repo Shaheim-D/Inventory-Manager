@@ -198,7 +198,12 @@ public class ReportFieldCatalog {
             // where somebody goes looking for what is about to lapse.
             case "support_provider", "support_level_id", "support_start",
                  "support_expiration", "support_contract_reference" -> "Support contract";
-            case "customer_name", "customer_address" -> "Custody";
+            // Assignment is custody: who holds a thing belongs with the
+            // customer it sits at, not among its identifiers. It had been
+            // falling through to the default, which put "Assign to user" in
+            // the identification block on every screen that groups by this.
+            case "customer_name", "customer_address",
+                 "assignee_text", "assignee_user_id" -> "Custody";
             case "condition", "status", "notes" -> "Record";
             default -> "Identification";
         };

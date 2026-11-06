@@ -35,6 +35,22 @@ class BulkUpdateTest extends AbstractIntegrationTest {
         return jdbc.queryForObject("SELECT id FROM asset_category WHERE name = ?", Long.class, name);
     }
 
+    /**
+     * A category of this test's own, because a category's field set is shared
+     * state. Reusing a seeded one made these tests depend on run order: the
+     * first to add a field left it there for the next, whose precondition then
+     * failed on a re-run against the same database. The suite's rule is that
+     * tests name what they create uniquely; a template is created state too.
+     *
+     * <p>A new category gets DEFAULT_FOR_NEW_CATEGORY, which deliberately has
+     * neither the support block nor customer_name — exactly the gap under test.
+     */
+    private Long throwawayCategory(Session admin) {
+        return post(admin, "/api/categories", """
+                {"name":"%s","serialized":true}
+                """.formatted(unique("Bulk Cat"))).getBody().get("id").asLong();
+    }
+
     private Long newLocation(Session admin) {
         Long typeId = jdbc.queryForObject(
                 "SELECT id FROM location_type WHERE name = 'Warehouse'", Long.class);
@@ -283,42 +299,37 @@ class BulkUpdateTest extends AbstractIntegrationTest {
     @DisplayName("a field missing from the category's form is added to it and populated")
     void missingTemplateFieldsAreAdded() {
         Session admin = admin();
-        // Vehicle deliberately has no support fields on its form: V32 put them
-        // on networked kit, computers and test equipment only.
-        Long vehicle = categoryId("Vehicle");
+        Long category = throwawayCategory(admin);
         assertThat(jdbc.queryForObject("""
                 SELECT count(*) FROM category_core_field
                 WHERE asset_category_id = ? AND core_field_name = 'support_expiration'
-                """, Integer.class, vehicle)).isZero();
+                """, Integer.class, category)).isZero();
 
-        // VIN is a required custom field on Vehicle; a create without it is
-        // rejected, which is the category doing its job rather than a problem.
-        Long van = post(admin, "/api/assets", """
-                {"categoryId":%d,"locationId":%d,"name":"%s",
-                 "customFields":{"VIN":"%s"}}
-                """.formatted(vehicle, newLocation(admin), unique("van"), unique("VIN")))
+        Long asset = post(admin, "/api/assets", """
+                {"categoryId":%d,"locationId":%d,"name":"%s"}
+                """.formatted(category, newLocation(admin), unique("kit")))
                 .getBody().get("id").asLong();
 
         // The preview says so before anything happens, and says how far it
         // reaches -- a field set belongs to the category, not to this asset.
         JsonNode preview = post(admin, "/api/assets/bulk-update/preview", """
                 {"ids":[%d],"changes":{"supportExpiration":"2029-03-31"}}
-                """.formatted(van)).getBody();
+                """.formatted(asset)).getBody();
         JsonNode addition = preview.get("templateAdditions").get(0);
-        assertThat(addition.get("categoryName").asText()).isEqualTo("Vehicle");
+        assertThat(addition.get("categoryId").asLong()).isEqualTo(category);
         assertThat(addition.get("fields").get(0).asText()).isEqualTo("Support expiration");
         assertThat(addition.get("assetsInCategory").asLong()).isPositive();
 
         post(admin, "/api/assets/bulk-update", """
                 {"ids":[%d],"changes":{"supportExpiration":"2029-03-31"}}
-                """.formatted(van));
+                """.formatted(asset));
 
-        assertThat(get(admin, "/api/assets/" + van).getBody().get("supportExpiration").asText())
+        assertThat(get(admin, "/api/assets/" + asset).getBody().get("supportExpiration").asText())
                 .isEqualTo("2029-03-31");
         assertThat(jdbc.queryForObject("""
                 SELECT count(*) FROM category_core_field
                 WHERE asset_category_id = ? AND core_field_name = 'support_expiration'
-                """, Integer.class, vehicle))
+                """, Integer.class, category))
                 .as("a value stored behind a field the form never shows is worse than a refusal")
                 .isEqualTo(1);
     }
@@ -327,27 +338,25 @@ class BulkUpdateTest extends AbstractIntegrationTest {
     @DisplayName("adding a field to a template leaves the category's other fields alone")
     void addingAFieldDoesNotDisturbTheRest() {
         Session admin = admin();
-        Long vehicle = categoryId("Vehicle");
+        Long category = throwawayCategory(admin);
         List<String> before = jdbc.queryForList("""
                 SELECT core_field_name FROM category_core_field
                 WHERE asset_category_id = ? ORDER BY core_field_name
-                """, String.class, vehicle);
+                """, String.class, category);
+        assertThat(before).as("a new category starts with a usable form").isNotEmpty();
 
-        // VIN is a required custom field on Vehicle; a create without it is
-        // rejected, which is the category doing its job rather than a problem.
-        Long van = post(admin, "/api/assets", """
-                {"categoryId":%d,"locationId":%d,"name":"%s",
-                 "customFields":{"VIN":"%s"}}
-                """.formatted(vehicle, newLocation(admin), unique("van"), unique("VIN")))
+        Long asset = post(admin, "/api/assets", """
+                {"categoryId":%d,"locationId":%d,"name":"%s"}
+                """.formatted(category, newLocation(admin), unique("kit")))
                 .getBody().get("id").asLong();
         post(admin, "/api/assets/bulk-update", """
                 {"ids":[%d],"changes":{"supportProvider":"Fleet Services"}}
-                """.formatted(van));
+                """.formatted(asset));
 
         List<String> after = jdbc.queryForList("""
                 SELECT core_field_name FROM category_core_field
                 WHERE asset_category_id = ? ORDER BY core_field_name
-                """, String.class, vehicle);
+                """, String.class, category);
         assertThat(after).containsAll(before);
         assertThat(after).contains("support_provider");
     }
@@ -363,6 +372,86 @@ class BulkUpdateTest extends AbstractIntegrationTest {
                 """.formatted(id)).getBody();
 
         assertThat(preview.get("templateAdditions")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Custody offers the whole block, not just the customer's name")
+    void custodyOffersEveryFieldInIt() {
+        Session admin = admin();
+        java.util.List<String> custody = new ArrayList<>();
+        get(admin, "/api/assets/bulk-update/fields").getBody().forEach(node -> {
+            if (node.get("section").asText().equals("Custody")) {
+                custody.add(node.get("field").asText());
+            }
+        });
+
+        // A section heading over a single box is not a section.
+        assertThat(custody).contains("customerName", "customerAddress",
+                "assigneeUserId", "assigneeEmployee", "assigneeCustomer");
+    }
+
+    @Test
+    @DisplayName("assigning in bulk sets every assignment column consistently")
+    void assignmentSetsAllThreeColumns() {
+        Session admin = admin();
+        Long id = richAsset(admin);
+
+        post(admin, "/api/assets/bulk-update", """
+                {"ids":[%d],"changes":{"assigneeEmployee":"Dana Reyes"}}
+                """.formatted(id));
+
+        // The database checks type, text and id together; a type with the
+        // wrong column filled in is rejected outright.
+        JsonNode after = get(admin, "/api/assets/" + id).getBody();
+        assertThat(after.get("assigneeType").asText()).isEqualTo("EMPLOYEE");
+        assertThat(after.get("assigneeText").asText()).isEqualTo("Dana Reyes");
+        assertThat(after.get("assigneeUserId").isNull()).isTrue();
+    }
+
+    @Test
+    @DisplayName("two kinds of assignment at once is refused rather than decided by iteration order")
+    void twoAssignmentsAreRefused() {
+        Session admin = admin();
+        Long id = richAsset(admin);
+
+        ResponseEntity<JsonNode> response = post(admin, "/api/assets/bulk-update", """
+                {"ids":[%d],"changes":{"assigneeEmployee":"Dana","assigneeCustomer":"Acme Ltd"}}
+                """.formatted(id));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().get("error").asText()).contains("not more than one");
+    }
+
+    @Test
+    @DisplayName("a customer name set in bulk is added to the category's form")
+    void customerNameReachesTheTemplate() {
+        Session admin = admin();
+        // A new category's default field set has no customer_name, so a value
+        // written there would be invisible on the asset's own form afterwards
+        // -- which is exactly what was reported.
+        Long category = throwawayCategory(admin);
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM category_core_field
+                WHERE asset_category_id = ? AND core_field_name = 'customer_name'
+                """, Integer.class, category)).isZero();
+
+        Long asset = post(admin, "/api/assets", """
+                {"categoryId":%d,"locationId":%d,"name":"%s"}
+                """.formatted(category, newLocation(admin), unique("kit")))
+                .getBody().get("id").asLong();
+
+        post(admin, "/api/assets/bulk-update", """
+                {"ids":[%d],"changes":{"customerName":"Acme Ltd"}}
+                """.formatted(asset));
+
+        assertThat(get(admin, "/api/assets/" + asset).getBody().get("customerName").asText())
+                .isEqualTo("Acme Ltd");
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM category_core_field
+                WHERE asset_category_id = ? AND core_field_name = 'customer_name'
+                """, Integer.class, category))
+                .as("otherwise the value is stored where the form will never show it")
+                .isEqualTo(1);
     }
 
     @Test

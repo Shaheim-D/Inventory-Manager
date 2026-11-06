@@ -92,6 +92,11 @@ export function AssetFormPage() {
       warrantyTermMonths: asset.warrantyTermMonths ?? '',
       condition: asset.condition ?? '',
       customerName: asset.customerName ?? '',
+      // Was absent here AND absent from the form, so every save sent no
+      // customer address and the server -- which replaces the whole asset --
+      // wrote null over whatever was there. Silently, because nothing
+      // displayed it either.
+      customerAddress: asset.customerAddress ?? '',
       notes: asset.notes ?? '',
       assigneeType: asset.assigneeType,
       quantity: asset.quantity,
@@ -626,6 +631,21 @@ export function AssetFormPage() {
 
               {assignmentMode === 'CUSTOMER' && (
                 <Field label="Customer" field="assigneeText" form={form} set={set} sm={6} />
+              )}
+
+              {/* The customer this sits at, which is not the same as who it is
+                  assigned to: a router assigned to an engineer can still be
+                  installed at a customer's premises. Both were missing from
+                  this form entirely -- name could be stored by an import or a
+                  bulk edit and never seen again, and address was additionally
+                  wiped by every save. */}
+              {uses('customer_name') && (
+                <Field label={label('customer_name', 'Customer name')}
+                       field="customerName" form={form} set={set} sm={6} />
+              )}
+              {uses('customer_address') && (
+                <Field label={label('customer_address', 'Customer address')}
+                       field="customerAddress" form={form} set={set} sm={6} />
               )}
             </>
           )}

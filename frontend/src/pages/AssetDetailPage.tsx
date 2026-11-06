@@ -313,6 +313,9 @@ export function AssetDetailPage() {
                   />
                 )}
                 {uses('customer_name') && <Field label={label('customer_name')} value={data.customerName} />}
+                {uses('customer_address') && (
+                  <Field label={label('customer_address')} value={data.customerAddress} />
+                )}
                 <Field label="Last verified" value={formatDate(data.lastVerifiedAt)} />
               </Section>
 
