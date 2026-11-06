@@ -3,9 +3,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Chip, Grid, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type { Asset, Category, LifecycleState, Location, Page } from '../api/types';
+import type { Asset, Category, LifecycleState, Location, Page, SupportLevel } from '../api/types';
 import { EntityTable, type Column } from './EntityTable';
-import { BulkDeleteBar } from './BulkDeleteBar';
+import { BulkActionBar } from './BulkActionBar';
 import { locationOptions, locationOptionSx, locationPath } from './locationTree';
 import { useAuth } from '../auth/AuthContext';
 import { money } from '../format';
@@ -26,6 +26,7 @@ export function AssetBrowser() {
   const navigate = useNavigate();
   const { has } = useAuth();
   const canDelete = has('asset:delete');
+  const canWrite = has('asset:write');
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Arriving from an order's "Show items". It lives in the URL rather than in
@@ -83,6 +84,13 @@ export function AssetBrowser() {
   const states = useQuery({
     queryKey: ['lifecycle-states'],
     queryFn: () => api.get<LifecycleState[]>('/api/reference/lifecycle-states'),
+  });
+
+  // Only for the bulk edit picker, so it waits until somebody can actually use it.
+  const supportLevels = useQuery({
+    queryKey: ['support-levels'],
+    queryFn: () => api.get<SupportLevel[]>('/api/support-levels'),
+    enabled: has('asset:write'),
   });
 
   const params = new URLSearchParams({
@@ -283,7 +291,7 @@ export function AssetBrowser() {
           columns={columns}
           rows={rows}
           rowKey={(asset) => asset.id}
-          selectable={canDelete}
+          selectable={canDelete || canWrite}
           selectedIds={selected}
           onSelectionChange={setSelected}
           loading={assets.isLoading}
@@ -307,9 +315,12 @@ export function AssetBrowser() {
         />
       </Paper>
 
-      {canDelete && (
-        <BulkDeleteBar
-          endpoint="/api/assets/bulk-delete"
+      {(canDelete || canWrite) && (
+        <BulkActionBar
+          // Undefined for somebody who may edit but not delete, which hides the
+          // Delete button rather than offering one the API would refuse.
+          endpoint={canDelete ? '/api/assets/bulk-delete' : undefined}
+          editBasePath={canWrite ? '/api/assets' : undefined}
           selected={selected}
           onClear={() => setSelected(new Set())}
           // The dashboard's "Assets tracked" figure is a separate query, and a
@@ -317,6 +328,28 @@ export function AssetBrowser() {
           // failed delete.
           invalidate={[['assets'], ['dashboard'], ['recycle-bin', 'assets']]}
           noun="asset"
+          // Fields that reference something get a picker rather than a box to
+          // type an id into -- nobody knows a location by its number.
+          editOptions={{
+            locationId: locationOptions(locations.data).map((option) => ({
+              id: option.location.id,
+              label: option.path,
+            })),
+            lifecycleStateId: (states.data ?? []).map((state) => ({
+              id: state.id,
+              label: state.name,
+            })),
+            supportLevelId: (supportLevels.data ?? []).map((level) => ({
+              id: level.id,
+              label: level.displayLabel,
+            })),
+          }}
+          editDateFields={[
+            'supportStart',
+            'supportExpiration',
+            'purchaseDate',
+            'warrantyStart',
+          ]}
         />
       )}
     </>

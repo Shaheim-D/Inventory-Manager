@@ -29,7 +29,7 @@ import type { Location, LocationTypeOption, ReferenceEnums } from '../api/types'
 import { PageHeader } from '../components/PageHeader';
 import { locationOptions, locationOptionSx } from '../components/locationTree';
 import { useAuth } from '../auth/AuthContext';
-import { BulkDeleteBar } from '../components/BulkDeleteBar';
+import { BulkActionBar } from '../components/BulkActionBar';
 
 /** Reads better than the stored key, which is all the API deals in. */
 const OWNERSHIP_LABELS: Record<string, string> = {
@@ -264,12 +264,23 @@ export function LocationsPage() {
       </Paper>
 
       {has('location:write') && (
-        <BulkDeleteBar
+        <BulkActionBar
           endpoint="/api/locations/bulk-delete"
           selected={selected}
           onClear={() => setSelected(new Set())}
+          editBasePath="/api/locations"
           invalidate={[['locations'], ['recycle-bin', 'locations']]}
           noun="location"
+          editOptions={{
+            locationTypeId: (locationTypes.data ?? []).map((type) => ({
+              id: type.id,
+              label: type.name,
+            })),
+            ownershipType: Object.entries(OWNERSHIP_LABELS).map(([value, label]) => ({
+              id: value,
+              label,
+            })),
+          }}
         />
       )}
 

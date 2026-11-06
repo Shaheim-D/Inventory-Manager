@@ -22,7 +22,7 @@ import { api, ApiError } from '../../api/client';
 import type { Category, DeviceModel } from '../../api/types';
 import { CategoryPicker } from '../../components/CategoryPicker';
 import { EntityTable } from '../../components/EntityTable';
-import { BulkDeleteBar } from '../../components/BulkDeleteBar';
+import { BulkActionBar } from '../../components/BulkActionBar';
 import { PageHeader } from '../../components/PageHeader';
 import { money } from '../../format';
 
@@ -158,7 +158,7 @@ export function DevicesPage() {
         />
       </Paper>
 
-      <BulkDeleteBar
+      <BulkActionBar
         endpoint="/api/device-models/bulk-delete"
         selected={selected}
         onClear={() => setSelected(new Set())}

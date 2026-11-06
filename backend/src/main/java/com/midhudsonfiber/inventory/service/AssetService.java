@@ -396,6 +396,19 @@ public class AssetService {
      */
     @Transactional
     public Asset transition(Long assetId, Long toStateId, String reason) {
+        return transition(assetId, toStateId, reason, true);
+    }
+
+    /**
+     * @param announce false for a bulk move, which raises one notification for
+     *                 the batch instead. Two hundred rows saying the same thing
+     *                 is not the news a lifecycle rule exists to carry; it is
+     *                 the same news told badly enough to be ignored. The audit
+     *                 trail still records every move individually, because that
+     *                 is a record rather than a message.
+     */
+    @Transactional
+    public Asset transition(Long assetId, Long toStateId, String reason, boolean announce) {
         Asset asset = get(assetId);
         LifecycleState from = asset.getLifecycleState();
         LifecycleState to = lifecycleStates.findById(toStateId)
@@ -415,6 +428,7 @@ public class AssetService {
                 ? reason
                 : join("Skipped ahead: not a step in the " + asset.getCategory().getName() + " lifecycle", reason);
         audit.recordLifecycleTransition(assetId, from.getName(), to.getName(), note);
+        if (!announce) return saved;
         announce(saved, NotificationRule.TriggerType.ASSET_LIFECYCLE_CHANGED,
                 "%s moved to %s".formatted(saved.displayLabel(), to.getName()),
                 "%s went from %s to %s.%s".formatted(saved.displayLabel(), from.getName(), to.getName(),
