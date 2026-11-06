@@ -114,14 +114,6 @@ const NAV: NavSection[] = [
         createLabel: 'asset',
       },
       {
-        label: 'Locations',
-        to: '/locations',
-        icon: <PlaceIcon />,
-        permissions: ['location:read'],
-        createTo: '/locations?new=1',
-        createPermissions: ['location:write'],
-      },
-      {
         label: 'Purchase Orders',
         to: '/purchase-orders',
         icon: <ShoppingCartIcon />,
@@ -149,6 +141,18 @@ const NAV: NavSection[] = [
     // moving these was that they are not that.
     heading: 'Manage',
     items: [
+      {
+        // Under Manage rather than up with the daily work: the location tree
+        // is set up once and then edited rarely, and editing it is a
+        // privileged job -- creating one needs location:write, which most
+        // people reading assets do not have.
+        label: 'Locations',
+        to: '/locations',
+        icon: <PlaceIcon />,
+        permissions: ['location:read'],
+        createTo: '/locations?new=1',
+        createPermissions: ['location:write'],
+      },
       {
         label: 'Categories & Fields',
         to: '/admin/categories',

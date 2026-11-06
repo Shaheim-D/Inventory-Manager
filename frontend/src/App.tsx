@@ -26,6 +26,8 @@ const AssetDetailPage = lazyPage(() => import('./pages/AssetDetailPage'), 'Asset
 const AssetFormPage = lazyPage(() => import('./pages/AssetFormPage'), 'AssetFormPage');
 const LocationsPage = lazyPage(() => import('./pages/LocationsPage'), 'LocationsPage');
 const AuditPage = lazyPage(() => import('./pages/AuditPage'), 'AuditPage');
+const ExpiringCoverPage = lazyPage(
+  () => import('./pages/ExpiringCoverPage'), 'ExpiringCoverPage');
 const RecycleBinPage = lazyPage(() => import('./pages/RecycleBinPage'), 'RecycleBinPage');
 const VerificationPage = lazyPage(() => import('./pages/VerificationPage'), 'VerificationPage');
 const NotificationsPage = lazyPage(() => import('./pages/NotificationsPage'), 'NotificationsPage');
@@ -105,6 +107,9 @@ export function App() {
         />
 
         <Route path="/locations" element={guard(['location:read'], <LocationsPage />)} />
+        {/* Where the dashboard's expiring-cover card goes. asset:read, because
+            it is a view of assets rather than of anything administrative. */}
+        <Route path="/expiring" element={guard(['asset:read'], <ExpiringCoverPage />)} />
         <Route path="/verification" element={guard(['asset:write'], <VerificationPage />)} />
         <Route path="/reports" element={guard(['report:view'], <ReportsPage />)} />
         <Route path="/audit" element={guard(['audit:view'], <AuditPage />)} />

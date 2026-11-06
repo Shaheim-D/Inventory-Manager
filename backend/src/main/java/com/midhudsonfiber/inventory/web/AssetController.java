@@ -60,6 +60,11 @@ public class AssetController {
                                     @RequestParam(required = false) Long lifecycleStateId,
                                     @RequestParam(required = false) Long assigneeUserId,
                                     @RequestParam(required = false) Long purchaseOrderId,
+                                    // What is running out, for the dashboard card and the
+                                    // screen behind it. Absent, the list behaves exactly as
+                                    // it always has.
+                                    @RequestParam(required = false) AssetService.ExpiringCover expiring,
+                                    @RequestParam(required = false) Integer withinDays,
                                     @RequestParam(defaultValue = "0") int page,
                                     @RequestParam(defaultValue = "25") int size,
                                     @RequestParam(defaultValue = "id") String sort,
@@ -68,7 +73,7 @@ public class AssetController {
         Sort.Direction dir = "asc".equalsIgnoreCase(direction) ? Sort.Direction.ASC : Sort.Direction.DESC;
         Page<Asset> result = assets.search(
                 new AssetService.AssetFilter(q, categoryId, locationId, lifecycleStateId, assigneeUserId,
-                        purchaseOrderId, false),
+                        purchaseOrderId, false, expiring, withinDays),
                 PageRequest.of(page, Math.min(size, 200), Sort.by(dir, safeSort(sort))));
 
         FieldVisibilityService.Decision decision = decision();
