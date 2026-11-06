@@ -40,10 +40,22 @@ WORKDIR /app
 # database credentials either way. What it deliberately does NOT do is give the
 # app the Docker socket to run `docker compose exec postgres pg_dump`, which
 # would turn a web-app vulnerability into a host compromise.
+#
+# The key fetch is retried because it is a single point of failure for the
+# whole image: one TLS reset from postgresql.org and the build fails with
+# `curl: (56) ... unexpected eof while reading`, having nothing to do with
+# anything in this repository. It has happened twice in one afternoon.
+#
+# --retry-all-errors rather than plain --retry: curl treats a reset mid-body
+# (55/56) as non-transient and will not retry it by default, which is exactly
+# the error observed. The cost is that a genuine 403 or 404 now takes five
+# attempts to surface, which is a few seconds against a build that otherwise
+# fails outright.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
     && install -d /usr/share/postgresql-common/pgdg \
-    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
+         https://www.postgresql.org/media/keys/ACCC4CF8.asc \
          -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
     && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
 https://apt.postgresql.org/pub/repos/apt jammy-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
