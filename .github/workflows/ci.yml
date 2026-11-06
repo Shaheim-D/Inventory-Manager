@@ -92,12 +92,38 @@ jobs:
       - name: Install PostgreSQL 16 client
         # pg_dump must match the server's major version, so pin it rather than
         # taking whatever the runner image happens to carry.
+        #
+        # Installing the package is not the pin, which is what this step used to
+        # assume. Debian's postgresql-common ships /usr/bin/pg_dump as a wrapper
+        # that dispatches to the NEWEST installed major version, so once the
+        # runner image started carrying PostgreSQL 17 client tools, `pg_dump`
+        # meant 17 however many 16 packages were installed alongside it. A 17
+        # dump writes `SET transaction_timeout = 0`, which a 16 server rejects
+        # -- and it rejects it during the restore, not during the dump, so the
+        # backup looks fine right up until the moment it is needed.
+        #
+        # The versioned bin directory is the actual pin, and the version is
+        # asserted rather than printed so this cannot rot back silently.
         run: |
           sudo sh -c 'echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          # Retried: this key fetch is a single point of failure for the whole
+          # drill, and it has failed on a transient TLS reset before.
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
           sudo apt-get update
           sudo apt-get install -y postgresql-client-16
+          echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
+
+      - name: Check the client really is version 16
+        # Separate step so that a mismatch fails here, named, rather than
+        # halfway through a restore with a parameter error nobody can place.
+        run: |
           pg_dump --version
+          pg_dump --version | grep -q ' 16\.' || {
+            echo "pg_dump is not 16.x -- the pin above has stopped working." >&2
+            exit 1
+          }
 
       - name: Build the schema by running the migration chain
         # The drill needs a database with real structure to back up. The test
