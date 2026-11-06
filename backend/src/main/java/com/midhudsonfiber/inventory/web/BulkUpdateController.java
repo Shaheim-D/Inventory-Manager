@@ -101,19 +101,19 @@ public class BulkUpdateController {
      */
     @GetMapping("/api/assets/bulk-update/fields")
     @PreAuthorize("hasAuthority('" + PermissionKeys.ASSET_WRITE + "')")
-    public List<Map<String, String>> assetFields() {
+    public List<Map<String, Object>> assetFields() {
         return updates.offeredFields(BulkUpdateService.Kind.ASSET);
     }
 
     @GetMapping("/api/locations/bulk-update/fields")
     @PreAuthorize("hasAuthority('" + PermissionKeys.LOCATION_WRITE + "')")
-    public List<Map<String, String>> locationFields() {
+    public List<Map<String, Object>> locationFields() {
         return updates.offeredFields(BulkUpdateService.Kind.LOCATION);
     }
 
     @GetMapping("/api/admin/users/bulk-update/fields")
     @PreAuthorize("hasAuthority('" + PermissionKeys.USER_MANAGE + "')")
-    public List<Map<String, String>> userFields() {
+    public List<Map<String, Object>> userFields() {
         return updates.offeredFields(BulkUpdateService.Kind.USER);
     }
 
@@ -156,15 +156,29 @@ public class BulkUpdateController {
                     view.put("label", row.label());
                     view.put("refusal", row.refusal());
                     view.put("changes", row.changes().stream()
-                            .map(change -> Map.of(
-                                    "field", change.field(),
-                                    "label", change.label(),
-                                    // Rendered, never raw: these are the strings
-                                    // the card shows and the strings the apply
-                                    // call sends back to prove nothing moved.
-                                    "from", String.valueOf(change.from()),
-                                    "to", String.valueOf(change.to()),
-                                    "noop", change.noop()))
+                            .map(change -> {
+                                // A LinkedHashMap rather than Map.of, because an
+                                // absent value has to travel as JSON null and
+                                // Map.of refuses nulls outright.
+                                //
+                                // It used to be String.valueOf here, which turned
+                                // a null into the four-character string "null".
+                                // The browser sent that back as the value it had
+                                // been shown, the stale check compared "null"
+                                // against a real null, and every field that
+                                // happened to be empty reported itself as changed
+                                // by somebody else -- on a single-user system,
+                                // where that is impossible. Any field somebody
+                                // was filling in for the first time was refused,
+                                // which is most of what a bulk edit is for.
+                                Map<String, Object> rendered = new LinkedHashMap<>();
+                                rendered.put("field", change.field());
+                                rendered.put("label", change.label());
+                                rendered.put("from", change.from());
+                                rendered.put("to", change.to());
+                                rendered.put("noop", change.noop());
+                                return rendered;
+                            })
                             .toList());
                     return view;
                 })
@@ -178,6 +192,16 @@ public class BulkUpdateController {
                 plan.rows().stream().filter(BulkUpdateService.RowPlan::changesAnything).count());
         response.put("unchangedCount", plan.rows().stream()
                 .filter(row -> !row.refused() && !row.changesAnything()).count());
+        // Said separately from the rows, because it is the one effect that
+        // reaches past the selection: a category's field set is shared by
+        // every asset filed under it.
+        response.put("templateAdditions", plan.templateAdditions().stream()
+                .map(addition -> Map.of(
+                        "categoryId", addition.categoryId(),
+                        "categoryName", addition.categoryName(),
+                        "fields", addition.fieldLabels(),
+                        "assetsInCategory", addition.assetsInCategory()))
+                .toList());
         response.put("refusedCount",
                 plan.rows().stream().filter(BulkUpdateService.RowPlan::refused).count());
         return response;

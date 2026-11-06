@@ -15,7 +15,9 @@ import { useAuth } from '../auth/AuthContext';
 
 interface DashboardSummary {
   totalAssets?: number;
+  coverExpiringSoon?: number;
   warrantyExpiringSoon?: number;
+  supportExpiringSoon?: number;
   activePurchaseOrders?: number;
 }
 
@@ -91,15 +93,18 @@ export function DashboardPage() {
             tone="primary"
           />
         )}
-        {summary.warrantyExpiringSoon !== undefined && (
+        {summary.coverExpiringSoon !== undefined && (
           <Stat
-            label="Warranties expiring within 90 days"
-            value={summary.warrantyExpiringSoon}
+            label="Warranties & support contracts expiring in 90 days"
+            value={summary.coverExpiringSoon}
+            // Counts assets, not dates: something whose warranty and support
+            // both lapse in March is one thing to deal with.
+            to="/expiring"
             icon={<ShieldIcon />}
             // The only figure here that is a prompt to do something rather than
             // a fact, so it is the only one that carries a warning tone -- and
             // only while there is actually something expiring.
-            tone={summary.warrantyExpiringSoon > 0 ? 'warning' : 'primary'}
+            tone={summary.coverExpiringSoon > 0 ? 'warning' : 'primary'}
           />
         )}
         {summary.activePurchaseOrders !== undefined && (

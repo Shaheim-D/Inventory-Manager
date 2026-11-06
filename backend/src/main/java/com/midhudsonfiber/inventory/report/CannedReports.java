@@ -61,6 +61,21 @@ public final class CannedReports {
                     List.of("categoryIds", "warrantyWithinDays"),
                     null, Kind.LISTING),
 
+            // Support cover gets its own report rather than extra columns on
+            // the warranty one. They run out at different times, are bought
+            // from different people, and are renewed by different decisions --
+            // a single sheet mixing them is one somebody has to re-sort before
+            // they can act on it.
+            new Canned("support-expiration",
+                    "Support contract expiration",
+                    "What runs out of support cover soon, at what level, and who to renew it with.",
+                    EntityType.ASSET,
+                    List.of("name", "categoryName", "serialNumber", "locationPath",
+                            "supportExpiration", "supportLevelId", "supportProvider",
+                            "supportContractReference"),
+                    List.of("categoryIds", "supportWithinDays"),
+                    null, Kind.LISTING),
+
             new Canned("inventory-by-location",
                     "Asset inventory by location",
                     "Everything at a site, for walking round it with a printout. "
@@ -141,6 +156,7 @@ public final class CannedReports {
             case "custody" -> filters.put("assignedOnly", true);
             case "inventory-staleness" -> filters.put("staleOnly", true);
             case "warranty-expiration" -> filters.put("warrantyWithinDays", 90);
+            case "support-expiration" -> filters.put("supportWithinDays", 90);
             default -> { }
         }
         return filters;

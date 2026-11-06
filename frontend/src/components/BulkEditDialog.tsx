@@ -11,8 +11,11 @@ import {
   DialogContentText,
   DialogTitle,
   Divider,
+  FormControlLabel,
+  Grid,
   MenuItem,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from '@mui/material';
@@ -21,29 +24,37 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
 
 /**
- * Change the same thing about many rows, with a card that says what will happen
- * before anything does.
+ * Change one section of many rows at once, with a card that says exactly what
+ * will happen before anything does.
  *
- * <p>Two steps on purpose. The first picks fields and values; the second shows
- * every before → after the server computed and asks for a decision. The card is
- * rendered from the preview endpoint, which runs the same planning code the
- * update will run — so it describes the actual work rather than the screen's
- * guess at it.
+ * <p>Organised by section rather than as a flat field list, because that is
+ * how somebody thinks about it: they are "updating the support contract", not
+ * "setting five unrelated fields". Pick the section and every field in it
+ * appears at once — the same grouping the asset form and the report builder
+ * use, so the three screens agree on what a section is.
  *
- * <p>The card is also binding. What it displayed is sent back with the
- * confirmation, and a row somebody else has changed in between is refused with
- * that as the reason instead of being quietly overwritten.
+ * <p><b>Blank means keep.</b> A field left empty is not sent at all, so each
+ * row keeps whatever it already had. Only what somebody actually typed is
+ * written. That is the opposite of the single-asset form, which submits the
+ * whole asset and therefore clears anything missing from it — correct there,
+ * ruinous here.
  *
- * <p>Grouped rather than listed row by row: a selection of four hundred assets
- * all moving to the same date is one sentence, not four hundred. Rows that
- * differ — because they started somewhere else, or are already there, or cannot
- * go — are the ones named individually, because those are the ones worth
- * reading.
+ * <p>Clearing a field across a selection is therefore its own deliberate act:
+ * a switch per field, because "I left it blank" and "I want it emptied
+ * everywhere" must never be the same gesture.
+ *
+ * <p>The card is rendered from the server's preview, which runs the same
+ * planning code the update will run — so it describes the actual work rather
+ * than the screen's guess at it. What it displayed is sent back on confirm,
+ * and a row whose stored value moved in between is refused rather than
+ * overwritten.
  */
 
 export interface BulkEditField {
   field: string;
   label: string;
+  section: string;
+  type: 'TEXT' | 'LONG_TEXT' | 'DATE' | 'NUMBER' | 'MONEY' | 'REFERENCE' | 'CHOICE';
 }
 
 /** A value the picker can offer for a field that references something. */
@@ -55,8 +66,9 @@ export interface BulkEditOption {
 interface PlannedChange {
   field: string;
   label: string;
-  from: string;
-  to: string;
+  /** null when the field is empty — a real null, not the string "null". */
+  from: string | null;
+  to: string | null;
   noop: boolean;
 }
 
@@ -67,10 +79,18 @@ interface PlannedRow {
   changes: PlannedChange[];
 }
 
+interface TemplateAddition {
+  categoryId: number;
+  categoryName: string;
+  fields: string[];
+  assetsInCategory: number;
+}
+
 interface Plan {
   applied: boolean;
   fields: string[];
   rows: PlannedRow[];
+  templateAdditions: TemplateAddition[];
   changingCount: number;
   unchangedCount: number;
   refusedCount: number;
@@ -84,16 +104,9 @@ interface Props {
   selected: Set<string | number>;
   noun: string;
   pluralNoun?: string;
-  /** Query keys to refetch once rows have changed. */
   invalidate: string[][];
-  /**
-   * Choices for fields that reference something else, keyed by field name —
-   * locations, support levels, lifecycle states. A field absent from here is
-   * typed into rather than chosen.
-   */
+  /** Choices for REFERENCE and CHOICE fields, keyed by field name. */
   options?: Record<string, BulkEditOption[]>;
-  /** Fields whose value is a date, so the input offers a date picker. */
-  dateFields?: string[];
   onApplied?: () => void;
 }
 
@@ -106,11 +119,12 @@ export function BulkEditDialog({
   pluralNoun,
   invalidate,
   options = {},
-  dateFields = [],
   onApplied,
 }: Props) {
   const queryClient = useQueryClient();
-  const [chosen, setChosen] = useState<Record<string, string>>({});
+  const [section, setSection] = useState<string | null>(null);
+  const [entered, setEntered] = useState<Record<string, string>>({});
+  const [cleared, setCleared] = useState<Record<string, boolean>>({});
   const [plan, setPlan] = useState<Plan | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -119,17 +133,43 @@ export function BulkEditDialog({
   const many = pluralNoun ?? `${noun}s`;
   const plural = count === 1 ? noun : many;
 
-  // What this viewer may be offered, which is not the same as what exists: a
-  // field somebody cannot see is never in this list.
   const fields = useQuery({
     queryKey: ['bulk-edit-fields', basePath],
     queryFn: () => api.get<BulkEditField[]>(`${basePath}/bulk-update/fields`),
     enabled: open,
   });
 
+  const sections = useMemo(() => {
+    const grouped = new Map<string, BulkEditField[]>();
+    for (const field of fields.data ?? []) {
+      const list = grouped.get(field.section) ?? [];
+      list.push(field);
+      grouped.set(field.section, list);
+    }
+    return grouped;
+  }, [fields.data]);
+
+  /**
+   * Only what somebody actually filled in, plus anything they deliberately
+   * asked to empty. Everything else never reaches the server, which is what
+   * makes "blank means keep" true rather than merely intended.
+   */
+  const changes = useMemo(() => {
+    const payload: Record<string, string | null> = {};
+    for (const [field, value] of Object.entries(entered)) {
+      if (cleared[field]) continue;
+      if (value !== '' && value !== undefined) payload[field] = value;
+    }
+    for (const [field, isCleared] of Object.entries(cleared)) {
+      if (isCleared) payload[field] = null;
+    }
+    return payload;
+  }, [entered, cleared]);
+
+  const touchedCount = Object.keys(changes).length;
+
   const preview = useMutation({
-    mutationFn: () =>
-      api.post<Plan>(`${basePath}/bulk-update/preview`, { ids, changes: chosen }),
+    mutationFn: () => api.post<Plan>(`${basePath}/bulk-update/preview`, { ids, changes }),
     onSuccess: (data) => {
       setError(null);
       setPlan(data);
@@ -142,10 +182,9 @@ export function BulkEditDialog({
     mutationFn: () =>
       api.post<Plan>(`${basePath}/bulk-update`, {
         ids,
-        changes: chosen,
-        // Exactly what the card displayed. The server refuses any row whose
-        // stored value no longer matches, which is what makes confirming a
-        // decision about something real rather than about a stale screen.
+        changes,
+        // Exactly what the card displayed, so a row somebody else moved in
+        // between is refused rather than silently overwritten.
         expected: Object.fromEntries(
           (plan?.rows ?? []).map((row) => [
             row.id,
@@ -163,13 +202,14 @@ export function BulkEditDialog({
   });
 
   function reset() {
-    setChosen({});
+    setSection(null);
+    setEntered({});
+    setCleared({});
     setPlan(null);
     setError(null);
     onClose();
   }
 
-  const chosenFields = Object.keys(chosen);
   const applied = plan?.applied ?? false;
 
   return (
@@ -179,7 +219,9 @@ export function BulkEditDialog({
           ? 'Done'
           : plan
             ? `Review ${plan.changingCount} ${plan.changingCount === 1 ? noun : many}`
-            : `Edit ${count} ${plural}`}
+            : section
+              ? `${section} — ${count} ${plural}`
+              : `Edit ${count} ${plural}`}
       </DialogTitle>
 
       <DialogContent dividers>
@@ -189,47 +231,66 @@ export function BulkEditDialog({
           </Alert>
         )}
 
-        {/* ---------- step one: what to change ---------- */}
-        {!plan && (
+        {/* ---------- step one: which section ---------- */}
+        {!plan && !section && (
           <>
             <DialogContentText sx={{ mb: 2 }}>
-              Pick what to change. Anything you leave alone stays exactly as it is on every{' '}
-              {noun} — this edits only the fields you fill in.
+              Which part of {count === 1 ? 'this' : 'these'} {plural} are you updating? You will
+              get every field in that section, and can fill in as many or as few as you need.
             </DialogContentText>
+            <Grid container spacing={1}>
+              {[...sections.entries()].map(([name, inSection]) => (
+                <Grid item xs={12} sm={6} key={name}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    sx={{ justifyContent: 'flex-start', textAlign: 'left', py: 1.5 }}
+                    onClick={() => setSection(name)}
+                  >
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {name}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {inSection.map((field) => field.label).join(', ')}
+                      </Typography>
+                    </Box>
+                  </Button>
+                </Grid>
+              ))}
+            </Grid>
+            {fields.isLoading && <Typography variant="body2">Loading…</Typography>}
+          </>
+        )}
 
-            <Stack spacing={2}>
-              <TextField
-                select
-                label="Add a field to change"
-                value=""
-                onChange={(event) => setChosen({ ...chosen, [event.target.value]: '' })}
-                helperText={
-                  fields.isLoading
-                    ? 'Loading…'
-                    : 'Identifiers like serial number are not listed: one value cannot apply to many.'
-                }
-              >
-                {(fields.data ?? [])
-                  .filter((field) => !(field.field in chosen))
-                  .map((field) => (
-                    <MenuItem key={field.field} value={field.field}>
-                      {field.label}
-                    </MenuItem>
-                  ))}
-              </TextField>
+        {/* ---------- step two: the fields in it ---------- */}
+        {!plan && section && (
+          <>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              <strong>Anything you leave blank stays as it is</strong> on every {noun} — only the
+              fields you fill in are written. To empty a field across all of them, use its{' '}
+              <em>Clear on all</em> switch.
+            </Alert>
 
-              {chosenFields.map((name) => {
-                const field = fields.data?.find((candidate) => candidate.field === name);
-                const choices = options[name];
+            <Grid container spacing={2}>
+              {(sections.get(section) ?? []).map((field) => {
+                const choices = options[field.field];
+                const isCleared = Boolean(cleared[field.field]);
                 return (
-                  <Stack key={name} direction="row" spacing={1} alignItems="flex-start">
+                  <Grid item xs={12} sm={6} key={field.field}>
                     {choices ? (
                       <TextField
                         select
-                        label={field?.label ?? name}
-                        value={chosen[name]}
-                        onChange={(event) => setChosen({ ...chosen, [name]: event.target.value })}
+                        label={field.label}
+                        value={entered[field.field] ?? ''}
+                        disabled={isCleared}
+                        onChange={(event) =>
+                          setEntered({ ...entered, [field.field]: event.target.value })
+                        }
                       >
+                        <MenuItem value="">
+                          <em>Leave unchanged</em>
+                        </MenuItem>
                         {choices.map((choice) => (
                           <MenuItem key={choice.id} value={String(choice.id)}>
                             {choice.label}
@@ -238,33 +299,50 @@ export function BulkEditDialog({
                       </TextField>
                     ) : (
                       <TextField
-                        label={field?.label ?? name}
-                        type={dateFields.includes(name) ? 'date' : 'text'}
-                        InputLabelProps={dateFields.includes(name) ? { shrink: true } : undefined}
-                        value={chosen[name]}
-                        onChange={(event) => setChosen({ ...chosen, [name]: event.target.value })}
-                        helperText="Leave empty to clear this field on every row."
+                        label={field.label}
+                        type={
+                          field.type === 'DATE'
+                            ? 'date'
+                            : field.type === 'NUMBER' || field.type === 'MONEY'
+                              ? 'number'
+                              : 'text'
+                        }
+                        multiline={field.type === 'LONG_TEXT'}
+                        minRows={field.type === 'LONG_TEXT' ? 2 : undefined}
+                        InputLabelProps={field.type === 'DATE' ? { shrink: true } : undefined}
+                        value={entered[field.field] ?? ''}
+                        disabled={isCleared}
+                        placeholder="Leave unchanged"
+                        onChange={(event) =>
+                          setEntered({ ...entered, [field.field]: event.target.value })
+                        }
                       />
                     )}
-                    <Button
-                      size="small"
-                      sx={{ mt: 1 }}
-                      onClick={() => {
-                        const next = { ...chosen };
-                        delete next[name];
-                        setChosen(next);
-                      }}
-                    >
-                      Remove
-                    </Button>
-                  </Stack>
+                    <FormControlLabel
+                      sx={{ mt: 0.5 }}
+                      control={
+                        <Switch
+                          size="small"
+                          checked={isCleared}
+                          onChange={(event) =>
+                            setCleared({ ...cleared, [field.field]: event.target.checked })
+                          }
+                        />
+                      }
+                      label={
+                        <Typography variant="caption" color="text.secondary">
+                          Clear on all
+                        </Typography>
+                      }
+                    />
+                  </Grid>
                 );
               })}
-            </Stack>
+            </Grid>
           </>
         )}
 
-        {/* ---------- step two: the confirmation card ---------- */}
+        {/* ---------- step three: the confirmation card ---------- */}
         {plan && <PlanCard plan={plan} noun={noun} many={many} />}
       </DialogContent>
 
@@ -284,22 +362,24 @@ export function BulkEditDialog({
               disabled={apply.isPending || plan.changingCount === 0}
               onClick={() => apply.mutate()}
             >
-              {apply.isPending ? 'Applying…' : `Confirm ${plan.changingCount} change${
-                plan.changingCount === 1 ? '' : 's'
-              }`}
+              {apply.isPending
+                ? 'Applying…'
+                : `Confirm ${plan.changingCount} ${plan.changingCount === 1 ? noun : many}`}
             </Button>
           </>
-        ) : (
+        ) : section ? (
           <>
-            <Button onClick={reset}>Cancel</Button>
+            <Button onClick={() => setSection(null)}>Back</Button>
             <Button
               variant="contained"
-              disabled={chosenFields.length === 0 || preview.isPending}
+              disabled={touchedCount === 0 || preview.isPending}
               onClick={() => preview.mutate()}
             >
               {preview.isPending ? 'Checking…' : 'Review changes'}
             </Button>
           </>
+        ) : (
+          <Button onClick={reset}>Cancel</Button>
         )}
       </DialogActions>
     </Dialog>
@@ -307,8 +387,8 @@ export function BulkEditDialog({
 }
 
 /**
- * The card itself: what will change, grouped so that four hundred identical
- * moves read as one line and the exceptions stand out.
+ * What will happen, grouped so that four hundred identical moves read as one
+ * line and the exceptions stand out.
  */
 function PlanCard({ plan, noun, many }: { plan: Plan; noun: string; many: string }) {
   const [showAll, setShowAll] = useState(false);
@@ -321,8 +401,6 @@ function PlanCard({ plan, noun, many }: { plan: Plan; noun: string; many: string
   );
   const refused = plan.rows.filter((row) => row.refusal);
 
-  // One line per (field, from → to) combination. Most bulk edits produce a
-  // single group, which is the whole summary somebody needs.
   const groups = new Map<string, { change: PlannedChange; rows: PlannedRow[] }>();
   for (const row of changing) {
     for (const change of row.changes) {
@@ -344,13 +422,15 @@ function PlanCard({ plan, noun, many }: { plan: Plan; noun: string; many: string
           </AlertTitle>
         </Alert>
       ) : (
-        <DialogContentText sx={{ mb: 2 }}>
-          This is what will happen. Nothing has changed yet.
-        </DialogContentText>
+        <Alert severity="info" sx={{ mb: 2 }}>
+          <AlertTitle>Nothing has changed yet</AlertTitle>
+          Each line below reads <em>old value → new value</em>. Any field not listed here is not
+          being touched on any {noun}.
+        </Alert>
       )}
 
       <Stack spacing={1.5}>
-        {Array.from(groups.values()).map(({ change, rows }) => (
+        {[...groups.values()].map(({ change, rows }) => (
           <Box key={`${change.field}-${change.from}-${change.to}`}>
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
               <Chip size="small" label={`${rows.length} ${rows.length === 1 ? noun : many}`} />
@@ -373,6 +453,27 @@ function PlanCard({ plan, noun, many }: { plan: Plan; noun: string; many: string
           </Box>
         ))}
       </Stack>
+
+      {/* The one effect that reaches past the selected rows, so it is called
+          out rather than listed among them. */}
+      {plan.templateAdditions.length > 0 && (
+        <Alert severity="warning" sx={{ mt: 2 }}>
+          <AlertTitle>
+            {plan.applied ? 'Also added to these forms' : 'This also changes a category form'}
+          </AlertTitle>
+          <Stack spacing={0.5} sx={{ mt: 1 }}>
+            {plan.templateAdditions.map((addition) => (
+              <Typography key={addition.categoryId} variant="body2">
+                <strong>{addition.categoryName}</strong> {plan.applied ? 'gained' : 'gains'}{' '}
+                {addition.fields.join(', ')} — not currently on its form, so the value would
+                otherwise be stored where nobody could see it. That form is shared by all{' '}
+                {addition.assetsInCategory} {addition.assetsInCategory === 1 ? noun : many} in the
+                category.
+              </Typography>
+            ))}
+          </Stack>
+        </Alert>
+      )}
 
       {unchanged.length > 0 && (
         <Alert severity="info" sx={{ mt: 2 }}>
@@ -417,7 +518,7 @@ function PlanCard({ plan, noun, many }: { plan: Plan; noun: string; many: string
   );
 }
 
-/** "null" and "" both mean nothing is recorded; neither should be shown raw. */
-function displayValue(value: string) {
-  return value === 'null' || value === '' ? '—' : value;
+/** An empty field reads as a dash rather than as blank space. */
+function displayValue(value: string | null) {
+  return value === null || value === '' ? '—' : value;
 }

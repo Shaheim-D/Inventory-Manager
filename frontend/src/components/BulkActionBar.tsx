@@ -58,9 +58,12 @@ interface Props {
    * exactly what it was for those.
    */
   editBasePath?: string;
-  /** Passed through to the edit dialog — choices for fields that reference something. */
+  /**
+   * Passed through to the edit dialog — choices for fields that reference
+   * something. Which control a field gets is the server's call now, declared
+   * with the field itself, so there is no list of date fields here to drift.
+   */
   editOptions?: Record<string, BulkEditOption[]>;
-  editDateFields?: string[];
 }
 
 /**
@@ -94,7 +97,6 @@ export function BulkActionBar({
   disabled,
   editBasePath,
   editOptions,
-  editDateFields,
 }: Props) {
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
@@ -208,7 +210,6 @@ export function BulkActionBar({
           pluralNoun={pluralNoun}
           invalidate={invalidate}
           options={editOptions}
-          dateFields={editDateFields}
           onApplied={onClear}
         />
       )}

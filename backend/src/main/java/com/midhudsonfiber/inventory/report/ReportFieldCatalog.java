@@ -186,7 +186,9 @@ public class ReportFieldCatalog {
         return out.toString();
     }
 
-    private static String groupFor(String coreField) {
+    /** Shared with the bulk editor, so its sections and the report builder's
+     *  field groups are the same words for the same things. */
+    public static String groupFor(String coreField) {
         return switch (coreField) {
             case "purchase_date", "purchase_price", "vendor", "purchase_link", "invoice_number",
                  "warranty_start", "warranty_expiration", "license_information" -> "Purchase & warranty";

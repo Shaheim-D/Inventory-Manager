@@ -140,6 +140,21 @@ export function ReportFilters({
         </Grid>
       )}
 
+      {accepts.includes('supportWithinDays') && (
+        <Grid item xs={12} md={3}>
+          <TextField
+            select
+            label="Support expiring within"
+            value={value.supportWithinDays ?? 90}
+            onChange={(event) => set('supportWithinDays', Number(event.target.value))}
+          >
+            {[30, 60, 90, 180, 365].map((days) => (
+              <MenuItem key={days} value={days}>{days} days</MenuItem>
+            ))}
+          </TextField>
+        </Grid>
+      )}
+
       {accepts.includes('overdueByDays') && (
         <Grid item xs={12} md={3}>
           <TextField

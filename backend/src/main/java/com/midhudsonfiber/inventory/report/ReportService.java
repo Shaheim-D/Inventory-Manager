@@ -179,6 +179,7 @@ public class ReportService {
         List<Long> locationIds = withDescendants(spec.ids("locationIds"));
         List<Long> stateIds = spec.ids("lifecycleStateIds");
         Integer warrantyWithinDays = spec.number("warrantyWithinDays");
+        Integer supportWithinDays = spec.number("supportWithinDays");
         Integer overdueByDays = spec.number("overdueByDays");
         LocalDate purchasedFrom = spec.date("purchasedFrom");
         LocalDate purchasedTo = spec.date("purchasedTo");
@@ -199,6 +200,15 @@ public class ReportService {
                 predicates.add(cb.isNotNull(root.get("warrantyExpiration")));
                 predicates.add(cb.between(root.get("warrantyExpiration"),
                         LocalDate.now(), LocalDate.now().plusDays(warrantyWithinDays)));
+            }
+            // The same window asked of the other date. Separate from the
+            // warranty filter rather than one filter over both, because
+            // "what support lapses this quarter" and "what warranty lapses
+            // this quarter" are different questions with different answers.
+            if (supportWithinDays != null) {
+                predicates.add(cb.isNotNull(root.get("supportExpiration")));
+                predicates.add(cb.between(root.get("supportExpiration"),
+                        LocalDate.now(), LocalDate.now().plusDays(supportWithinDays)));
             }
             if (purchasedFrom != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("purchaseDate"), purchasedFrom));

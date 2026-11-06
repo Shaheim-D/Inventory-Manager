@@ -42,11 +42,32 @@ public class DashboardController {
 
         if (currentUser.has(PermissionKeys.ASSET_READ)) {
             widgets.put("totalAssets", scalar("SELECT count(*) FROM asset WHERE is_deleted = FALSE"));
+            // Warranties AND support contracts, counted as assets rather than
+            // as dates: something whose warranty and support both lapse in
+            // March is one thing to deal with, not two. The separate counts go
+            // alongside so the card can say which kind without a second query.
+            widgets.put("coverExpiringSoon", scalar("""
+                    SELECT count(*) FROM asset
+                    WHERE is_deleted = FALSE
+                      AND (
+                        (warranty_expiration IS NOT NULL
+                         AND warranty_expiration BETWEEN current_date AND current_date + INTERVAL '90 days')
+                        OR
+                        (support_expiration IS NOT NULL
+                         AND support_expiration BETWEEN current_date AND current_date + INTERVAL '90 days')
+                      )
+                    """));
             widgets.put("warrantyExpiringSoon", scalar("""
                     SELECT count(*) FROM asset
                     WHERE is_deleted = FALSE
                       AND warranty_expiration IS NOT NULL
                       AND warranty_expiration BETWEEN current_date AND current_date + INTERVAL '90 days'
+                    """));
+            widgets.put("supportExpiringSoon", scalar("""
+                    SELECT count(*) FROM asset
+                    WHERE is_deleted = FALSE
+                      AND support_expiration IS NOT NULL
+                      AND support_expiration BETWEEN current_date AND current_date + INTERVAL '90 days'
                     """));
         }
 

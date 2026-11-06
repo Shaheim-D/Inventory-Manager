@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -84,8 +85,32 @@ public class AssetService {
     /** Where an asset starts unless the person creating it says otherwise. */
     static final String DEFAULT_INITIAL_STATE = "Available";
 
+    /**
+     * What cover an "expiring" filter is asking about.
+     *
+     * <p>EITHER is its own value rather than two queries the caller combines,
+     * because the screen that prompted this asks "what is running out", and an
+     * asset whose warranty and support both lapse in March is one row on that
+     * screen, not two.
+     */
+    public enum ExpiringCover { WARRANTY, SUPPORT, EITHER }
+
+    /**
+     * @param expiring    which cover to narrow to, with {@code withinDays}
+     * @param withinDays  how far ahead to look; defaults to 90 when a kind is
+     *                    given without one
+     */
     public record AssetFilter(String q, Long categoryId, Long locationId, Long lifecycleStateId,
-                              Long assigneeUserId, Long purchaseOrderId, Boolean includeDeleted) {}
+                              Long assigneeUserId, Long purchaseOrderId, Boolean includeDeleted,
+                              ExpiringCover expiring, Integer withinDays) {
+
+        /** The six-argument shape the rest of the application still uses. */
+        public AssetFilter(String q, Long categoryId, Long locationId, Long lifecycleStateId,
+                           Long assigneeUserId, Long purchaseOrderId, Boolean includeDeleted) {
+            this(q, categoryId, locationId, lifecycleStateId, assigneeUserId, purchaseOrderId,
+                 includeDeleted, null, null);
+        }
+    }
 
     @Transactional(readOnly = true)
     public Page<Asset> search(AssetFilter filter, Pageable pageable) {
@@ -115,6 +140,24 @@ public class AssetService {
             }
             if (filter.locationId() != null) {
                 predicates.add(cb.equal(root.get("location").get("id"), filter.locationId()));
+            }
+            if (filter.expiring() != null) {
+                // Today onward: something that lapsed last month is a different
+                // conversation from something about to, and mixing them buries
+                // the second in the first.
+                LocalDate from = LocalDate.now();
+                LocalDate to = from.plusDays(filter.withinDays() == null ? 90 : filter.withinDays());
+                Predicate warranty = cb.and(
+                        cb.isNotNull(root.get("warrantyExpiration")),
+                        cb.between(root.get("warrantyExpiration"), from, to));
+                Predicate support = cb.and(
+                        cb.isNotNull(root.get("supportExpiration")),
+                        cb.between(root.get("supportExpiration"), from, to));
+                predicates.add(switch (filter.expiring()) {
+                    case WARRANTY -> warranty;
+                    case SUPPORT -> support;
+                    case EITHER -> cb.or(warranty, support);
+                });
             }
             if (filter.lifecycleStateId() != null) {
                 predicates.add(cb.equal(root.get("lifecycleState").get("id"), filter.lifecycleStateId()));
