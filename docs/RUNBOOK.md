@@ -673,3 +673,34 @@ physically on it.
 
 **Logs.** `docker compose logs -f app`. Everything goes to stdout/stderr; there
 is deliberately no log aggregation stack at this size.
+
+**Changing many assets at once.** Select rows on the asset list (or Locations,
+or Users) and the bar below the table offers **Edit** as well as **Delete**.
+Pick the fields, then read the card: it lists every change grouped by what is
+actually moving — *"38 assets · Support expires — (none) → 30 Jun 2027"* — plus
+anything already holding that value and anything that cannot go, with the
+reason. **Confirm** applies it; **Not ready** goes back to the fields without
+touching anything.
+
+Three things about that card are worth knowing, because they are what make it
+trustworthy rather than decorative:
+
+1. **It is computed by the code that does the work.** The preview and the update
+   call the same planner, so the card is not a separate guess that can drift
+   from what happens.
+2. **It is binding.** What it displayed is sent back when you confirm, and any
+   row somebody else changed in between is refused with that as the reason
+   rather than silently overwritten. You will see it listed under "cannot be
+   changed".
+3. **It is a patch.** Only the fields you filled in change. Everything else on
+   those assets is left exactly as it was — unlike the single-asset form, which
+   submits the whole asset.
+
+Identifiers — serial number, asset tag, name, hostname, IP, MAC — are not
+offered, because one value cannot apply to many assets. Fields your role cannot
+see are not offered either, and are refused if asked for directly.
+
+Two refusals on **Users** that surprise people: you cannot bulk-change your own
+access, and roles on an account that signs in through LDAP or RADIUS are
+refused — the directory replaces that account's roles at its next sign-in, so
+setting them here would look like it worked and quietly revert.
