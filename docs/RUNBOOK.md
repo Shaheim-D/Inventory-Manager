@@ -676,27 +676,42 @@ is deliberately no log aggregation stack at this size.
 
 **Changing many assets at once.** Select rows on the asset list (or Locations,
 or Users) and the bar below the table offers **Edit** as well as **Delete**.
-Pick the fields, then read the card: it lists every change grouped by what is
-actually moving — *"38 assets · Support expires — (none) → 30 Jun 2027"* — plus
-anything already holding that value and anything that cannot go, with the
-reason. **Confirm** applies it; **Not ready** goes back to the fields without
-touching anything.
 
-Three things about that card are worth knowing, because they are what make it
+You pick a **section** first — Support contract, Purchase & warranty, Custody,
+and so on — and get every field in it. These are the same sections the asset
+form uses, so "the support block" means the same thing on both screens.
+
+**A field you leave blank is not touched.** Each asset keeps whatever it
+already had there; only the fields you actually fill in are written. This is
+the opposite of the single-asset form, which submits the whole asset and so
+clears anything missing from it. To empty a field across the selection you have
+to say so, with that field's **Clear on all** switch — leaving something blank
+and wanting it emptied everywhere must not be the same gesture.
+
+Then read the card. It lists every change as *old value → new value*, grouped
+so that forty assets moving to the same date are one line, and names the
+exceptions: rows already holding the value, and rows that cannot be changed
+with the reason. **Confirm** applies it; **Not ready** goes back to the fields
+without touching anything.
+
+**If a field is not on a category's form, it is added.** Setting a support
+expiry on a Vehicle, whose form has no support block, would otherwise store a
+value nobody could ever see. The card says so before you confirm, names the
+category, and says how many assets share that form — a field set belongs to the
+category, so this is the one part of a bulk edit that reaches past the rows you
+selected.
+
+Three things about the card are worth knowing, because they are what make it
 trustworthy rather than decorative:
 
-1. **It is computed by the code that does the work.** The preview and the update
-   call the same planner, so the card is not a separate guess that can drift
-   from what happens.
+1. **It is computed by the code that does the work.** The preview and the
+   update call the same planner, so the card cannot drift from what happens.
 2. **It is binding.** What it displayed is sent back when you confirm, and any
-   row somebody else changed in between is refused with that as the reason
-   rather than silently overwritten. You will see it listed under "cannot be
-   changed".
-3. **It is a patch.** Only the fields you filled in change. Everything else on
-   those assets is left exactly as it was — unlike the single-asset form, which
-   submits the whole asset.
+   row changed in between is refused with that as the reason rather than
+   silently overwritten.
+3. **It is a patch.** Only the fields you filled in change.
 
-Identifiers — serial number, asset tag, name, hostname, IP, MAC — are not
+Identifiers — serial number, asset tag, name, hostname, IP, MAC — are never
 offered, because one value cannot apply to many assets. Fields your role cannot
 see are not offered either, and are refused if asked for directly.
 
@@ -704,6 +719,18 @@ Two refusals on **Users** that surprise people: you cannot bulk-change your own
 access, and roles on an account that signs in through LDAP or RADIUS are
 refused — the directory replaces that account's roles at its next sign-in, so
 setting them here would look like it worked and quietly revert.
+
+**What is running out.** The dashboard card reads *Warranties & support
+contracts expiring in 90 days* and counts assets rather than dates: something
+whose warranty and support both lapse in March is one thing to deal with.
+Clicking it opens **Expiring cover**, which filters by kind (warranty, support,
+or either), by window, and by category, location and lifecycle state, and shows
+how many days are left beside each date. Anything inside thirty days is marked.
+
+For something to hand to a vendor rather than read on screen, **Reports** has
+*Warranty expiration* and *Support contract expiration* as separate canned
+reports, each with its own window filter. Separate rather than one sheet,
+because they run out at different times and are renewed with different people.
 
 **A backup or restore refuses with "client and server versions differ".** The
 PostgreSQL client tools on this host are a different major version from the

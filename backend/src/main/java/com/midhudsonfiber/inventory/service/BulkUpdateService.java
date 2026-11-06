@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.midhudsonfiber.inventory.audit.AuditService;
 import com.midhudsonfiber.inventory.domain.*;
 import com.midhudsonfiber.inventory.notify.NotificationService;
+import com.midhudsonfiber.inventory.report.ReportFieldCatalog;
 import com.midhudsonfiber.inventory.repo.*;
 import com.midhudsonfiber.inventory.security.CurrentUser;
 import com.midhudsonfiber.inventory.visibility.FieldVisibilityService;
@@ -82,8 +83,25 @@ public class BulkUpdateService {
         }
     }
 
+    /**
+     * A field being switched on for a whole category, because one of the
+     * selected assets is in a category whose form does not currently offer it.
+     *
+     * <p>Worth its own type rather than a footnote, because it is the one part
+     * of a bulk edit that reaches past the rows somebody selected: a category's
+     * field set is shared by every asset filed under it. The confirmation card
+     * says so in those words, with the count.
+     */
+    public record TemplateAddition(Long categoryId, String categoryName,
+                                   List<String> fieldLabels, long assetsInCategory) {}
+
     /** What the whole request would do. */
-    public record Plan(List<RowPlan> rows, List<String> fieldLabels) {}
+    public record Plan(List<RowPlan> rows, List<String> fieldLabels,
+                       List<TemplateAddition> templateAdditions) {
+        public Plan(List<RowPlan> rows, List<String> fieldLabels) {
+            this(rows, fieldLabels, List.of());
+        }
+    }
 
     private final AssetRepository assets;
     private final AssetService assetService;
@@ -94,6 +112,8 @@ public class BulkUpdateService {
     private final SupportLevelRepository supportLevels;
     private final LifecycleStateRepository lifecycleStates;
     private final FieldVisibilityService fieldVisibility;
+    private final CategoryFieldService categoryFields;
+    private final AssetCategoryRepository assetCategories;
     private final AuditService audit;
     private final NotificationService notifications;
     private final CurrentUser currentUser;
@@ -105,6 +125,8 @@ public class BulkUpdateService {
                              SupportLevelRepository supportLevels,
                              LifecycleStateRepository lifecycleStates,
                              FieldVisibilityService fieldVisibility,
+                             CategoryFieldService categoryFields,
+                             AssetCategoryRepository assetCategories,
                              AuditService audit, NotificationService notifications,
                              CurrentUser currentUser,
                              org.springframework.transaction.PlatformTransactionManager transactionManager) {
@@ -117,6 +139,8 @@ public class BulkUpdateService {
         this.supportLevels = supportLevels;
         this.lifecycleStates = lifecycleStates;
         this.fieldVisibility = fieldVisibility;
+        this.categoryFields = categoryFields;
+        this.assetCategories = assetCategories;
         this.audit = audit;
         this.notifications = notifications;
         this.currentUser = currentUser;
@@ -138,12 +162,33 @@ public class BulkUpdateService {
      * @param coreField the {@code field_visibility_rule} name gating it, or
      *                  null when the field is not gateable
      */
+    /**
+     * How a field is entered, so the dialog can render the right control
+     * without a second copy of this knowledge in the browser.
+     */
+    public enum FieldType { TEXT, LONG_TEXT, DATE, NUMBER, MONEY, REFERENCE, CHOICE }
+
     private record Spec<T>(String label,
                            Function<T, String> read,
                            BiConsumer<T, JsonNode> write,
-                           String coreField) {
+                           String coreField,
+                           FieldType type) {
         Spec(String label, Function<T, String> read, BiConsumer<T, JsonNode> write) {
-            this(label, read, write, null);
+            this(label, read, write, null, FieldType.TEXT);
+        }
+        Spec(String label, Function<T, String> read, BiConsumer<T, JsonNode> write, FieldType type) {
+            this(label, read, write, null, type);
+        }
+
+        /**
+         * Which part of the form this belongs to, taken from the same mapping
+         * the report builder groups its fields by — so "Support contract"
+         * means the same set of fields on the asset form, in a report, and
+         * here. A field with no core column of its own falls in with the
+         * identification block, which is where the asset form puts it.
+         */
+        String section() {
+            return coreField == null ? null : ReportFieldCatalog.groupFor(coreField);
         }
     }
 
@@ -161,64 +206,66 @@ public class BulkUpdateService {
 
         // ---- support contract: the reason this feature exists ----
         fields.put("supportProvider", new Spec<>("Support provider",
-                Asset::getSupportProvider, (asset, v) -> asset.setSupportProvider(text(v))));
+                Asset::getSupportProvider, (asset, v) -> asset.setSupportProvider(text(v)), "support_provider", FieldType.TEXT));
         fields.put("supportLevelId", new Spec<>("Support level",
                 asset -> asset.getSupportLevel() == null ? null : asset.getSupportLevel().displayLabel(),
                 (asset, v) -> asset.setSupportLevel(id(v) == null ? null : supportLevels.findById(id(v))
-                        .orElseThrow(() -> new ApiExceptions.NotFoundException("Support level not found")))));
+                        .orElseThrow(() -> new ApiExceptions.NotFoundException("Support level not found"))), "support_level_id", FieldType.REFERENCE));
         fields.put("supportStart", new Spec<>("Support start",
-                asset -> str(asset.getSupportStart()), (asset, v) -> asset.setSupportStart(date(v))));
+                asset -> str(asset.getSupportStart()), (asset, v) -> asset.setSupportStart(date(v)), "support_start", FieldType.DATE));
         fields.put("supportExpiration", new Spec<>("Support expires",
                 asset -> str(asset.getSupportExpiration()),
-                (asset, v) -> asset.setSupportExpiration(date(v))));
+                (asset, v) -> asset.setSupportExpiration(date(v)), "support_expiration", FieldType.DATE));
         fields.put("supportContractReference", new Spec<>("Support contract number",
                 Asset::getSupportContractReference,
-                (asset, v) -> asset.setSupportContractReference(text(v))));
+                (asset, v) -> asset.setSupportContractReference(text(v)), "support_contract_reference", FieldType.TEXT));
 
         // ---- purchase and warranty ----
         fields.put("vendor", new Spec<>("Vendor",
-                Asset::getVendor, (asset, v) -> asset.setVendor(text(v))));
+                Asset::getVendor, (asset, v) -> asset.setVendor(text(v)), "vendor", FieldType.TEXT));
         fields.put("purchaseDate", new Spec<>("Purchase date",
-                asset -> str(asset.getPurchaseDate()), (asset, v) -> asset.setPurchaseDate(date(v))));
+                asset -> str(asset.getPurchaseDate()), (asset, v) -> asset.setPurchaseDate(date(v)), "purchase_date", FieldType.DATE));
         fields.put("warrantyStart", new Spec<>("Warranty start",
                 asset -> str(asset.getWarrantyStart()), (asset, v) -> {
                     asset.setWarrantyStart(date(v));
                     asset.recalculateWarrantyExpiration();
-                }));
+                }, "warranty_start", FieldType.DATE));
         fields.put("warrantyTermMonths", new Spec<>("Warranty length",
                 asset -> str(asset.getWarrantyTermMonths()), (asset, v) -> {
                     asset.setWarrantyTermMonths(integer(v));
                     asset.recalculateWarrantyExpiration();
-                }));
+                // Not its own section: the length is how the warranty's end
+                // date is arrived at, so it belongs beside the start.
+                }, "warranty_start", FieldType.NUMBER));
 
         // ---- commercial: offered only to somebody who may see them ----
         fields.put("purchasePrice", new Spec<>("Retail price",
                 asset -> str(asset.getPurchasePrice()),
-                (asset, v) -> asset.setPurchasePrice(money(v)), "purchase_price"));
+                (asset, v) -> asset.setPurchasePrice(money(v)), "purchase_price", FieldType.MONEY));
         fields.put("invoiceNumber", new Spec<>("Order number",
                 Asset::getInvoiceNumber, (asset, v) -> asset.setInvoiceNumber(text(v)),
-                "invoice_number"));
+                "invoice_number", FieldType.TEXT));
         fields.put("purchaseLink", new Spec<>("Purchase link",
                 Asset::getPurchaseLink, (asset, v) -> asset.setPurchaseLink(text(v)),
-                "purchase_link"));
+                "purchase_link", FieldType.TEXT));
 
         // ---- placement and condition ----
         fields.put("locationId", new Spec<>("Location",
                 asset -> asset.getLocation().getName(),
                 (asset, v) -> asset.setLocation(locations.findById(required(v, "a location"))
-                        .orElseThrow(() -> new ApiExceptions.NotFoundException("Location not found")))));
+                        .orElseThrow(() -> new ApiExceptions.NotFoundException("Location not found"))), "location", FieldType.REFERENCE));
         fields.put("condition", new Spec<>("Condition",
-                Asset::getCondition, (asset, v) -> asset.setCondition(text(v))));
+                Asset::getCondition, (asset, v) -> asset.setCondition(text(v)), "condition", FieldType.CHOICE));
         fields.put("status", new Spec<>("Status",
-                Asset::getStatus, (asset, v) -> asset.setStatus(text(v))));
+                Asset::getStatus, (asset, v) -> asset.setStatus(text(v)), "status", FieldType.TEXT));
 
         // ---- record ----
         fields.put("notes", new Spec<>("Notes",
-                Asset::getNotes, (asset, v) -> asset.setNotes(text(v))));
+                Asset::getNotes, (asset, v) -> asset.setNotes(text(v)), "notes", FieldType.LONG_TEXT));
         fields.put("licenseInformation", new Spec<>("License information",
-                Asset::getLicenseInformation, (asset, v) -> asset.setLicenseInformation(text(v))));
+                Asset::getLicenseInformation, (asset, v) -> asset.setLicenseInformation(text(v)), "license_information", FieldType.LONG_TEXT));
         fields.put("customerName", new Spec<>("Customer name",
-                Asset::getCustomerName, (asset, v) -> asset.setCustomerName(text(v))));
+                Asset::getCustomerName, (asset, v) -> asset.setCustomerName(text(v)), "customer_name", FieldType.TEXT));
 
         return fields;
     }
@@ -332,7 +379,7 @@ public class BulkUpdateService {
             }
             rows.add(new RowPlan(id, asset.displayLabel(), changes, refusal));
         }
-        return new Plan(rows, labels);
+        return new Plan(rows, labels, templateAdditions(rows, plain, catalogue));
     }
 
     private Plan planLocations(List<Long> ids, Map<String, JsonNode> requested,
@@ -503,6 +550,11 @@ public class BulkUpdateService {
                 }
             });
         }
+        // After the rows, not before: a field is only worth adding to a form
+        // once something has actually been written into it.
+        for (TemplateAddition addition : plan.templateAdditions()) {
+            transactions.executeWithoutResult(status -> addFieldsToTemplate(addition, requested));
+        }
         announceLifecycleBatch(kind, requested, plan);
         return plan;
     }
@@ -559,6 +611,33 @@ public class BulkUpdateService {
         }
         users.save(user);
         recordAudit(AuditService.ENTITY_APP_USER, row);
+    }
+
+    /**
+     * Switches the named fields on for a category, keeping everything it
+     * already had.
+     *
+     * <p>Appends rather than replaces, and goes through CategoryFieldService
+     * so the reconciliation there applies -- that is what stops a category's
+     * per-field label overrides being thrown away, which a delete-and-reinsert
+     * silently did until V39 fixed it.
+     */
+    private void addFieldsToTemplate(TemplateAddition addition, Map<String, JsonNode> requested) {
+        AssetCategory category = assetCategories.findById(addition.categoryId()).orElse(null);
+        if (category == null) return;
+
+        List<String> existing = categoryFields.applicableFields(addition.categoryId());
+        Map<String, String> labels = categoryFields.labels();
+        List<String> wanted = new ArrayList<>(existing);
+        addition.fieldLabels().forEach(label -> labels.forEach((column, columnLabel) -> {
+            if (columnLabel.equals(label) && !wanted.contains(column)) wanted.add(column);
+        }));
+        if (wanted.size() != existing.size()) {
+            categoryFields.replace(category, wanted);
+            audit.recordFieldChanges(AuditService.ENTITY_ASSET_CATEGORY, addition.categoryId(),
+                    List.of(AuditService.FieldChange.of("core_fields",
+                            String.join(", ", existing), String.join(", ", wanted))));
+        }
     }
 
     private void recordAudit(String entityType, RowPlan row) {
@@ -627,6 +706,64 @@ public class BulkUpdateService {
     }
 
     /**
+     * Fields that are not on a category's form yet but are about to be filled
+     * in on one of its assets.
+     *
+     * <p>Asked for directly: "if on that asset those fields were not previously
+     * on the asset template then those fields should be added and populated".
+     * Setting a support expiry on a Vehicle is pointless if the Vehicle form
+     * never shows it again — the value would be stored and invisible, which is
+     * worse than refusing.
+     *
+     * <p>A category with no rows at all already offers every field, so there is
+     * nothing to add for one of those. Only a category that has been configured
+     * can be missing something.
+     *
+     * <p>This is the one effect of a bulk edit that reaches beyond the selected
+     * rows, because a field set belongs to the category rather than the asset.
+     * Hence the asset count: the card says how many others gain the field.
+     */
+    private List<TemplateAddition> templateAdditions(List<RowPlan> rows,
+                                                     Map<String, JsonNode> requested,
+                                                     Map<String, Spec<Asset>> catalogue) {
+        // Only columns being given a value. Clearing a field somebody cannot
+        // see on the form is not a reason to put it on the form.
+        Set<String> columns = new LinkedHashSet<>();
+        requested.forEach((field, value) -> {
+            Spec<Asset> spec = catalogue.get(field);
+            if (spec != null && spec.coreField() != null && text(value) != null) {
+                columns.add(spec.coreField());
+            }
+        });
+        if (columns.isEmpty()) return List.of();
+
+        Map<Long, AssetCategory> categories = new LinkedHashMap<>();
+        for (RowPlan row : rows) {
+            if (row.refused()) continue;
+            assets.findById(row.id())
+                    .ifPresent(asset -> categories.putIfAbsent(asset.getCategory().getId(),
+                                                               asset.getCategory()));
+        }
+
+        List<TemplateAddition> additions = new ArrayList<>();
+        categories.forEach((categoryId, category) -> {
+            Set<String> configured = categoryFields.applicableFieldSet(categoryId);
+            List<String> missing = columns.stream()
+                    .filter(column -> !configured.contains(column))
+                    // Not every column this service writes is a configurable
+                    // core field -- "location" is structural and always present.
+                    .filter(CategoryFieldService.CONFIGURABLE_CORE_FIELDS::contains)
+                    .toList();
+            if (missing.isEmpty()) return;
+            Map<String, String> labels = categoryFields.labels();
+            additions.add(new TemplateAddition(categoryId, category.getName(),
+                    missing.stream().map(column -> labels.getOrDefault(column, column)).toList(),
+                    assets.countByCategoryIdAndDeletedFalse(categoryId)));
+        });
+        return additions;
+    }
+
+    /**
      * Whether this row has moved since the card was drawn.
      *
      * <p>The comparison is against the rendered strings the card displayed, so
@@ -661,27 +798,57 @@ public class BulkUpdateService {
                 .hiddenCoreFieldsGlobal();
     }
 
-    /** The fields this caller is allowed to be offered, for the picker. */
-    public List<Map<String, String>> offeredFields(Kind kind) {
+    /**
+     * The fields this caller may be offered, grouped the way the asset form
+     * groups them.
+     *
+     * <p>Sections rather than one long list, because that is how somebody
+     * thinks about it: they are "updating the support contract", not "setting
+     * five unrelated fields that happen to start with the same word". The
+     * names come from the same mapping the report builder uses, so the three
+     * screens agree on what a section is called.
+     *
+     * <p>Each field declares how it is entered, so the dialog renders the
+     * right control from this rather than from a second list in the browser
+     * that would drift the first time a field was added here.
+     */
+    public List<Map<String, Object>> offeredFields(Kind kind) {
         Set<String> hidden = kind == Kind.ASSET ? hiddenCoreFields() : Set.of();
         Map<String, ? extends Spec<?>> catalogue = switch (kind) {
             case ASSET -> assetFields();
             case LOCATION -> locationFields();
             case USER -> Map.of();
         };
-        List<Map<String, String>> offered = new ArrayList<>();
+        List<Map<String, Object>> offered = new ArrayList<>();
         catalogue.forEach((name, spec) -> {
             if (spec.coreField() != null && hidden.contains(spec.coreField())) return;
-            offered.add(Map.of("field", name, "label", spec.label()));
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("field", name);
+            entry.put("label", spec.label());
+            entry.put("section", spec.section() == null ? sectionFor(kind) : spec.section());
+            entry.put("type", spec.type().name());
+            offered.add(entry);
         });
         if (kind == Kind.ASSET) {
-            offered.add(Map.of("field", "lifecycleStateId", "label", "Lifecycle state"));
+            offered.add(Map.of("field", "lifecycleStateId", "label", "Lifecycle state",
+                    "section", "Lifecycle", "type", FieldType.REFERENCE.name()));
         }
         if (kind == Kind.USER) {
-            offered.add(Map.of("field", "roleIds", "label", "Roles"));
-            offered.add(Map.of("field", "active", "label", "Account"));
+            offered.add(Map.of("field", "roleIds", "label", "Roles",
+                    "section", "Access", "type", FieldType.REFERENCE.name()));
+            offered.add(Map.of("field", "active", "label", "Account",
+                    "section", "Access", "type", FieldType.CHOICE.name()));
         }
         return offered;
+    }
+
+    /** Where a field with no core column of its own belongs. */
+    private static String sectionFor(Kind kind) {
+        return switch (kind) {
+            case ASSET -> "Identification";
+            case LOCATION -> "Location details";
+            case USER -> "Access";
+        };
     }
 
     // ---- value coercion ---------------------------------------------

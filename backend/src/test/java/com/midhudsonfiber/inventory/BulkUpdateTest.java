@@ -251,6 +251,121 @@ class BulkUpdateTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("fields are offered grouped into the sections the asset form uses")
+    void fieldsAreGroupedIntoSections() {
+        Session admin = admin();
+        JsonNode offered = get(admin, "/api/assets/bulk-update/fields").getBody();
+
+        java.util.Map<String, java.util.List<String>> bySection = new java.util.LinkedHashMap<>();
+        offered.forEach(node -> bySection
+                .computeIfAbsent(node.get("section").asText(), key -> new ArrayList<>())
+                .add(node.get("field").asText()));
+
+        assertThat(bySection).containsKeys("Support contract", "Purchase & warranty", "Identification");
+        assertThat(bySection.get("Support contract"))
+                .as("the whole support block, so it can be edited as one thing")
+                .contains("supportProvider", "supportLevelId", "supportStart",
+                          "supportExpiration", "supportContractReference");
+        assertThat(bySection.get("Purchase & warranty"))
+                .contains("vendor", "purchaseDate", "warrantyStart", "warrantyTermMonths");
+
+        // The type travels with the field so the dialog renders a date picker
+        // for a date without a second list in the browser saying which is which.
+        JsonNode expires = null;
+        for (JsonNode node : offered) {
+            if (node.get("field").asText().equals("supportExpiration")) expires = node;
+        }
+        assertThat(expires).isNotNull();
+        assertThat(expires.get("type").asText()).isEqualTo("DATE");
+    }
+
+    @Test
+    @DisplayName("a field missing from the category's form is added to it and populated")
+    void missingTemplateFieldsAreAdded() {
+        Session admin = admin();
+        // Vehicle deliberately has no support fields on its form: V32 put them
+        // on networked kit, computers and test equipment only.
+        Long vehicle = categoryId("Vehicle");
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM category_core_field
+                WHERE asset_category_id = ? AND core_field_name = 'support_expiration'
+                """, Integer.class, vehicle)).isZero();
+
+        // VIN is a required custom field on Vehicle; a create without it is
+        // rejected, which is the category doing its job rather than a problem.
+        Long van = post(admin, "/api/assets", """
+                {"categoryId":%d,"locationId":%d,"name":"%s",
+                 "customFields":{"VIN":"%s"}}
+                """.formatted(vehicle, newLocation(admin), unique("van"), unique("VIN")))
+                .getBody().get("id").asLong();
+
+        // The preview says so before anything happens, and says how far it
+        // reaches -- a field set belongs to the category, not to this asset.
+        JsonNode preview = post(admin, "/api/assets/bulk-update/preview", """
+                {"ids":[%d],"changes":{"supportExpiration":"2029-03-31"}}
+                """.formatted(van)).getBody();
+        JsonNode addition = preview.get("templateAdditions").get(0);
+        assertThat(addition.get("categoryName").asText()).isEqualTo("Vehicle");
+        assertThat(addition.get("fields").get(0).asText()).isEqualTo("Support expiration");
+        assertThat(addition.get("assetsInCategory").asLong()).isPositive();
+
+        post(admin, "/api/assets/bulk-update", """
+                {"ids":[%d],"changes":{"supportExpiration":"2029-03-31"}}
+                """.formatted(van));
+
+        assertThat(get(admin, "/api/assets/" + van).getBody().get("supportExpiration").asText())
+                .isEqualTo("2029-03-31");
+        assertThat(jdbc.queryForObject("""
+                SELECT count(*) FROM category_core_field
+                WHERE asset_category_id = ? AND core_field_name = 'support_expiration'
+                """, Integer.class, vehicle))
+                .as("a value stored behind a field the form never shows is worse than a refusal")
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("adding a field to a template leaves the category's other fields alone")
+    void addingAFieldDoesNotDisturbTheRest() {
+        Session admin = admin();
+        Long vehicle = categoryId("Vehicle");
+        List<String> before = jdbc.queryForList("""
+                SELECT core_field_name FROM category_core_field
+                WHERE asset_category_id = ? ORDER BY core_field_name
+                """, String.class, vehicle);
+
+        // VIN is a required custom field on Vehicle; a create without it is
+        // rejected, which is the category doing its job rather than a problem.
+        Long van = post(admin, "/api/assets", """
+                {"categoryId":%d,"locationId":%d,"name":"%s",
+                 "customFields":{"VIN":"%s"}}
+                """.formatted(vehicle, newLocation(admin), unique("van"), unique("VIN")))
+                .getBody().get("id").asLong();
+        post(admin, "/api/assets/bulk-update", """
+                {"ids":[%d],"changes":{"supportProvider":"Fleet Services"}}
+                """.formatted(van));
+
+        List<String> after = jdbc.queryForList("""
+                SELECT core_field_name FROM category_core_field
+                WHERE asset_category_id = ? ORDER BY core_field_name
+                """, String.class, vehicle);
+        assertThat(after).containsAll(before);
+        assertThat(after).contains("support_provider");
+    }
+
+    @Test
+    @DisplayName("a category that already offers the field is not touched")
+    void noTemplateChurnWhenTheFieldIsAlreadyThere() {
+        Session admin = admin();
+        Long id = richAsset(admin);   // a Router, which already has the support block
+
+        JsonNode preview = post(admin, "/api/assets/bulk-update/preview", """
+                {"ids":[%d],"changes":{"supportExpiration":"2029-03-31"}}
+                """.formatted(id)).getBody();
+
+        assertThat(preview.get("templateAdditions")).isEmpty();
+    }
+
+    @Test
     @DisplayName("an identifier cannot be set in bulk, because one value cannot apply to many")
     void identifiersAreNotOffered() {
         Session admin = admin();

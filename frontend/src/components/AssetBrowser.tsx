@@ -344,12 +344,6 @@ export function AssetBrowser() {
               label: level.displayLabel,
             })),
           }}
-          editDateFields={[
-            'supportStart',
-            'supportExpiration',
-            'purchaseDate',
-            'warrantyStart',
-          ]}
         />
       )}
     </>

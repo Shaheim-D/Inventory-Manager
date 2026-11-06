@@ -101,19 +101,19 @@ public class BulkUpdateController {
      */
     @GetMapping("/api/assets/bulk-update/fields")
     @PreAuthorize("hasAuthority('" + PermissionKeys.ASSET_WRITE + "')")
-    public List<Map<String, String>> assetFields() {
+    public List<Map<String, Object>> assetFields() {
         return updates.offeredFields(BulkUpdateService.Kind.ASSET);
     }
 
     @GetMapping("/api/locations/bulk-update/fields")
     @PreAuthorize("hasAuthority('" + PermissionKeys.LOCATION_WRITE + "')")
-    public List<Map<String, String>> locationFields() {
+    public List<Map<String, Object>> locationFields() {
         return updates.offeredFields(BulkUpdateService.Kind.LOCATION);
     }
 
     @GetMapping("/api/admin/users/bulk-update/fields")
     @PreAuthorize("hasAuthority('" + PermissionKeys.USER_MANAGE + "')")
-    public List<Map<String, String>> userFields() {
+    public List<Map<String, Object>> userFields() {
         return updates.offeredFields(BulkUpdateService.Kind.USER);
     }
 
@@ -192,6 +192,16 @@ public class BulkUpdateController {
                 plan.rows().stream().filter(BulkUpdateService.RowPlan::changesAnything).count());
         response.put("unchangedCount", plan.rows().stream()
                 .filter(row -> !row.refused() && !row.changesAnything()).count());
+        // Said separately from the rows, because it is the one effect that
+        // reaches past the selection: a category's field set is shared by
+        // every asset filed under it.
+        response.put("templateAdditions", plan.templateAdditions().stream()
+                .map(addition -> Map.of(
+                        "categoryId", addition.categoryId(),
+                        "categoryName", addition.categoryName(),
+                        "fields", addition.fieldLabels(),
+                        "assetsInCategory", addition.assetsInCategory()))
+                .toList());
         response.put("refusedCount",
                 plan.rows().stream().filter(BulkUpdateService.RowPlan::refused).count());
         return response;
