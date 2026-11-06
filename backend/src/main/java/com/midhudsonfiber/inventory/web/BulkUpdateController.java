@@ -156,15 +156,29 @@ public class BulkUpdateController {
                     view.put("label", row.label());
                     view.put("refusal", row.refusal());
                     view.put("changes", row.changes().stream()
-                            .map(change -> Map.of(
-                                    "field", change.field(),
-                                    "label", change.label(),
-                                    // Rendered, never raw: these are the strings
-                                    // the card shows and the strings the apply
-                                    // call sends back to prove nothing moved.
-                                    "from", String.valueOf(change.from()),
-                                    "to", String.valueOf(change.to()),
-                                    "noop", change.noop()))
+                            .map(change -> {
+                                // A LinkedHashMap rather than Map.of, because an
+                                // absent value has to travel as JSON null and
+                                // Map.of refuses nulls outright.
+                                //
+                                // It used to be String.valueOf here, which turned
+                                // a null into the four-character string "null".
+                                // The browser sent that back as the value it had
+                                // been shown, the stale check compared "null"
+                                // against a real null, and every field that
+                                // happened to be empty reported itself as changed
+                                // by somebody else -- on a single-user system,
+                                // where that is impossible. Any field somebody
+                                // was filling in for the first time was refused,
+                                // which is most of what a bulk edit is for.
+                                Map<String, Object> rendered = new LinkedHashMap<>();
+                                rendered.put("field", change.field());
+                                rendered.put("label", change.label());
+                                rendered.put("from", change.from());
+                                rendered.put("to", change.to());
+                                rendered.put("noop", change.noop());
+                                return rendered;
+                            })
                             .toList());
                     return view;
                 })

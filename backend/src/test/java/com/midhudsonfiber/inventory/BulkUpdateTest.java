@@ -176,6 +176,40 @@ class BulkUpdateTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("a field that is empty does not report itself as changed by somebody else")
+    void emptyFieldsAreNotFalselyStale() {
+        Session admin = admin();
+        Long id = richAsset(admin);   // supportProvider has never been set
+
+        // Exactly what the dialog does: preview, then send back the values the
+        // card displayed. With one user and nothing touching the row in
+        // between, this must apply.
+        JsonNode preview = post(admin, "/api/assets/bulk-update/preview", """
+                {"ids":[%d],"changes":{"supportProvider":"Acme Support"}}
+                """.formatted(id)).getBody();
+
+        JsonNode shown = preview.get("rows").get(0).get("changes").get(0);
+        assertThat(shown.get("from").isNull())
+                .as("an empty field must serialize as JSON null, not the string \"null\"")
+                .isTrue();
+
+        // Round-trip it the way the browser does, verbatim.
+        String expected = shown.get("from").isNull()
+                ? "{\"%d\":{\"supportProvider\":null}}".formatted(id)
+                : "{\"%d\":{\"supportProvider\":\"%s\"}}".formatted(id, shown.get("from").asText());
+
+        JsonNode result = post(admin, "/api/assets/bulk-update", """
+                {"ids":[%d],"changes":{"supportProvider":"Acme Support"},"expected":%s}
+                """.formatted(id, expected)).getBody();
+
+        assertThat(result.get("refusedCount").asInt())
+                .as("nobody else touched it; refusing would be a false alarm")
+                .isZero();
+        assertThat(get(admin, "/api/assets/" + id).getBody().get("supportProvider").asText())
+                .isEqualTo("Acme Support");
+    }
+
+    @Test
     @DisplayName("one refusal does not undo the rows that went through")
     void partialSuccessIsASuccess() {
         Session admin = admin();

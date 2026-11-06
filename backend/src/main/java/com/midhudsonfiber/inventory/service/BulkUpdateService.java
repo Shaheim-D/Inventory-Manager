@@ -638,8 +638,14 @@ public class BulkUpdateService {
         Map<String, String> wasShown = expected.get(id);
         if (wasShown == null) return null;
         for (Change change : changes) {
+            // containsKey, not a null check on the value. A field that was
+            // empty when the card was drawn is sent back as null, which is a
+            // real expectation -- "this was blank, and it should still be
+            // blank". Treating null as "nothing to compare" would skip the
+            // guard for exactly the fields a bulk edit most often fills in.
+            if (!wasShown.containsKey(change.field())) continue;
             String shown = wasShown.get(change.field());
-            if (shown != null && !Objects.equals(shown, change.from())) {
+            if (!Objects.equals(shown, change.from())) {
                 return "Somebody changed %s since you previewed this (it now reads %s)."
                         .formatted(change.label().toLowerCase(),
                                 change.from() == null ? "nothing" : "\"" + change.from() + "\"");

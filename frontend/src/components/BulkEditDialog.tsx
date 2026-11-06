@@ -55,8 +55,9 @@ export interface BulkEditOption {
 interface PlannedChange {
   field: string;
   label: string;
-  from: string;
-  to: string;
+  /** null when the field is empty — a real null, not the string "null". */
+  from: string | null;
+  to: string | null;
   noop: boolean;
 }
 
@@ -417,7 +418,7 @@ function PlanCard({ plan, noun, many }: { plan: Plan; noun: string; many: string
   );
 }
 
-/** "null" and "" both mean nothing is recorded; neither should be shown raw. */
-function displayValue(value: string) {
-  return value === 'null' || value === '' ? '—' : value;
+/** An empty field reads as a dash rather than as blank space. */
+function displayValue(value: string | null) {
+  return value === null || value === '' ? '—' : value;
 }
